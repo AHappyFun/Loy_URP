@@ -53,4 +53,23 @@ Varyings Vert(Attributes input)
     return FullscreenVert(input);
 }
 
+struct ProceduralAttributes
+{
+    uint vertexID : VERTEXID_SEMANTIC;
+};
+
+struct ProceduralVaryings
+{
+    float4 positionCS : SV_POSITION;
+    float2 uv : TEXCOORD;
+};
+
+ProceduralVaryings ProceduralVert (ProceduralAttributes input)
+{
+    ProceduralVaryings output;
+    output.positionCS = GetFullScreenTriangleVertexPosition(input.vertexID);
+    output.uv = GetFullScreenTriangleTexCoord(input.vertexID);
+    return output;
+}
+
 #endif

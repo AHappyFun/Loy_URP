@@ -45,6 +45,10 @@ Shader "Hidden/Universal Render Pipeline/ScreenSpaceShadows"
             return output;
         }
 
+         TEXTURE2D(_ContactShadowMap);
+        SAMPLER(sampler_ContactShadowMap);
+        float _ContactOpacity;
+
         half4 Fragment(Varyings input) : SV_Target
         {
             UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -64,7 +68,13 @@ Shader "Hidden/Universal Render Pipeline/ScreenSpaceShadows"
             // Screenspace shadowmap is only used for directional lights which use orthogonal projection.
             ShadowSamplingData shadowSamplingData = GetMainLightShadowSamplingData();
             half4 shadowParams = GetMainLightShadowParams();
-            return SampleShadowmap(TEXTURE2D_ARGS(_MainLightShadowmapTexture, sampler_MainLightShadowmapTexture), coords, shadowSamplingData, shadowParams, false);
+
+            float   shadow = SampleShadowmap(TEXTURE2D_ARGS(_MainLightShadowmapTexture, sampler_MainLightShadowmapTexture), coords, shadowSamplingData, shadowParams, false);
+#if defined(_CONTACT_SHADOW)
+			float contact = 1- SAMPLE_TEXTURE2D_X(_ContactShadowMap, sampler_ContactShadowMap, input.uv.xy).r * _ContactOpacity;
+            shadow =  min(shadow, contact); 
+#endif
+            return shadow;
         }
 
         ENDHLSL
@@ -79,7 +89,7 @@ Shader "Hidden/Universal Render Pipeline/ScreenSpaceShadows"
             HLSLPROGRAM
             #pragma multi_compile _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
-
+            #pragma multi_compile_fragment _ _CONTACT_SHADOW
             #pragma vertex   Vertex
             #pragma fragment Fragment
             ENDHLSL

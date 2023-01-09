@@ -96,6 +96,37 @@ MonoBehaviour:
   saturation:
     m_OverrideState: 1
     m_Value: 0
+--- !u!114 &-4082704151588333976
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3faaefe0d988c714e87fddc05730cbd3, type: 3}
+  m_Name: SSAO
+  m_EditorClassIdentifier: 
+  active: 1
+  Radius:
+    m_OverrideState: 1
+    m_Value: 0.3
+  Intensity:
+    m_OverrideState: 1
+    m_Value: 0.64
+  Samples:
+    m_OverrideState: 1
+    m_Value: 5
+  DirectLightStrength:
+    m_OverrideState: 0
+    m_Value: 0.2
+  AfterOpaque:
+    m_OverrideState: 1
+    m_Value: 0
+  DownSample:
+    m_OverrideState: 1
+    m_Value: 0
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -113,6 +144,8 @@ MonoBehaviour:
   - {fileID: -7893295128165547882}
   - {fileID: -7011558710299706105}
   - {fileID: -6304108042364094126}
+  - {fileID: -4082704151588333976}
+  - {fileID: 4618927878840020067}
 --- !u!114 &849379129802519247
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -129,6 +162,49 @@ MonoBehaviour:
   mode:
     m_OverrideState: 1
     m_Value: 2
+--- !u!114 &4618927878840020067
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 56b145d2b9ee1ac4f846968484e7485a, type: 3}
+  m_Name: ContactShadows
+  m_EditorClassIdentifier: 
+  active: 1
+  enable:
+    m_OverrideState: 1
+    m_Value: 0
+  length:
+    m_OverrideState: 0
+    m_Value: 0.15
+  opacity:
+    m_OverrideState: 0
+    m_Value: 1
+  maxDistance:
+    m_OverrideState: 0
+    m_Value: 20
+  minDistance:
+    m_OverrideState: 0
+    m_Value: 0
+  fadeOutDistance:
+    m_OverrideState: 0
+    m_Value: 15
+  fadeInDistance:
+    m_OverrideState: 0
+    m_Value: 1
+  rayBias:
+    m_OverrideState: 0
+    m_Value: 0.2
+  thicknessScale:
+    m_OverrideState: 0
+    m_Value: 0.15
+  sampleCount:
+    m_OverrideState: 0
+    m_Value: 8
 --- !u!114 &8083507965037159983
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -142,7 +218,6 @@ MonoBehaviour:
   m_Name: SSAO
   m_EditorClassIdentifier: 
   active: 1
-  <displayName>k__BackingField: 
   Radius:
     m_OverrideState: 1
     m_Value: 0.3

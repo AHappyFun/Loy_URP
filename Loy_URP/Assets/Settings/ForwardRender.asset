@@ -14,9 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Active: 1
   renderPassEvent: 250
-  m_material: {fileID: 0}
   shader: {fileID: 4800000, guid: d46e7bbcb7764fa78c85a736400aa93d, type: 3}
-  m_ssao: {fileID: 0}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -34,7 +32,9 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 2797909346804357579}
   - {fileID: 9084681983732364775}
-  m_RendererFeatureMap: cbd9041aba2bd426e735c2a92146137e
+  - {fileID: 7347688058357261118}
+  - {fileID: 433215976145309826}
+  m_RendererFeatureMap: cbd9041aba2bd426e735c2a92146137e3ea3c3fe5b3bf86582502a91a2170306
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -71,6 +71,22 @@ MonoBehaviour:
   m_ClusteredRendering: 0
   m_TileSize: 32
   m_IntermediateTextureMode: 1
+--- !u!114 &433215976145309826
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 419301a55e14e9a42ac5043d44b19c4d, type: 3}
+  m_Name: ContactShadowFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  m_RenderPassEvent: 200
+  m_ContactShadows: {fileID: 0}
+  ContactShadowComputeShader: {fileID: 7200000, guid: 3e6900e06dc185a4380af4dacb4db0a4, type: 3}
 --- !u!114 &2797909346804357579
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -83,7 +99,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f62c9c65cf3354c93be831c8bc075510, type: 3}
   m_Name: ScreenSpaceAmbientOcclusion
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_Shader: {fileID: 4800000, guid: 0849e84e3d62649e8882e9d6f056a017, type: 3}
   m_Settings:
     Downsample: 1
@@ -94,6 +110,21 @@ MonoBehaviour:
     DirectLightingStrength: 0.25
     Radius: 0.035
     SampleCount: 4
+--- !u!114 &7347688058357261118
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
+  m_Name: SSAORenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  renderPassEvent: 250
+  shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
 --- !u!114 &9084681983732364775
 MonoBehaviour:
   m_ObjectHideFlags: 0

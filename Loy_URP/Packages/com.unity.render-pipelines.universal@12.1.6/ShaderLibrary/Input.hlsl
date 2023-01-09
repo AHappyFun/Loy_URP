@@ -91,6 +91,14 @@ half4 _MainLightColor;
 half4 _MainLightOcclusionProbes;
 uint _MainLightLayerMask;
 
+
+//SSAO
+//x:半径
+//y:采样数
+//z:强度
+//w:直接光影响系数
+half4 _AmbientOcclusionParams;
+
 // xyz are currently unused
 // w: directLightStrength
 half4 _AmbientOcclusionParam;
