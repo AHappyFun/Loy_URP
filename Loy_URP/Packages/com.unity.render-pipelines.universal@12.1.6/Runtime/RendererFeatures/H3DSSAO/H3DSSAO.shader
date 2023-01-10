@@ -9,15 +9,16 @@ Shader "H3D/SSAO"
 		#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
 		#include "Packages/com.unity.render-pipelines.universal/Shaders/PostProcessing/Common.hlsl"
 		#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/AmbientOcclusion.hlsl"
+		#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
+		#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 
 		#pragma multi_compile _USE_DRAW_PROCEDURAL
-	
-		TEXTURE2D(_CameraDepthTexture);
-		sampler sampler_CameraDepthTexture;
-		float4 _CameraDepthTexture_TexelSize;
-	
-		TEXTURE2D(_CameraNormalsTexture);
-		sampler sampler_CameraNormalsTexture;
+
+		//两个Declare库包含了
+		//TEXTURE2D(_CameraDepthTexture);
+		//sampler sampler_CameraDepthTexture;
+		//TEXTURE2D(_CameraNormalsTexture);
+		//sampler sampler_CameraNormalsTexture;
 	
 		TEXTURE2D(_MainTex);
 		sampler sampler_MainTex;
@@ -130,9 +131,13 @@ Shader "H3D/SSAO"
 		
 		float4 frag(ProceduralVaryings input) : SV_Target
         {
-        	float3 WorldNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, input.uv).rgb * 2 - 1;
+        	float3 WorldNormal = SampleSceneNormals(input.uv);
+        	//float3 WorldNormal = SAMPLE_TEXTURE2D(_CameraNormalsTexture, sampler_CameraNormalsTexture, input.uv).rgb * 2 - 1;
         	float3 ViewNormal = mul((float3x3)UNITY_MATRIX_V, WorldNormal);
-        	float depth = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, input.uv).x;
+        	//float depth = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, input.uv).x;
+
+        	float depth = SampleSceneDepth(input.uv);
+    		depth = LinearEyeDepth(depth, _ZBufferParams);
         	
         	#if UNITY_REVERSED_Z
         		float3 NDC = float3(input.uv.x * 2 - 1, 1 - input.uv.y * 2, depth);
@@ -243,7 +248,7 @@ Shader "H3D/SSAO"
 			Blend One Zero
 
 			HLSLPROGRAM
-				#pragma vertex Vert
+				#pragma vertex ProceduralVert
 				#pragma fragment frag
 			ENDHLSL
 		}
@@ -257,7 +262,7 @@ Shader "H3D/SSAO"
 			Blend One Zero
 
 			HLSLPROGRAM
-				#pragma vertex Vert
+				#pragma vertex ProceduralVert
 				#pragma fragment blur_h
 			ENDHLSL
 		}
@@ -271,7 +276,7 @@ Shader "H3D/SSAO"
 			Blend One Zero
 
 			HLSLPROGRAM
-				#pragma vertex Vert
+				#pragma vertex ProceduralVert
 				#pragma fragment blur_v
 			ENDHLSL
 		}
@@ -286,7 +291,7 @@ Shader "H3D/SSAO"
             BlendOp Add, Add
 			
 			HLSLPROGRAM
-				#pragma vertex Vert
+				#pragma vertex ProceduralVert
 				#pragma fragment fragAfterOpaque				
 			ENDHLSL
 			
