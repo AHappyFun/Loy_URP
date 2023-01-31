@@ -54,6 +54,7 @@ using ProfilingScope = UnityEngine.Rendering.ProfilingScope;
             renderPassEvent = rpe;
             m_RenderFeature = feature;
             m_ContactShadowComputeShader = shader;
+            //m_DeferredContactShadowKernel = m_ContactShadowComputeShader.FindKernel("TestMap");
             m_DeferredContactShadowKernel = m_ContactShadowComputeShader.FindKernel("ContactShadowMap");
             m_ContactShadowMapProfile = new ProfilingSampler(m_ContactShadowMapProfileTag);
         }

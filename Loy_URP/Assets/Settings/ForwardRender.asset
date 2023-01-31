@@ -31,10 +31,10 @@ MonoBehaviour:
     debugReplacementPS: {fileID: 4800000, guid: cf852408f2e174538bcd9b7fda1c5ae7, type: 3}
   m_RendererFeatures:
   - {fileID: 2797909346804357579}
+  - {fileID: 433215976145309826}
   - {fileID: 9084681983732364775}
   - {fileID: 7347688058357261118}
-  - {fileID: 433215976145309826}
-  m_RendererFeatureMap: cbd9041aba2bd426e735c2a92146137e3ea3c3fe5b3bf86582502a91a2170306
+  m_RendererFeatureMap: cbd9041aba2bd42682502a91a2170306e735c2a92146137e3ea3c3fe5b3bf865
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}

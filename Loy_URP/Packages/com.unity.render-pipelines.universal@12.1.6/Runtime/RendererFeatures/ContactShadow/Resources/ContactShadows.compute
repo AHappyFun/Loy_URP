@@ -1,4 +1,5 @@
 #pragma kernel ContactShadowMap
+#pragma kernel TestMap
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
@@ -189,4 +190,17 @@ void ContactShadowMap(uint2 dispatchThreadId : SV_DispatchThreadID)
     	float contact = ComputeContactShadow(posInput, _MainLightPosition.xyz, dither, globalFade );
         _ContactShadowTextureUAV[pixelCoord] = globalFade * contact;
     }
+}
+
+//DispatchThreadID是所有线程的index，通过线程组id和线程组内的index算出来的
+//DispatchThreadID = GroupID(x,y,z) * GroupHeightWidth(x,y,z) + ThreadIndexInGroup
+//所以下面这样直接就可以是全屏像素的index
+[numthreads(DEFERRED_SHADOW_TILE_SIZE, DEFERRED_SHADOW_TILE_SIZE, 1)]
+void TestMap(uint2 dispatchThreadId : SV_DispatchThreadID)
+{
+    if(dispatchThreadId.x > _ScreenSize.x || dispatchThreadId.y > _ScreenSize.y)
+        return;
+
+    uint2 pixelCoord = dispatchThreadId;
+    _ContactShadowTextureUAV[pixelCoord] = _SinTime.w;
 }
