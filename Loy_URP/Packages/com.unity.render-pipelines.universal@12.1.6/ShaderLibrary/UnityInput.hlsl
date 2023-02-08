@@ -214,6 +214,10 @@ float4x4 unity_MatrixVP;
 float4x4 unity_MatrixInvVP;
 float4 unity_StereoScaleOffset;
 int unity_StereoEyeIndex;
+float4x4 unity_UnJitteredMatrixVP;
+float4x4 unity_PrevMatrixVP;
+// xy JitterOffsetPixels, z FrameID, w FrameSequenceLength
+float4 unity_JitterParams;
 #endif
 
 real4 unity_ShadowColor;

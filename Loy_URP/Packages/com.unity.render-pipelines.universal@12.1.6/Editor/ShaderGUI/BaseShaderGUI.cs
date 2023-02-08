@@ -230,6 +230,9 @@ namespace UnityEditor
 
             FindProperties(properties);   // MaterialProperties can be animated so we do not cache them but fetch them every event to ensure animated values are updated correctly
 
+            //关闭MotionVectors PASS，引擎更具情况自动打开
+            material.SetShaderPassEnabled("MotionVectors", false);
+            
             // Make sure that needed setup (ie keywords/renderqueue) are set up if we're switching some existing
             // material to a universal shader.
             if (m_FirstTimeApply)

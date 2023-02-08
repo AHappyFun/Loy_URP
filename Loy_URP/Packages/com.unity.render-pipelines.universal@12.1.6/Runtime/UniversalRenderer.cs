@@ -543,6 +543,7 @@ namespace UnityEngine.Rendering.Universal
             // Temporarily disable depth priming on certain platforms such as Vulkan because we lack proper depth resolve support.
             useDepthPriming &= SystemInfo.graphicsDeviceType != GraphicsDeviceType.Vulkan || cameraTargetDescriptor.msaaSamples == 1;
 
+            createColorTexture = createDepthTexture = true;
             if (useRenderPassEnabled || useDepthPriming)
             {
                 createDepthTexture |= createColorTexture;
@@ -753,12 +754,13 @@ namespace UnityEngine.Rendering.Universal
                 EnqueuePass(m_CopyColorPass);
             }
 
-            if (renderPassInputs.requiresMotionVectors && !cameraData.xr.enabled)
+            //加入TAA的判断，需要motion vector
+            //if (renderPassInputs.requiresMotionVectors && cameraData.antialiasing == AntialiasingMode.TemporalAntialiasing)// && !cameraData.xr.enabled)
             {
                 SupportedRenderingFeatures.active.motionVectors = true; // hack for enabling UI
 
                 var data = MotionVectorRendering.instance.GetMotionDataForCamera(camera, cameraData);
-                m_MotionVectorPass.Setup(data);
+                m_MotionVectorPass.Setup(data, m_ActiveCameraDepthAttachment);
                 EnqueuePass(m_MotionVectorPass);
             }
 

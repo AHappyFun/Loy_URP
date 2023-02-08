@@ -41,7 +41,8 @@ namespace UnityEngine.Rendering.Universal
         FastApproximateAntialiasing,
         [InspectorName("Subpixel Morphological Anti-aliasing (SMAA)")]
         SubpixelMorphologicalAntiAliasing,
-        //TemporalAntialiasing
+        [InspectorName("TAA")]
+        TemporalAntialiasing
     }
 
     /// <summary>

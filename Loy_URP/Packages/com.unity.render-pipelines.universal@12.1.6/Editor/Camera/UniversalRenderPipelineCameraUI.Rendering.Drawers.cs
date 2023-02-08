@@ -70,6 +70,14 @@ namespace UnityEditor.Rendering.Universal
                                 DrawerRenderingSMAAQuality
                             )
                         )
+                        ,
+                        CED.Conditional(
+                            (serialized, owner) => (AntialiasingMode)serialized.antialiasing.intValue ==
+                                                   AntialiasingMode.TemporalAntialiasing,
+                            CED.Group(
+                                DrawerRenderingTAAQuality
+                            )
+                        )
                     )
                     ),
                 CED.Group(
@@ -205,6 +213,14 @@ namespace UnityEditor.Rendering.Universal
             }
 
             static void DrawerRenderingSMAAQuality(UniversalRenderPipelineSerializedCamera p, Editor owner)
+            {
+                EditorGUILayout.PropertyField(p.antialiasingQuality, Styles.antialiasingQuality);
+
+                if (CoreEditorUtils.buildTargets.Contains(GraphicsDeviceType.OpenGLES2))
+                    EditorGUILayout.HelpBox(Styles.SMAANotSupported, MessageType.Warning);
+            }
+            
+            static void DrawerRenderingTAAQuality(UniversalRenderPipelineSerializedCamera p, Editor owner)
             {
                 EditorGUILayout.PropertyField(p.antialiasingQuality, Styles.antialiasingQuality);
 

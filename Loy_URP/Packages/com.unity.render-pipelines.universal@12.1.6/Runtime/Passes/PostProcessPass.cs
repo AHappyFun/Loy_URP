@@ -18,7 +18,7 @@ namespace UnityEngine.Rendering.Universal.Internal
     /// <summary>
     /// Renders the post-processing effect stack.
     /// </summary>
-    public class PostProcessPass : ScriptableRenderPass
+    public partial class PostProcessPass : ScriptableRenderPass
     {
         RenderTextureDescriptor m_Descriptor;
         RenderTargetIdentifier m_Source;
@@ -63,6 +63,9 @@ namespace UnityEngine.Rendering.Universal.Internal
         float m_BokehMaxRadius;
         float m_BokehRCPAspect;
 
+        private RenderTexture[] m_TAAHistory;
+        private int m_TAAIndexWrite;
+        
         // True when this is the very last pass in the pipeline
         bool m_IsFinalPass;
 
@@ -140,9 +143,29 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_MRT2 = new RenderTargetIdentifier[2];
             m_ResetHistory = true;
             base.useNativeRenderPass = false;
+            
+            m_TAAHistory = new RenderTexture[2];
         }
 
-        public void Cleanup() => m_Materials.Cleanup();
+        public void Cleanup()
+        {
+            m_Materials.Cleanup();
+            if (m_TAAHistory[0] != null)
+            {
+                RenderTexture.ReleaseTemporary(m_TAAHistory[0]);
+                RenderTexture.ReleaseTemporary(m_TAAHistory[1]);
+            }
+            //if (easuCB != null)
+            //{
+            //    easuCB.Release();
+            //    easuCB = null;
+            //}
+            //if (rcasCB != null)
+            //{
+            //    rcasCB.Release();
+            //    rcasCB = null;
+            //}
+        }
 
         public void Setup(in RenderTextureDescriptor baseDescriptor, in RenderTargetHandle source, bool resolveToScreen, in RenderTargetHandle depth, in RenderTargetHandle internalLut, bool hasFinalPass, bool enableSRGBConversion, bool hasExternalPostPasses)
         {
@@ -342,14 +365,15 @@ namespace UnityEngine.Rendering.Universal.Internal
             //Check amount of swaps we have to do
             //We blit back and forth without msaa untill the last blit.
             bool useStopNan = cameraData.isStopNaNEnabled && m_Materials.stopNaN != null;
-            bool useSubPixeMorpAA = cameraData.antialiasing == AntialiasingMode.SubpixelMorphologicalAntiAliasing && SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLES2;
+            //bool useSubPixeMorpAA = cameraData.antialiasing == AntialiasingMode.SubpixelMorphologicalAntiAliasing && SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLES2;
+            bool TAAOrSMAA = cameraData.antialiasing == AntialiasingMode.TemporalAntialiasing || (cameraData.antialiasing == AntialiasingMode.SubpixelMorphologicalAntiAliasing && SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLES2);
             var dofMaterial = m_DepthOfField.mode.value == DepthOfFieldMode.Gaussian ? m_Materials.gaussianDepthOfField : m_Materials.bokehDepthOfField;
             bool useDepthOfField = m_DepthOfField.IsActive() && !isSceneViewCamera && dofMaterial != null;
             bool useLensFlare = !LensFlareCommonSRP.Instance.IsEmpty();
             bool useMotionBlur = m_MotionBlur.IsActive() && !isSceneViewCamera;
             bool usePaniniProjection = m_PaniniProjection.IsActive() && !isSceneViewCamera;
 
-            int amountOfPassesRemaining = (useStopNan ? 1 : 0) + (useSubPixeMorpAA ? 1 : 0) + (useDepthOfField ? 1 : 0) + (useLensFlare ? 1 : 0) + (useMotionBlur ? 1 : 0) + (usePaniniProjection ? 1 : 0);
+            int amountOfPassesRemaining = (useStopNan ? 1 : 0) + (TAAOrSMAA ? 1 : 0) + (useDepthOfField ? 1 : 0) + (useLensFlare ? 1 : 0) + (useMotionBlur ? 1 : 0) + (usePaniniProjection ? 1 : 0);
 
             if (m_UseSwapBuffer && amountOfPassesRemaining > 0)
             {
@@ -363,7 +387,20 @@ namespace UnityEngine.Rendering.Universal.Internal
             RenderTargetIdentifier source = m_UseSwapBuffer ? renderer.cameraColorTarget : m_Source;
             RenderTargetIdentifier destination = m_UseSwapBuffer ? renderer.GetCameraColorFrontBuffer(cmd) : -1;
 
-            RenderTargetIdentifier GetSource() => source;
+            RenderTargetIdentifier tempSource = -1;
+
+            RenderTargetIdentifier GetSource()
+            {
+                if (tempSource == -1)
+                {
+                    return source;
+                }
+                else
+                {
+                    return tempSource;
+                }
+            }
+
 
             RenderTargetIdentifier GetDestination()
             {
@@ -390,6 +427,10 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             void Swap(ref ScriptableRenderer r)
             {
+                if (tempSource != -1)
+                {
+                    tempSource = -1;
+                }
                 --amountOfPassesRemaining;
                 if (m_UseSwapBuffer)
                 {
@@ -428,12 +469,21 @@ namespace UnityEngine.Rendering.Universal.Internal
             }
 
             // Anti-aliasing
-            if (useSubPixeMorpAA)
+            if (TAAOrSMAA && cameraData.antialiasing == AntialiasingMode.SubpixelMorphologicalAntiAliasing)
             {
                 using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.SMAA)))
                 {
                     DoSubpixelMorphologicalAntialiasing(ref cameraData, cmd, GetSource(), GetDestination());
                     Swap(ref renderer);
+                }
+            }
+            
+            if (TAAOrSMAA && cameraData.antialiasing == AntialiasingMode.TemporalAntialiasing)
+            {
+                using (new ProfilingScope(cmd, ProfilingSampler.Get(URPProfileId.TAA)))
+                {
+                    tempSource =  DoTAA(ref cameraData, cmd, GetSource(), GetDestination());
+                    //Swap(ref renderer);
                 }
             }
 
@@ -1606,6 +1656,9 @@ namespace UnityEngine.Rendering.Universal.Internal
             public readonly Material finalPass;
             public readonly Material lensFlareDataDriven;
 
+            public readonly Material taaPS;
+            public readonly ComputeShader taaCS;
+
             public MaterialLibrary(PostProcessData data)
             {
                 stopNaN = Load(data.shaders.stopNanPS);
@@ -1620,6 +1673,9 @@ namespace UnityEngine.Rendering.Universal.Internal
                 uber = Load(data.shaders.uberPostPS);
                 finalPass = Load(data.shaders.finalPostPassPS);
                 lensFlareDataDriven = Load(data.shaders.LensFlareDataDrivenPS);
+
+                taaPS = Load(data.shaders.taaPS);
+                taaCS = data.shaders.taaCS;
             }
 
             Material Load(Shader shader)

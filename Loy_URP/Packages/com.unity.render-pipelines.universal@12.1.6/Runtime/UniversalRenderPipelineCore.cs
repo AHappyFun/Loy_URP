@@ -87,10 +87,18 @@ namespace UnityEngine.Rendering.Universal
         Matrix4x4 m_ViewMatrix;
         Matrix4x4 m_ProjectionMatrix;
 
-        internal void SetViewAndProjectionMatrix(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix)
+        private Matrix4x4 m_UnJitteredProjectionMatrix;
+        //xy Jitter Pixel Offset
+        //z: current Loop index
+        //w: loop count
+        private Vector4 m_JitterParams;
+
+        internal void SetViewAndProjectionMatrix(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix, Vector4 jitterParams, Matrix4x4 unJitteredProjectionMatrix)
         {
             m_ViewMatrix = viewMatrix;
             m_ProjectionMatrix = projectionMatrix;
+            m_JitterParams = jitterParams;
+            m_UnJitteredProjectionMatrix = unJitteredProjectionMatrix;
         }
 
         /// <summary>
@@ -117,6 +125,16 @@ namespace UnityEngine.Rendering.Universal
                 return xr.GetProjMatrix(viewIndex);
 #endif
             return m_ProjectionMatrix;
+        }
+
+        public Vector4 GetJitterParams()
+        {
+            return m_JitterParams;
+        }
+
+        public Matrix4x4 GetUnJitteredProjectionMatrix()
+        {
+            return m_UnJitteredProjectionMatrix;
         }
 
         /// <summary>
@@ -339,6 +357,10 @@ namespace UnityEngine.Rendering.Universal
         public static readonly int viewMatrix = Shader.PropertyToID("unity_MatrixV");
         public static readonly int projectionMatrix = Shader.PropertyToID("glstate_matrix_projection");
         public static readonly int viewAndProjectionMatrix = Shader.PropertyToID("unity_MatrixVP");
+        
+        public static readonly int unJitteredViewAndProjectionMatrix = Shader.PropertyToID("unity_UnJitteredMatrixVP");
+        public static readonly int prevViewAndProjectionMatrix = Shader.PropertyToID("unity_PrevMatrixVP");
+        public static readonly int jitterParams = Shader.PropertyToID("unity_JitterParams");
 
         public static readonly int inverseViewMatrix = Shader.PropertyToID("unity_MatrixInvV");
         public static readonly int inverseProjectionMatrix = Shader.PropertyToID("unity_MatrixInvP");
@@ -893,6 +915,7 @@ namespace UnityEngine.Rendering.Universal
         // PostProcessPass
         StopNaNs,
         SMAA,
+        TAA,
         GaussianDepthOfField,
         BokehDepthOfField,
         MotionBlur,

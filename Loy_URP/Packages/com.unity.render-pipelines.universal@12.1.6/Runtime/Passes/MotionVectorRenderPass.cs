@@ -6,16 +6,16 @@ namespace UnityEngine.Rendering.Universal.Internal
     sealed class MotionVectorRenderPass : ScriptableRenderPass
     {
         #region Fields
-        const string kPreviousViewProjectionMatrix = "_PrevViewProjMatrix";
+        //const string kPreviousViewProjectionMatrix = "_PrevViewProjMatrix";
 #if ENABLE_VR && ENABLE_XR_MODULE
         const string kPreviousViewProjectionMatrixStero = "_PrevViewProjMStereo";
 #endif
-        const string kMotionVectorTexture = "_MotionVectorTexture";
+        const string kMotionVectorTexture = "_CameraMotionVectorsTexture";
         const GraphicsFormat m_TargetFormat = GraphicsFormat.R16G16_SFloat;
 
         static readonly string[] s_ShaderTags = new string[] { "MotionVectors" };
 
-        RenderTargetHandle m_MotionVectorHandle; //Move to UniversalRenderer like other passes?
+        RenderTargetHandle m_MotionVectorHandle, m_Depth; //Move to UniversalRenderer like other passes?
         readonly Material m_CameraMaterial;
         readonly Material m_ObjectMaterial;
 
@@ -34,19 +34,23 @@ namespace UnityEngine.Rendering.Universal.Internal
         #endregion
 
         #region State
-        internal void Setup(PreviousFrameData frameData)
+        internal void Setup(PreviousFrameData frameData, RenderTargetHandle depth)
         {
             m_MotionData = frameData;
+            m_Depth = depth;
         }
 
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
         {
             var rtd = cameraTextureDescriptor;
             rtd.graphicsFormat = m_TargetFormat;
+            rtd.depthBufferBits = 0;
+            rtd.msaaSamples = 1;
             // Configure Render Target
             m_MotionVectorHandle.Init(kMotionVectorTexture);
-            cmd.GetTemporaryRT(m_MotionVectorHandle.id, rtd, FilterMode.Point);
-            ConfigureTarget(m_MotionVectorHandle.Identifier(), m_MotionVectorHandle.Identifier());
+            cmd.GetTemporaryRT(m_MotionVectorHandle.id, rtd, FilterMode.Bilinear);
+            ConfigureTarget(m_MotionVectorHandle.Identifier(), m_Depth.Identifier());
+            ConfigureClear(ClearFlag.Color, Color.black);
         }
 
         #endregion
@@ -71,16 +75,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             {
                 ExecuteCommand(context, cmd);
                 var cameraData = renderingData.cameraData;
-#if ENABLE_VR && ENABLE_XR_MODULE
-                if (cameraData.xr.enabled && cameraData.xr.singlePassEnabled)
                 {
-                    m_CameraMaterial.SetMatrixArray(kPreviousViewProjectionMatrixStero, m_MotionData.previousViewProjectionMatrixStereo);
-                    m_ObjectMaterial.SetMatrixArray(kPreviousViewProjectionMatrixStero, m_MotionData.previousViewProjectionMatrixStereo);
-                }
-                else
-#endif
-                {
-                    Shader.SetGlobalMatrix(kPreviousViewProjectionMatrix, m_MotionData.previousViewProjectionMatrix);
+                    Shader.SetGlobalMatrix(ShaderPropertyId.prevViewAndProjectionMatrix, m_MotionData.previousViewProjectionMatrix);
                 }
 
                 // These flags are still required in SRP or the engine won't compute previous model matrices...
@@ -88,8 +84,11 @@ namespace UnityEngine.Rendering.Universal.Internal
                 camera.depthTextureMode |= DepthTextureMode.MotionVectors | DepthTextureMode.Depth;
 
                 // TODO: add option to only draw either one?
-                DrawCameraMotionVectors(context, cmd, camera);
-                DrawObjectMotionVectors(context, ref renderingData, camera);
+                //DrawCameraMotionVectors(context, cmd, camera);
+                if (cameraData.antialiasingQuality >= AntialiasingQuality.Medium)
+                {
+                    DrawObjectMotionVectors(context, ref renderingData, camera);
+                }
             }
             ExecuteCommand(context, cmd);
             CommandBufferPool.Release(cmd);

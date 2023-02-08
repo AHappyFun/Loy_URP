@@ -161,6 +161,9 @@ CBUFFER_END
 #define UNITY_PREV_MATRIX_M   unity_MatrixPreviousM
 #define UNITY_PREV_MATRIX_I_M unity_MatrixPreviousMI
 
+#define UNITY_MATRIX_UNJITTERED_VP unity_UnJitteredMatrixVP
+#define UNITY_MATRIX_PREV_VP unity_PrevMatrixVP
+
 // Note: #include order is important here.
 // UnityInput.hlsl must be included before UnityInstancing.hlsl, so constant buffer
 // declarations don't fail because of instancing macros.
