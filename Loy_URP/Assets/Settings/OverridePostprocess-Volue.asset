@@ -183,7 +183,7 @@ MonoBehaviour:
     m_Value: 0.15
   opacity:
     m_OverrideState: 1
-    m_Value: 1
+    m_Value: 0.568
   maxDistance:
     m_OverrideState: 1
     m_Value: 20
@@ -204,7 +204,7 @@ MonoBehaviour:
     m_Value: 0.15
   sampleCount:
     m_OverrideState: 1
-    m_Value: 8
+    m_Value: 16
 --- !u!114 &8083507965037159983
 MonoBehaviour:
   m_ObjectHideFlags: 3
