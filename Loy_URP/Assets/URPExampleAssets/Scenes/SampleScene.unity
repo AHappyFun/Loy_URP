@@ -268,6 +268,63 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4527368504392492, guid: a87f0180d46fd334b9025d0314a0dc70, type: 3}
   m_PrefabInstance: {fileID: 296138508}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &533038498
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1181300695819824, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_Name
+      value: Kiana
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_RootOrder
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 1.4661554
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.00000023841858
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.14019108
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
 --- !u!1 &559565325
 GameObject:
   m_ObjectHideFlags: 0
@@ -384,7 +441,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 4
+  m_RootOrder: 5
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &653260035
 GameObject:
@@ -433,7 +490,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 2
+  m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &665423899
 GameObject:
@@ -468,7 +525,7 @@ Transform:
   - {fileID: 170171481}
   - {fileID: 1458322689}
   m_Father: {fileID: 0}
-  m_RootOrder: 3
+  m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &1145444333
 GameObject:
@@ -882,8 +939,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1687258581}
-  m_LocalRotation: {x: -0.038948897, y: 0.95805305, z: -0.15835801, w: -0.23566955}
-  m_LocalPosition: {x: 0.44499105, y: 2.024869, z: 2.2201726}
+  m_LocalRotation: {x: -0.054429434, y: 0.9205415, z: -0.13950191, w: -0.36080462}
+  m_LocalPosition: {x: 4.7000976, y: 2.449842, z: 3.5297487}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -915,7 +972,7 @@ MonoBehaviour:
   m_VolumeFrameworkUpdateModeOption: 2
   m_RenderPostProcessing: 1
   m_Antialiasing: 3
-  m_AntialiasingQuality: 1
+  m_AntialiasingQuality: 2
   m_StopNaN: 1
   m_Dithering: 0
   m_ClearDepth: 1
@@ -1081,7 +1138,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 1
+  m_RootOrder: 2
   m_LocalEulerAnglesHint: {x: 45, y: 130, z: 90}
 --- !u!114 &2138677394
 MonoBehaviour:

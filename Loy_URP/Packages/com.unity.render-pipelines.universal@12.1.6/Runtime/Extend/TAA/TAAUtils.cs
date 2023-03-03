@@ -29,8 +29,8 @@
             // The variance between 0 and the actual halton sequence values reveals noticeable instability
             // in Unity's shadow maps, so we avoid index 0.
             var offset = new Vector2(
-                HaltonSeq((sampleIndex & 1023) + 1, 2) - 0.5f,
-                HaltonSeq((sampleIndex & 1023) + 1, 3) - 0.5f
+                HaltonSeq((sampleIndex & 1023) + 1, 2),
+                HaltonSeq((sampleIndex & 1023) + 1, 3)
             );
 
             if (++sampleIndex >= k_SampleCount)
@@ -44,15 +44,27 @@
             jitterPixels.z = sampleIndex;
             jitterPixels.w = k_SampleCount;
             var v = GenerateRandomOffset();
+            
+            //像素偏移的范围转换到(-0.5，0.5)   单位：像素
+            v.x -= 0.5f;
+            v.y -= 0.5f;
+            
             jitterPixels.x = v.x;
             jitterPixels.y = v.y;
+            //像素偏移转换为 屏幕空间UV的偏移   单位：UV偏移/PerPixel
             var offset = new Vector2(
                 jitterPixels.x / camera.pixelWidth,
                 jitterPixels.y / camera.pixelHeight
             );
             jitteredMatrix = camera.projectionMatrix;
-            jitteredMatrix.m02 += offset.x * 2;
-            jitteredMatrix.m12 += offset.y * 2;
+
+            //屏幕空间UV的偏移 转换为 裁剪空间的偏移  (-0.5,0.5) *2 ——> (-1,1)
+            offset.x *= 2;
+            offset.y *= 2;
+            
+            //
+            jitteredMatrix.m02 += offset.x;
+            jitteredMatrix.m12 += offset.y;
         }
     }
 }

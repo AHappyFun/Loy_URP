@@ -108,10 +108,14 @@ float2 GetMotionVector(float2 screenPos, float depth)
     float4 preClipPos = mul(UNITY_MATRIX_PREV_VP, float4(inputs.positionWS, 1));
     preClipPos /= preClipPos.w;
 
+    //NDC空间的偏移
     float2 motionVector = curClipPos.xy - preClipPos.xy;
+    
     #if UNITY_UV_STARTS_AT_TOP
     motionVector.y = -motionVector.y;
     #endif
+    //NDC空间转换 到 屏幕空间
+    //(curNDC * 0.5 + 0.5) - (preNDC * 0.5 + 0.5) = (curNDC - preNDC) * 0.5
     return motionVector * 0.5;
 }
 

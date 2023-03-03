@@ -755,7 +755,7 @@ namespace UnityEngine.Rendering.Universal
             }
 
             //加入TAA的判断，需要motion vector
-            //if (renderPassInputs.requiresMotionVectors && cameraData.antialiasing == AntialiasingMode.TemporalAntialiasing)// && !cameraData.xr.enabled)
+            if (cameraData.antialiasing == AntialiasingMode.TemporalAntialiasing)// && !cameraData.xr.enabled)
             {
                 SupportedRenderingFeatures.active.motionVectors = true; // hack for enabling UI
 

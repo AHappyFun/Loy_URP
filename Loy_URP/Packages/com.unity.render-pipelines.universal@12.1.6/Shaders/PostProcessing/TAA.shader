@@ -19,6 +19,7 @@
                 return float4(TransformTAASpaceBack(color), 1);
             }
         #if _USE_MOTION_VECTOR_BUFFER
+            //动态物体
             float depth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_PointClamp, input.uv);
             float2 Motion = GetMotionVector(input.positionCS, depth);
             float2 closest = GetClosestFragment(input.uv, depth);
@@ -26,9 +27,11 @@
             if(SampleVelocity.x > 0)
                 Motion = DecodeVelocityFromTexture(SampleVelocity);
         #else
+            //静态物体
             float depth = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, sampler_PointClamp, input.uv);
             float2 Motion = GetMotionVector(input.positionCS, depth);
         #endif
+            
             float2 HistoryUV = input.uv - Motion;
             //
             float3 HistoryColor = TransformColorToTAASpace(_InputHistoryTexture.Sample(sampler_LinearClamp, HistoryUV));

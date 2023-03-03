@@ -100,7 +100,10 @@ Shader "Hidden/kMotion/ObjectMotionVectors"
                     velocity.y = -velocity.y;
                 #endif
 
-                // Convert from Clip space (-1..1) to NDC 0..1 space.
+                // Convert from NDC space (-1..1) to Screen 0..1 space.
+                //(-0.5, 0.5)
+                // Note it doesn't mean we don't have negative value, we store negative or positive offset in NDC space.
+                // Note: ((positionCS * 0.5 + 0.5) - (previousPositionCS * 0.5 + 0.5)) = (velocity * 0.5)
                 velocity *= 0.5f;
                 // Note: unity_MotionVectorsParams.y is 0 is forceNoMotion is enabled
                 bool forceNoMotion = unity_MotionVectorsParams.y == 0.0;
