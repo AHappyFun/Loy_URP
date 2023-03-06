@@ -7,4 +7,9 @@
 
 3.TAA
 
+4.场景渲染
+场景还需要： 批量Grass、SSR(已有PlanarReflect)、树、体积雾、海面的折射和泡沫
+
+![Image text](https://github.com/AHappyFun/Loy_URP/blob/main/readme/water.gif)
+
 ![Image text](https://github.com/AHappyFun/Loy_URP/blob/main/readme/scene.jpg)
