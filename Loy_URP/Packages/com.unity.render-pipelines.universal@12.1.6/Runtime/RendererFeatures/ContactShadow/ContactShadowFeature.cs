@@ -27,7 +27,8 @@ using ProfilingScope = UnityEngine.Rendering.ProfilingScope;
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
             m_ContactShadows = VolumeManager.instance.stack.GetComponent<ContactShadows>();
-            if (!m_ContactShadows.IsActive()) return;
+            if (!m_ContactShadows.IsActive()) 
+                return;
             renderer.EnqueuePass(m_ContactShadowMapPass);
         }
     }

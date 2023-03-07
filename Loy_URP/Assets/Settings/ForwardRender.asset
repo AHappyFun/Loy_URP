@@ -34,7 +34,8 @@ MonoBehaviour:
   - {fileID: 433215976145309826}
   - {fileID: 9084681983732364775}
   - {fileID: 7347688058357261118}
-  m_RendererFeatureMap: cbd9041aba2bd42682502a91a2170306e735c2a92146137e3ea3c3fe5b3bf865
+  - {fileID: 6134060063955588469}
+  m_RendererFeatureMap: cbd9041aba2bd42682502a91a2170306e735c2a92146137e3ea3c3fe5b3bf8657595fbe6208f2055
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -110,6 +111,26 @@ MonoBehaviour:
     DirectLightingStrength: 0.25
     Radius: 0.035
     SampleCount: 4
+--- !u!114 &6134060063955588469
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b10bbbe4629c90a4d97495f08e21feb8, type: 3}
+  m_Name: SSRRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  renderPassEvent: 500
+  m_ssrConfig: {fileID: 0}
+  SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
+  SSRMaxRayMarchStep: 128
+  SSRMaxRayMarchDistance: 30
+  SSRMaxRayMarchStepSize: 0.001
+  SSRDepthThickness: 1
 --- !u!114 &7347688058357261118
 MonoBehaviour:
   m_ObjectHideFlags: 0
