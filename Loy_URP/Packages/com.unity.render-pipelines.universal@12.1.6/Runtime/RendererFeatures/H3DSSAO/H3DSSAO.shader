@@ -1,4 +1,4 @@
-Shader "H3D/SSAO"
+Shader "Aley/Feature/SSAO"
 {   
 	
 	Properties

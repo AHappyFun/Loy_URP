@@ -1,24 +1,52 @@
 ﻿using System;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 using UnityEngine.Serialization;
+
+
 
 [ExecuteAlways]
 public class Ocean_Manager : MonoBehaviour
 {
+
+    public enum ReflectMode
+    {
+        PlanarReflect,
+        SSR
+    };
+    
     private Material oceanMat;
+
+    public ReflectMode rfmode;
     
     public Gradient AbsorptionCradient;
     public Gradient ScatterCradient;
     
     private Texture2D _sssTexture;
     private static readonly int AbsorptionScatteringLUT = Shader.PropertyToID("_AbsorptionScatteringLUT");
+    
+    
 
     private void OnEnable()
     {
         oceanMat = GetComponent<MeshRenderer>().sharedMaterial;
         
         GenerateSSSColorLUT();
+    }
+
+    private void Update()
+    {
+        if (rfmode == ReflectMode.SSR)
+        {
+            CoreUtils.SetKeyword(oceanMat, "_SSRREFLECT", true);
+            CoreUtils.SetKeyword(oceanMat, "_REFLECTION_PLANARREFLECTION", false);
+        }
+        else
+        {
+            CoreUtils.SetKeyword(oceanMat, "_SSRREFLECT", false);
+            CoreUtils.SetKeyword(oceanMat, "_REFLECTION_PLANARREFLECTION", true);
+        }
     }
 
     void GenerateSSSColorLUT()

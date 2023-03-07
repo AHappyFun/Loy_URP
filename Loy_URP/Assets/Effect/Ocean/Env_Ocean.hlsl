@@ -20,6 +20,10 @@ SAMPLER(sampler_ScreenTextures_linear_clamp);
     TEXTURE2D(_PlanarReflectionTexture);
 #endif
 
+#if defined(_SSRREFLECT)
+    TEXTURE2D(_ScreenSpaceReflectMap);
+#endif
+
 TEXTURE2D(_AbsorptionScatteringLUT);
 SAMPLER(sampler_AbsorptionScatteringLUT);
 
@@ -292,9 +296,11 @@ half3 SampleReflections(half3 normalWS, half3 viewDirectionWS, half2 screenUV, h
     
         half2 reflectionUV = screenUV + normalWS.zx * half2(0.02, 0.15);
         reflection += SAMPLE_TEXTURE2D_LOD(_PlanarReflectionTexture, sampler_ScreenTextures_linear_clamp, reflectionUV, 6 * roughness).rgb;//planar reflection
+    
+    #elif _SSRREFLECT
+        reflection = SAMPLE_TEXTURE2D_LOD(_ScreenSpaceReflectMap, sampler_ScreenTextures_linear_clamp, screenUV, 0);
     #endif
-    //do backup
-    //return reflectVector.yyy;
+    
     return reflection;
 }
 

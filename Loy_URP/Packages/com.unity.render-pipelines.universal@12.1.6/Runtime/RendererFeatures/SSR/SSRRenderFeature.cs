@@ -103,13 +103,13 @@ public class SSRRenderPass : ScriptableRenderPass
             cmd.DispatchCompute(m_ComputeShader, m_SSRKernel, Mathf.CeilToInt(camera.pixelWidth / 8), Mathf.CeilToInt(camera.pixelHeight / 8), 1);
         }
         
-        CoreUtils.SetKeyword(cmd, "_SSR_REFLECT", true);
+        CoreUtils.SetKeyword(cmd, "_SSRREFLECT", true);
         context.ExecuteCommandBuffer(cmd);
         CommandBufferPool.Release(cmd);
     }
     
     public override void FrameCleanup(CommandBuffer cmd)
     {
-        CoreUtils.SetKeyword(cmd, "_SSR_REFLECT", false);
+        CoreUtils.SetKeyword(cmd, "_SSRREFLECT", false);
     }
 }

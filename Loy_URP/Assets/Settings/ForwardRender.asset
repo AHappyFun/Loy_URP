@@ -124,11 +124,11 @@ MonoBehaviour:
   m_Name: SSRRenderFeature
   m_EditorClassIdentifier: 
   m_Active: 1
-  renderPassEvent: 500
+  renderPassEvent: 450
   m_ssrConfig: {fileID: 0}
   SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
   SSRMaxRayMarchStep: 128
-  SSRMaxRayMarchDistance: 30
+  SSRMaxRayMarchDistance: 200
   SSRMaxRayMarchStepSize: 0.001
   SSRDepthThickness: 1
 --- !u!114 &7347688058357261118
@@ -143,7 +143,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
   m_Name: SSAORenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
 --- !u!114 &9084681983732364775

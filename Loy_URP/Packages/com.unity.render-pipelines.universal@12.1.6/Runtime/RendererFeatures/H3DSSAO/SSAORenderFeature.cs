@@ -12,7 +12,7 @@ public class SSAORenderFeature : ScriptableRendererFeature
     public Shader shader;
     private SSAO m_ssao;
 
-    private const string k_ShaderName = "H3D/SSAO";
+    private const string k_ShaderName = "Aley/Feature/SSAO";
     
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {

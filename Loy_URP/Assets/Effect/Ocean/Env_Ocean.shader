@@ -74,7 +74,7 @@ Shader "Aley/Env/Ocean"
             
 
             #pragma multi_compile_fragment _ _LIGHT_LAYERS
-            #pragma multi_compile_fragment _REFLECTION_PLANARREFLECTION
+            #pragma multi_compile_fragment _REFLECTION_PLANARREFLECTION _SSRREFLECT
             
             #pragma multi_compile_fog
             
