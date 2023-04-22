@@ -283,22 +283,24 @@ half3 SampleReflections(half3 normalWS, half3 viewDirectionWS, half2 screenUV, h
 {
     half3 reflection = 0;
     half2 refOffset = 0;
+    
+    // get the perspective projection
+    float2 p11_22 = float2(unity_CameraInvProjection._11, unity_CameraInvProjection._22) * 10;
+    // conver the uvs into view space by "undoing" projection
+    float3 viewDir = -(float3((screenUV * 2 - 1) / p11_22, -1));
+    
+    half3 viewNormal = mul(normalWS, (float3x3)GetWorldToViewMatrix()).xyz;
+    half3 reflectVector = reflect(-viewDir, viewNormal);
+    
+    half2 reflectionUV = screenUV + normalWS.zx * half2(0.02, 0.15);
 
     #if _REFLECTION_PLANARREFLECTION
 
-        // get the perspective projection
-        float2 p11_22 = float2(unity_CameraInvProjection._11, unity_CameraInvProjection._22) * 10;
-        // conver the uvs into view space by "undoing" projection
-        float3 viewDir = -(float3((screenUV * 2 - 1) / p11_22, -1));
-    
-        half3 viewNormal = mul(normalWS, (float3x3)GetWorldToViewMatrix()).xyz;
-        half3 reflectVector = reflect(-viewDir, viewNormal);
-    
-        half2 reflectionUV = screenUV + normalWS.zx * half2(0.02, 0.15);
         reflection += SAMPLE_TEXTURE2D_LOD(_PlanarReflectionTexture, sampler_ScreenTextures_linear_clamp, reflectionUV, 6 * roughness).rgb;//planar reflection
     
     #elif _SSRREFLECT
-        reflection = SAMPLE_TEXTURE2D_LOD(_ScreenSpaceReflectMap, sampler_ScreenTextures_linear_clamp, screenUV, 0);
+    
+        reflection += SAMPLE_TEXTURE2D_LOD(_ScreenSpaceReflectMap, sampler_ScreenTextures_linear_clamp, reflectionUV, 0);
     #endif
     
     return reflection;
