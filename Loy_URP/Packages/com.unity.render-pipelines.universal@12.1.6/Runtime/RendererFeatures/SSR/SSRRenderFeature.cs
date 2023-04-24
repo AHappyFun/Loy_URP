@@ -16,10 +16,10 @@ public class SSRRenderFeature : ScriptableRendererFeature
 
     public ComputeShader SSRComputeShader;
     
-    public float SSRMaxRayMarchStep;
-    public float SSRMaxRayMarchDistance;
-    public float SSRMaxRayMarchStepSize;
-    public float SSRDepthThickness;
+    //public float SSRMaxRayMarchStep;
+    //public float SSRMaxRayMarchDistance;
+    //public float SSRMaxRayMarchStepSize;
+    //public float SSRDepthThickness;
     
     public override void Create()
     {
@@ -71,6 +71,13 @@ public class SSRRenderPass : ScriptableRenderPass
     public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
     {
         CommandBuffer cmd = CommandBufferPool.Get(m_SSRProfileTag);
+        if (!m_RenderFeature.m_ssrConfig.enable.value)
+        {
+            CoreUtils.SetKeyword(cmd, "_SSRREFLECT", false);
+            context.ExecuteCommandBuffer(cmd);
+            CommandBufferPool.Release(cmd);
+            return;
+        }
         
         var camera = renderingData.cameraData.camera;
 
@@ -93,10 +100,10 @@ public class SSRRenderPass : ScriptableRenderPass
         
         using (new ProfilingScope(cmd, m_ssrProfile))
         {
-            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxStepID, m_RenderFeature.SSRMaxRayMarchStep);
-            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxDistanceID, m_RenderFeature.SSRMaxRayMarchDistance);
-            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxStepSizeID, m_RenderFeature.SSRMaxRayMarchStepSize);
-            cmd.SetComputeFloatParam(m_ComputeShader, st_DepthThicknessID, m_RenderFeature.SSRDepthThickness);
+            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxStepID, m_RenderFeature.m_ssrConfig.MaxRayStep.value);
+            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxDistanceID, m_RenderFeature.m_ssrConfig.MaxRayDistance.value);
+            cmd.SetComputeFloatParam(m_ComputeShader, st_MaxStepSizeID, m_RenderFeature.m_ssrConfig.StepSize.value);
+            cmd.SetComputeFloatParam(m_ComputeShader, st_DepthThicknessID, m_RenderFeature.m_ssrConfig.DepthThickness.value);
             
             cmd.SetComputeTextureParam(m_ComputeShader, m_SSRKernel, "_SSRTextureUAV", m_ssrResult);
 

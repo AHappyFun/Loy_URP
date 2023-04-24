@@ -127,10 +127,6 @@ MonoBehaviour:
   renderPassEvent: 450
   m_ssrConfig: {fileID: 0}
   SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
-  SSRMaxRayMarchStep: 128
-  SSRMaxRayMarchDistance: 200
-  SSRMaxRayMarchStepSize: 0.001
-  SSRDepthThickness: 1
 --- !u!114 &7347688058357261118
 MonoBehaviour:
   m_ObjectHideFlags: 0

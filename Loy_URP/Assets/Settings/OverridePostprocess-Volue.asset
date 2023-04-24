@@ -130,7 +130,7 @@ MonoBehaviour:
     m_Value: 5
   Samples:
     m_OverrideState: 1
-    m_Value: 8
+    m_Value: 20
   DirectLightStrength:
     m_OverrideState: 0
     m_Value: 0.2

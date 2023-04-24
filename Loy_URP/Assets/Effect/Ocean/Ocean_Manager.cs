@@ -13,7 +13,8 @@ public class Ocean_Manager : MonoBehaviour
     public enum ReflectMode
     {
         PlanarReflect,
-        SSR
+        SSR,
+        None
     };
     
     private Material oceanMat;
@@ -25,15 +26,22 @@ public class Ocean_Manager : MonoBehaviour
     
     private Texture2D _sssTexture;
     private static readonly int AbsorptionScatteringLUT = Shader.PropertyToID("_AbsorptionScatteringLUT");
-    
-    
+
+    //private CommandBuffer cmdBuffer;
 
     private void OnEnable()
     {
         oceanMat = GetComponent<MeshRenderer>().sharedMaterial;
         
         GenerateSSSColorLUT();
+
+       // cmdBuffer = new CommandBuffer();
     }
+
+    //private void OnDestroy()
+    //{
+    //    cmdBuffer.Release();
+    //}
 
     private void Update()
     {
@@ -41,12 +49,19 @@ public class Ocean_Manager : MonoBehaviour
         {
             CoreUtils.SetKeyword(oceanMat, "_SSRREFLECT", true);
             CoreUtils.SetKeyword(oceanMat, "_REFLECTION_PLANARREFLECTION", false);
+            //oceanMat.SetFloat("_ReflectMode", 1);
         }
-        else
+        else if(rfmode == ReflectMode.PlanarReflect)
         {
             CoreUtils.SetKeyword(oceanMat, "_SSRREFLECT", false);
             CoreUtils.SetKeyword(oceanMat, "_REFLECTION_PLANARREFLECTION", true);
+            //oceanMat.SetFloat("_ReflectMode", 0);
         }
+        else
+        {
+            //oceanMat.SetFloat("_ReflectMode", 2);
+        }
+        //cmdBuffer.
     }
 
     void GenerateSSSColorLUT()
