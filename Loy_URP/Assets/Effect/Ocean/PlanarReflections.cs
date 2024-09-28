@@ -8,6 +8,7 @@ namespace UnityEngine.Rendering.Universal
     [ExecuteAlways]
     public class PlanarReflections : MonoBehaviour
     {
+        
         [Serializable]
         public enum ResolutionMulltiplier
         {
@@ -287,5 +288,7 @@ namespace UnityEngine.Rendering.Universal
                 QualitySettings.lodBias = _lodBias;
             }
         }
+           
     }
+ 
 }
