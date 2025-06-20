@@ -65,7 +65,8 @@ public class SSRRenderPass : ScriptableRenderPass
 
     public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
     {
-        
+        //可以配置需要什么图，深度、法线、MotionVector、Color
+        ConfigureInput(ScriptableRenderPassInput.Normal); // Require depth
     }
 
     public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
