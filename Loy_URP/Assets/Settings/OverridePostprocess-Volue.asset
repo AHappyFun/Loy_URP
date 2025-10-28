@@ -28,6 +28,28 @@ MonoBehaviour:
   DepthThickness:
     m_OverrideState: 1
     m_Value: 1
+--- !u!114 &-8734475029538413446
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9cdde7787ad84f46a6b4d61967c2609a, type: 3}
+  m_Name: GAEARadialBlur
+  m_EditorClassIdentifier: 
+  active: 0
+  Center:
+    m_OverrideState: 1
+    m_Value: {x: 0.5, y: 0.5}
+  BlurRadius:
+    m_OverrideState: 1
+    m_Value: 0
+  Iteration:
+    m_OverrideState: 1
+    m_Value: 10
 --- !u!114 &-7893295128165547882
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -179,9 +201,7 @@ MonoBehaviour:
   - {fileID: -7893295128165547882}
   - {fileID: -7011558710299706105}
   - {fileID: -6304108042364094126}
-  - {fileID: -4082704151588333976}
-  - {fileID: 4618927878840020067}
-  - {fileID: -8828187717935439902}
+  - {fileID: -8734475029538413446}
 --- !u!114 &849379129802519247
 MonoBehaviour:
   m_ObjectHideFlags: 3
