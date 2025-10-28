@@ -46,10 +46,10 @@ MonoBehaviour:
     m_Value: {x: 0.5, y: 0.5}
   BlurRadius:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 0.006
   Iteration:
     m_OverrideState: 1
-    m_Value: 10
+    m_Value: 6.3
 --- !u!114 &-7893295128165547882
 MonoBehaviour:
   m_ObjectHideFlags: 3
