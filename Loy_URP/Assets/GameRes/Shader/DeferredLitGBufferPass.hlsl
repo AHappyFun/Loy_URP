@@ -120,9 +120,9 @@ inline void InitSurfaceData(float2 uv, out LoySurfaceData outSurface)
 {
     //表面
     half4 albedoAlpha = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv);
-    outSurface.alpha = albedoAlpha * _BaseColor.a;
+    outSurface.alpha = albedoAlpha.a * _BaseColor.a;
 #ifdef _ALPHATEST_ON
-    clip(alpha - cutoff);
+    clip(outSurface.alpha - _Cutoff);
  #endif
     outSurface.albedo = albedoAlpha.rgb * _BaseColor.rgb;
 
