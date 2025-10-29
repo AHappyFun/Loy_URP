@@ -110,10 +110,7 @@ namespace UnityEngine.Rendering.Universal
         InvokeOnRenderObjectCallbackPass m_OnRenderObjectCallbackPass;
         FinalBlitPass m_FinalBlitPass;
         CapturePass m_CapturePass;
-#if ENABLE_VR && ENABLE_XR_MODULE
-        XROcclusionMeshPass m_XROcclusionMeshPass;
-        CopyDepthPass m_XRCopyDepthPass;
-#endif
+
 #if UNITY_EDITOR
         CopyDepthPass m_FinalDepthCopyPass;
 #endif
@@ -170,9 +167,6 @@ namespace UnityEngine.Rendering.Universal
             // Query and cache runtime platform info first before setting up URP.
             PlatformAutoDetect.Initialize();
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            Experimental.Rendering.XRSystem.Initialize(XRPassUniversal.Create, data.xrSystemData.shaders.xrOcclusionMeshPS, data.xrSystemData.shaders.xrMirrorViewPS);
-#endif
             m_BlitMaterial = CoreUtils.CreateEngineMaterial(data.shaders.coreBlitPS);
             m_BlitHDRMaterial = CoreUtils.CreateEngineMaterial(data.shaders.blitHDROverlay);
             m_CopyDepthMaterial = CoreUtils.CreateEngineMaterial(data.shaders.copyDepthPS);
@@ -206,12 +200,6 @@ namespace UnityEngine.Rendering.Universal
 
             this.stripShadowsOffVariants = true;
             this.stripAdditionalLightOffVariants = true;
-#if ENABLE_VR && ENABLE_VR_MODULE
-#if PLATFORM_WINRT || PLATFORM_ANDROID
-            // AdditionalLightOff variant is available on HL&Quest platform due to performance consideration.
-            this.stripAdditionalLightOffVariants = !PlatformAutoDetect.isXRMobile;
-#endif
-#endif
 
             ForwardLights.InitParams forwardInitParams;
             forwardInitParams.lightCookieManager = m_LightCookieManager;
@@ -234,11 +222,6 @@ namespace UnityEngine.Rendering.Universal
             m_MainLightShadowCasterPass = new MainLightShadowCasterPass(RenderPassEvent.BeforeRenderingShadows);
             m_AdditionalLightsShadowCasterPass = new AdditionalLightsShadowCasterPass(RenderPassEvent.BeforeRenderingShadows);
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            m_XROcclusionMeshPass = new XROcclusionMeshPass(RenderPassEvent.BeforeRenderingOpaques);
-            // Schedule XR copydepth right after m_FinalBlitPass
-            m_XRCopyDepthPass = new CopyDepthPass(RenderPassEvent.AfterRendering + k_AfterFinalBlitPassQueueOffset, m_CopyDepthMaterial);
-#endif
             m_DepthPrepass = new DepthOnlyPass(RenderPassEvent.BeforeRenderingPrePasses, RenderQueueRange.opaque, data.opaqueLayerMask);
             m_DepthNormalPrepass = new DepthNormalOnlyPass(RenderPassEvent.BeforeRenderingPrePasses, RenderQueueRange.opaque, data.opaqueLayerMask);
 
@@ -729,11 +712,6 @@ namespace UnityEngine.Rendering.Universal
             // Todo seems like with mrt depth is not taken from first target
             createDepthTexture |= (renderingLayerProvidesRenderObjectPass);
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            // URP can't handle msaa/size mismatch between depth RT and color RT(for now we create intermediate textures to ensure they match)
-            if (cameraData.xr.enabled)
-                createColorTexture |= createDepthTexture;
-#endif
 #if UNITY_ANDROID || UNITY_WEBGL
             // GLES can not use render texture's depth buffer with the color buffer of the backbuffer
             // in such case we create a color texture for it too.
@@ -775,10 +753,7 @@ namespace UnityEngine.Rendering.Universal
                 createDepthTexture |= createColorTexture;
 
                 RenderTargetIdentifier targetId = BuiltinRenderTextureType.CameraTarget;
-#if ENABLE_VR && ENABLE_XR_MODULE
-                if (cameraData.xr.enabled)
-                    targetId = cameraData.xr.renderTarget;
-#endif
+
                 if (m_XRTargetHandleAlias == null)
                 {
                     m_XRTargetHandleAlias = RTHandles.Alloc(targetId);
@@ -795,9 +770,6 @@ namespace UnityEngine.Rendering.Universal
                 m_RenderOpaqueForwardPass.m_IsActiveTargetBackBuffer = !intermediateRenderTexture;
                 m_RenderTransparentForwardPass.m_IsActiveTargetBackBuffer = !intermediateRenderTexture;
                 m_DrawSkyboxPass.m_IsActiveTargetBackBuffer = !intermediateRenderTexture;
-#if ENABLE_VR && ENABLE_XR_MODULE
-                m_XROcclusionMeshPass.m_IsActiveTargetBackBuffer = !intermediateRenderTexture;
-#endif
 
                 m_ActiveCameraColorAttachment = createColorTexture ? m_ColorBufferSystem.PeekBackBuffer() : m_XRTargetHandleAlias;
                 m_ActiveCameraDepthAttachment = createDepthTexture ? m_CameraDepthAttachment : m_XRTargetHandleAlias;
@@ -1040,11 +1012,6 @@ namespace UnityEngine.Rendering.Universal
                 EnqueuePass(colorGradingLutPass);
             }
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            if (cameraData.xr.hasValidOcclusionMesh)
-                EnqueuePass(m_XROcclusionMeshPass);
-#endif
-
             bool lastCameraInTheStack = cameraData.resolveFinalTarget;
 
             if (this.renderingModeActual == RenderingMode.Deferred)
@@ -1066,12 +1033,6 @@ namespace UnityEngine.Rendering.Universal
 
                 // make sure we store the depth only if following passes need it.
                 RenderBufferStoreAction opaquePassDepthStoreAction = (copyColorPass || requiresDepthCopyPass || !lastCameraInTheStack) ? RenderBufferStoreAction.Store : RenderBufferStoreAction.DontCare;
-#if ENABLE_VR && ENABLE_XR_MODULE
-                if (cameraData.xr.enabled && cameraData.xr.copyDepth)
-                {
-                    opaquePassDepthStoreAction = RenderBufferStoreAction.Store;
-                }
-#endif
 
                 // handle multisample depth resolve by setting the appropriate store actions if supported
                 if (requiresDepthCopyPass && cameraTargetDescriptor.msaaSamples > 1 && RenderingUtils.MultisampleDepthResolveSupported())
@@ -1294,20 +1255,6 @@ namespace UnityEngine.Rendering.Universal
                     EnqueuePass(m_DrawOverlayUIPass);
                 }
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-                if (cameraData.xr.enabled)
-                {
-                    // active depth is depth target, we don't need a blit pass to resolve
-                    bool depthTargetResolved = m_ActiveCameraDepthAttachment.nameID == cameraData.xr.renderTarget;
-
-                    if (!depthTargetResolved && cameraData.xr.copyDepth)
-                    {
-                        m_XRCopyDepthPass.Setup(m_ActiveCameraDepthAttachment, m_XRTargetHandleAlias);
-                        m_XRCopyDepthPass.CopyToDepth = true;
-                        EnqueuePass(m_XRCopyDepthPass);
-                    }
-                }
-#endif
             }
             // stay in RT so we resume rendering on stack after post-processing
             else if (applyPostProcessing)
@@ -1586,13 +1533,6 @@ namespace UnityEngine.Rendering.Universal
             bool isOffscreenRender = cameraData.targetTexture != null && !isSceneViewCamera;
             bool isCapturing = cameraData.captureActions != null;
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            if (cameraData.xr.enabled)
-            {
-                isScaledRender = false;
-                isCompatibleBackbufferTextureDimension = cameraData.xr.renderTargetDesc.dimension == cameraTargetDescriptor.dimension;
-            }
-#endif
             bool postProcessEnabled = cameraData.postProcessEnabled && m_PostProcessPasses.isCreated;
             bool requiresBlitForOffscreenCamera = postProcessEnabled || cameraData.requiresOpaqueTexture || requiresExplicitMsaaResolve || !cameraData.isDefaultViewport;
             if (isOffscreenRender)

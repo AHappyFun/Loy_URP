@@ -319,14 +319,6 @@ namespace UnityEngine.Rendering.Universal
                 m_PostProcessPasses.colorGradingLutPass.Render(renderGraph, out frameResources.internalColorLut, ref renderingData);
             }
 
-#if ENABLE_VR && ENABLE_XR_MODULE
-            if (renderingData.cameraData.xr.hasValidOcclusionMesh)
-            {
-                m_XROcclusionMeshPass.m_IsActiveTargetBackBuffer = m_TargetIsBackbuffer;
-                m_XROcclusionMeshPass.Render(renderGraph, frameResources.cameraColor, frameResources.cameraDepth, ref renderingData);
-            }
-#endif
-
             if (this.renderingModeActual == RenderingMode.Deferred)
             {
                 m_DeferredLights.Setup(m_AdditionalLightsShadowCasterPass);
