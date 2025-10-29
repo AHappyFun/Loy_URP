@@ -8,17 +8,17 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Hair
-  m_Shader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
+  m_Shader: {fileID: 4800000, guid: 4e6bd157faf9b2e42996091e9b57c002, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
+  m_ValidKeywords:
+  - _NORMAL_MAP
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap:
-    RenderType: Opaque
+  stringTagMap: {}
   disabledShaderPasses:
   - DistortionVectors
   - TransparentDepthPrepass
@@ -233,8 +233,10 @@ Material:
     - _BlendOp: 0
     - _Brightness: 1.72
     - _BumpScale: 1
+    - _CastShadow: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
+    - _Clipping: 0
     - _CoatMask: 0
     - _Cull: 2
     - _CullMode: 2
@@ -270,6 +272,7 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _Edge: 0.145
+    - _EmissionLable: 0
     - _EmissiveColorMode: 1
     - _EnableBlendModePreserveSpecularLighting: 1
     - _EnableFogOnTransparent: 1
@@ -299,11 +302,17 @@ Material:
     - _IridescenceMask: 1
     - _IridescenceThickness: 1
     - _LinkDetailsWithBase: 1
+    - _MainTexLable: 0
+    - _MaskLable: 0
     - _MaterialID: 1
+    - _MaterialSettingLable: 0
     - _Metallic: 0
     - _Mode: 0
+    - _NormalMapLable: 0
     - _NormalMapSpace: 0
+    - _NormalMapToggle: 1
     - _NormalScale: 1
+    - _Occlusion: 1
     - _OcclusionStrength: 1
     - _Opacity: 10
     - _OutLineSize: 0.002
@@ -315,6 +324,7 @@ Material:
     - _PPDPrimitiveWidth: 1
     - _Parallax: 0.02
     - _PreRefractionPass: 0
+    - _PremulAlpha: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _ReceivesSSR: 1
@@ -355,6 +365,7 @@ Material:
     - _Thickness: 1
     - _ThicknessMultiplier: 1
     - _TransmissionEnable: 1
+    - _Transparent: 0
     - _TransparentBackfaceEnable: 0
     - _TransparentDepthPostpassEnable: 0
     - _TransparentDepthPrepassEnable: 0
