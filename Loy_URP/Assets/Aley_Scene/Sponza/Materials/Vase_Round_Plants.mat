@@ -309,7 +309,7 @@ Material:
     - _NormalMapSpace: 0
     - _NormalMapToggle: 1
     - _NormalScale: 1
-    - _Occlusion: 0
+    - _Occlusion: 1
     - _OcclusionStrength: 0.5
     - _OpaqueCullMode: 2
     - _PPDLodThreshold: 5

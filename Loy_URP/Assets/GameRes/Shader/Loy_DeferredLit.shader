@@ -73,6 +73,7 @@ Shader "Loy/DeferredLit"
             // dont support Desktop OpenGL, OpenGL ES 3.0, WebGL 2.0.
             #pragma exclude_renderers gles3 glcore
 
+			#pragma multi_compile _ LIGHTMAP_ON
             #pragma multi_compile _ _ALPHATEST_ON
             #pragma multi_compile _ _NORMAL_MAP
 
@@ -89,6 +90,36 @@ Shader "Loy/DeferredLit"
             ENDHLSL
 
         }
+
+		Pass
+		{
+			Name "ShadowCaster"
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
+
+            ZWrite On
+            ZTest LEqual
+            ColorMask 0
+            Cull[_Cull]
+
+            HLSLPROGRAM
+            #pragma target 3.0
+
+            //需要支持AlphaTest的Shadow
+		 	#pragma multi_compile _ _ALPHATEST_ON
+            #pragma multi_compile_instancing
+            //需要支持LOD_CROSS
+            //pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
+
+            #pragma vertex StandardShadowPassVertex
+            #pragma fragment StandardShadowPassFragment
+
+            #include "StandardShadowPass.hlsl"
+
+            ENDHLSL
+		}
     }
 
     FallBack "Hidden/Universal Render Pipeline/FallbackError"

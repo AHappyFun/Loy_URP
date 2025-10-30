@@ -333,7 +333,7 @@ Material:
     - _NormalMapSpace: 0
     - _NormalMapToggle: 1
     - _NormalScale: 0.5
-    - _Occlusion: 0.05
+    - _Occlusion: 1
     - _OcclusionStrength: 0.8
     - _OpaqueCullMode: 2
     - _PPDLodThreshold: 5
