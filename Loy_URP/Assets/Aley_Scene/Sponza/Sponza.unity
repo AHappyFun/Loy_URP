@@ -133,7 +133,6 @@ GameObject:
   m_Component:
   - component: {fileID: 25529675}
   - component: {fileID: 25529677}
-  - component: {fileID: 25529676}
   - component: {fileID: 25529678}
   m_Layer: 0
   m_Name: Point Light (15)
@@ -157,58 +156,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &25529676
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 25529674}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 25529677}
-  parentGameObject: {fileID: 25529674}
-  position: {x: 1.387, y: 4.537, z: -4.936}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &25529677
 Light:
   m_ObjectHideFlags: 0
@@ -304,7 +251,6 @@ GameObject:
   m_Component:
   - component: {fileID: 31307826}
   - component: {fileID: 31307827}
-  - component: {fileID: 31307828}
   - component: {fileID: 31307829}
   m_Layer: 0
   m_Name: Point Light (7)
@@ -390,58 +336,6 @@ Light:
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
   m_ShadowAngle: 0
---- !u!114 &31307828
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 31307825}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 31307827}
-  parentGameObject: {fileID: 31307825}
-  position: {x: -1.542, y: 1.238, z: 4.815}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &31307829
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -475,7 +369,6 @@ GameObject:
   m_Component:
   - component: {fileID: 68405943}
   - component: {fileID: 68405942}
-  - component: {fileID: 68405944}
   - component: {fileID: 68405945}
   m_Layer: 0
   m_Name: Point Light (1)
@@ -502,7 +395,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize: 10
   m_Shadows:
-    m_Type: 2
+    m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -541,7 +434,7 @@ Light:
   m_BounceIntensity: 2
   m_ColorTemperature: 6570
   m_UseColorTemperature: 0
-  m_BoundingSphereOverride: {x: 4.64e-43, y: 6e-44, z: 5.6e-44, w: 1.3661e-41}
+  m_BoundingSphereOverride: {x: 0, y: NaN, z: NaN, w: -2.2070887e+30}
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
@@ -561,58 +454,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &68405944
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 68405941}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 68405942}
-  parentGameObject: {fileID: 31307825}
-  position: {x: 1.584, y: 1.19, z: 4.822}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &68405945
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -646,7 +487,6 @@ GameObject:
   m_Component:
   - component: {fileID: 395408011}
   - component: {fileID: 395408013}
-  - component: {fileID: 395408012}
   - component: {fileID: 395408014}
   m_Layer: 0
   m_Name: Point Light (14)
@@ -670,58 +510,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &395408012
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 395408010}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 395408013}
-  parentGameObject: {fileID: 395408010}
-  position: {x: 1.387, y: 4.537, z: -1.638}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &395408013
 Light:
   m_ObjectHideFlags: 0
@@ -3891,7 +3679,6 @@ GameObject:
   m_Component:
   - component: {fileID: 635110210}
   - component: {fileID: 635110211}
-  - component: {fileID: 635110212}
   - component: {fileID: 635110213}
   m_Layer: 0
   m_Name: Point Light (6)
@@ -3977,58 +3764,6 @@ Light:
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
   m_ShadowAngle: 0
---- !u!114 &635110212
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 635110209}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 635110211}
-  parentGameObject: {fileID: 635110209}
-  position: {x: -1.542, y: 1.238, z: 1.55}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &635110213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4062,7 +3797,6 @@ GameObject:
   m_Component:
   - component: {fileID: 663517247}
   - component: {fileID: 663517248}
-  - component: {fileID: 663517249}
   - component: {fileID: 663517250}
   m_Layer: 0
   m_Name: Point Light (5)
@@ -4148,58 +3882,6 @@ Light:
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
   m_ShadowAngle: 0
---- !u!114 &663517249
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 663517246}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 663517248}
-  parentGameObject: {fileID: 31307825}
-  position: {x: 1.617, y: 1.195, z: 1.631}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &663517250
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5300,7 +4982,6 @@ GameObject:
   m_Component:
   - component: {fileID: 705868816}
   - component: {fileID: 705868815}
-  - component: {fileID: 705868817}
   - component: {fileID: 705868818}
   m_Layer: 0
   m_Name: Point Light (2)
@@ -5386,58 +5067,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &705868817
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 705868814}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 705868815}
-  parentGameObject: {fileID: 31307825}
-  position: {x: 1.562, y: 1.308, z: -4.931}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &705868818
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5471,7 +5100,6 @@ GameObject:
   m_Component:
   - component: {fileID: 822469434}
   - component: {fileID: 822469436}
-  - component: {fileID: 822469435}
   - component: {fileID: 822469437}
   m_Layer: 0
   m_Name: Point Light (9)
@@ -5495,58 +5123,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &822469435
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 822469433}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 822469436}
-  parentGameObject: {fileID: 822469433}
-  position: {x: -1.403, y: 4.537, z: -1.913}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &822469436
 Light:
   m_ObjectHideFlags: 0
@@ -5649,7 +5225,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &955402222
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5727,10 +5303,10 @@ Light:
   m_Lightmapping: 1
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
-  m_BounceIntensity: 3
+  m_BounceIntensity: 5
   m_ColorTemperature: 6570
   m_UseColorTemperature: 0
-  m_BoundingSphereOverride: {x: 0, y: 1.18e-43, z: 0, w: 1.18e-43}
+  m_BoundingSphereOverride: {x: 0, y: 9.1835e-41, z: 0, w: -2.0642783e+30}
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
@@ -6361,7 +5937,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1083582740}
   - component: {fileID: 1083582742}
-  - component: {fileID: 1083582741}
   - component: {fileID: 1083582743}
   m_Layer: 0
   m_Name: Point Light (13)
@@ -6385,58 +5960,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1083582741
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1083582739}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1083582742}
-  parentGameObject: {fileID: 1083582739}
-  position: {x: 1.387, y: 4.537, z: 1.634}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &1083582742
 Light:
   m_ObjectHideFlags: 0
@@ -6532,7 +6055,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1084916879}
   - component: {fileID: 1084916881}
-  - component: {fileID: 1084916880}
   - component: {fileID: 1084916882}
   m_Layer: 0
   m_Name: Point Light (10)
@@ -6556,58 +6078,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1084916880
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1084916878}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1084916881}
-  parentGameObject: {fileID: 1084916878}
-  position: {x: -1.403, y: 4.537, z: 1.491}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &1084916881
 Light:
   m_ObjectHideFlags: 0
@@ -10565,7 +10035,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1286174797}
   - component: {fileID: 1286174799}
-  - component: {fileID: 1286174798}
   - component: {fileID: 1286174800}
   m_Layer: 0
   m_Name: Point Light (8)
@@ -10589,58 +10058,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1286174798
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1286174796}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1286174799}
-  parentGameObject: {fileID: 1286174796}
-  position: {x: -1.403, y: 4.537, z: -4.931}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &1286174799
 Light:
   m_ObjectHideFlags: 0
@@ -10726,6 +10143,124 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!1 &1322270052
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1322270055}
+  - component: {fileID: 1322270054}
+  - component: {fileID: 1322270053}
+  m_Layer: 0
+  m_Name: Directional Light (3)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1322270053
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1322270052}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_LightLayerMask: 1
+  m_RenderingLayers: 1
+  m_CustomShadowLayers: 0
+  m_ShadowLayerMask: 1
+  m_ShadowRenderingLayers: 1
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+--- !u!108 &1322270054
+Light:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1322270052}
+  m_Enabled: 1
+  serializedVersion: 10
+  m_Type: 1
+  m_Shape: 0
+  m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
+  m_Intensity: 8
+  m_Range: 10
+  m_SpotAngle: 30
+  m_InnerSpotAngle: 21.80208
+  m_CookieSize: 10
+  m_Shadows:
+    m_Type: 2
+    m_Resolution: -1
+    m_CustomResolution: -1
+    m_Strength: 1
+    m_Bias: 0.02
+    m_NormalBias: 0.1
+    m_NearPlane: 0.1
+    m_CullingMatrixOverride:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_UseCullingMatrixOverride: 0
+  m_Cookie: {fileID: 0}
+  m_DrawHalo: 0
+  m_Flare: {fileID: 0}
+  m_RenderMode: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingLayerMask: 1
+  m_Lightmapping: 1
+  m_LightShadowCasterMode: 0
+  m_AreaSize: {x: 1, y: 1}
+  m_BounceIntensity: 5
+  m_ColorTemperature: 6570
+  m_UseColorTemperature: 0
+  m_BoundingSphereOverride: {x: 0, y: 9.1835e-41, z: 0, w: -2.0642783e+30}
+  m_UseBoundingSphereOverride: 0
+  m_UseViewFrustumForShadowCasterCull: 1
+  m_ShadowRadius: 0
+  m_ShadowAngle: 0
+--- !u!4 &1322270055
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1322270052}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.56885916, y: -0.22798721, z: 0.16796389, w: 0.7721458}
+  m_LocalPosition: {x: 0.021436691, y: 0.9757888, z: -1.991823}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 72.76, y: -32.9, z: 0}
 --- !u!1 &1327991922
 GameObject:
   m_ObjectHideFlags: 0
@@ -10860,7 +10395,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8894048946918710641, guid: 95bb2a04d0e84e84180dfc3eaef1db1d, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -8894048946918710641, guid: 95bb2a04d0e84e84180dfc3eaef1db1d, type: 3}
       propertyPath: m_StaticEditorFlags
@@ -13706,7 +13241,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1492201232}
   - component: {fileID: 1492201231}
-  - component: {fileID: 1492201233}
   - component: {fileID: 1492201234}
   m_Layer: 0
   m_Name: Point Light
@@ -13792,58 +13326,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1492201233
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1492201230}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1492201231}
-  parentGameObject: {fileID: 1492201230}
-  position: {x: -1.488, y: 1.238, z: -1.854}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &1492201234
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13877,7 +13359,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1555278001}
   - component: {fileID: 1555278003}
-  - component: {fileID: 1555278002}
   - component: {fileID: 1555278004}
   m_Layer: 0
   m_Name: Point Light (11)
@@ -13901,58 +13382,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1555278002
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1555278000}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1555278003}
-  parentGameObject: {fileID: 1555278000}
-  position: {x: -1.403, y: 4.537, z: 4.792}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &1555278003
 Light:
   m_ObjectHideFlags: 0
@@ -14048,7 +13477,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1581192868}
   - component: {fileID: 1581192869}
-  - component: {fileID: 1581192870}
   - component: {fileID: 1581192871}
   m_Layer: 0
   m_Name: Point Light (4)
@@ -14134,58 +13562,6 @@ Light:
   m_UseViewFrustumForShadowCasterCull: 1
   m_ShadowRadius: 0
   m_ShadowAngle: 0
---- !u!114 &1581192870
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1581192867}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1581192869}
-  parentGameObject: {fileID: 1581192867}
-  position: {x: 1.617, y: 1.195, z: -1.635}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &1581192871
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -17479,7 +16855,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1828056932}
   - component: {fileID: 1828056931}
-  - component: {fileID: 1828056933}
   - component: {fileID: 1828056934}
   m_Layer: 0
   m_Name: Point Light (3)
@@ -17565,58 +16940,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1828056933
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1828056930}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1828056931}
-  parentGameObject: {fileID: 31307825}
-  position: {x: -1.545, y: 1.353, z: -4.931}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!114 &1828056934
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18523,7 +17846,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1911653402}
   - component: {fileID: 1911653404}
-  - component: {fileID: 1911653403}
   - component: {fileID: 1911653405}
   m_Layer: 0
   m_Name: Point Light (12)
@@ -18547,58 +17869,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1625852243}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1911653403
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1911653401}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 38989ca1f0525704d8dc063137548e96, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  lightType: 2
-  lastLightType: 2
-  lightTypeMA: 0
-  calculationMode: 0
-  tracePointSettingType: 0
-  lightMode: 1
-  shadowmaskMode: 0
-  targetLight: {fileID: 1911653404}
-  parentGameObject: {fileID: 1911653401}
-  position: {x: 1.387, y: 4.537, z: 4.792}
-  forward: {x: 0, y: 0, z: 1}
-  saveNearbyProbes: 0
-  saveRadius: 0
-  range: 0
-  useSourceParameters: 0
-  reverseDirection: 0
-  angle: 0
-  customTracePoints: 0
-  accurateTrace: 0
-  accuracy: 0
-  lastAccuracy: 0
-  isDirectional: 0
-  tracePointSize: 0.3
-  lastTracePointSize: 0
-  lastMesh: {fileID: 0}
-  tracePoints: []
-  tracePointsData: []
-  mainTracePoint:
-    position: {x: 0, y: 0, z: 0}
-    forward: {x: 0, y: 0, z: 0}
-    name: 
-    pointGameObject: {fileID: 0}
-  parentVolume: {fileID: 1132255679}
-  showOptionsInManagerWindow: 0
-  intensity: 3.46
-  resetEditor: 0
-  showLightOnScene: 0
-  saveOnOutOfRange: 0
-  isHDRP: 0
-  hdrpAreaSize: {x: 0, y: 0}
 --- !u!108 &1911653404
 Light:
   m_ObjectHideFlags: 0
@@ -19479,3 +18749,4 @@ SceneRoots:
   - {fileID: 1942996770}
   - {fileID: 1206273632}
   - {fileID: 955402224}
+  - {fileID: 1322270055}
