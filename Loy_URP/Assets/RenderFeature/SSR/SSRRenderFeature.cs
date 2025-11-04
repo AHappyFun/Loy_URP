@@ -13,6 +13,8 @@ public class SSRRenderFeature : ScriptableRendererFeature
         //RenderTargetIdentifier cameraColor;
         RenderTargetHandle ssrHandle;
         private RenderTargetIdentifier ssrTex;
+        RenderTargetHandle ssrHistoryHandle;
+        private RenderTargetIdentifier ssrHistoryTex;
 
         // settings
         public int maxSteps = 64;
@@ -25,6 +27,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
         {
             ssrMaterial = mat;
             ssrHandle.Init("_SSRResultTex");
+            ssrHistoryHandle.Init("_SSRHistoryTex");
         }
 
         public void Setup()
@@ -38,8 +41,10 @@ public class SSRRenderFeature : ScriptableRendererFeature
             desc.depthBufferBits = 0;
             desc.colorFormat = RenderTextureFormat.DefaultHDR;
             cmd.GetTemporaryRT(ssrHandle.id, desc, FilterMode.Bilinear);
+            cmd.GetTemporaryRT(ssrHistoryHandle.id, desc, FilterMode.Bilinear);
 
             ssrTex = new RenderTargetIdentifier(ssrHandle.id);
+            ssrHistoryTex = new RenderTargetIdentifier(ssrHistoryHandle.id);
 
             ConfigureTarget(ssrTex);
             ConfigureClear(ClearFlag.All, Color.clear);
@@ -76,6 +81,12 @@ public class SSRRenderFeature : ScriptableRendererFeature
 
 
             cmd.SetGlobalTexture(ssrHandle.id, ssrTex);
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+
+            cmd.Blit(ssrTex, ssrHistoryTex);
+            cmd.SetGlobalTexture(ssrHistoryHandle.id, ssrHistoryTex);
+
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 

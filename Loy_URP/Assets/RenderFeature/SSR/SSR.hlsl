@@ -215,7 +215,9 @@ float4 SSRRaymarch(float2 uv)
     maskOut *= hit;
 
 
-    return half4(currentScreenSpacePosition, maskOut, 0);
+    half3 ssrColor = SampleSceneColor(currentScreenSpacePosition);
+
+    return half4(ssrColor, maskOut);
 
 }
 

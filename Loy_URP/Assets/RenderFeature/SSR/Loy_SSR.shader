@@ -55,6 +55,7 @@ Shader "Loy/Feature/SSR"
             #pragma fragment frag
 
             TEXTURE2D_X(_SSRResultTex);
+            TEXTURE2D_X(_SSRHistoryTex);
             SAMPLER(sampler_LinearClamp);
 
             TEXTURE2D_X_HALF(_GBuffer0);
@@ -77,6 +78,11 @@ Shader "Loy/Feature/SSR"
                 return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
             }
 
+            float4 SampleSSR(float2 uv)
+            {
+                return SAMPLE_TEXTURE2D_X(_SSRResultTex, sampler_LinearClamp, uv);
+            }
+
             float3 BlurSSR(float2 baseUV, float roughness)
             {
                 float2 pixel = 1.0 / _ScreenParams.xy;
@@ -95,7 +101,7 @@ Shader "Loy/Feature/SSR"
                         float2 uv = baseUV + offset;
 
                         float w = exp(-dot(float2(x, y), float2(x, y)) * 0.5);
-                        sum += SampleSceneColor(uv) * w;
+                        sum += SampleSSR(uv) * w;
                         total += w;
                     }
                 }
@@ -117,8 +123,16 @@ Shader "Loy/Feature/SSR"
                 float ao = buffer1.a;
                 float metallic = buffer1.b;
 
-                float4 ssrRes = SAMPLE_TEXTURE2D_X(_SSRResultTex, sampler_LinearClamp, uv);
-                float3 ssrColor = BlurSSR(ssrRes.xy, roughness);
+
+                float4 ssrRes = SampleSSR(uv);
+                ssrRes.rgb = BlurSSR(uv, roughness);
+                float3 ssrColor = ssrRes;
+
+                //结合历史图，TAA抗闪烁
+                float3 lastFrameSSR = SAMPLE_TEXTURE2D_X(_SSRHistoryTex, sampler_LinearClamp, uv).rgb;
+                float confidence = ssrRes.a; // 命中可靠度
+                float stability = lerp(0.3, 0.95, confidence);
+                ssrColor = lerp(ssrColor, lastFrameSSR, stability);
 
                 float3 normalWS = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
                 float3 viewDirWS = normalize(_WorldSpaceCameraPos - TransformObjectToWorld(float3(0,0,0)));
@@ -127,7 +141,7 @@ Shader "Loy/Feature/SSR"
                 float3 F0 = lerp(0.04, ssrColor, metallic);
                 float3 fresnel = FresnelSchlick(NdotV, F0);
 
-                float mask =  ao * fresnel * ssrRes.b;
+                float mask =  ao * fresnel * ssrRes.a;
 
                 return float4(ssrColor.rgb, mask);
             }
