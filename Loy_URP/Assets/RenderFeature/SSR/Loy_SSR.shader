@@ -47,7 +47,7 @@ Shader "Loy/Feature/SSR"
         {
             Name "SSR Combine"
             ZTest Always Cull Off ZWrite Off
-            //Blend SrcAlpha OneMinusSrcAlpha
+            Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
             #include "SSR.hlsl"
@@ -77,6 +77,32 @@ Shader "Loy/Feature/SSR"
                 return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
             }
 
+            float3 BlurSSR(float2 baseUV, float roughness)
+            {
+                float2 pixel = 1.0 / _ScreenParams.xy;
+                float radius = roughness * 6; // 模糊范围随粗糙度增大
+
+                float3 sum = 0;
+                float total = 0;
+
+                [unroll]
+                for (int x = -1; x <= 1; x++)
+                {
+                    [unroll]
+                    for (int y = -1; y <= 1; y++)
+                    {
+                        float2 offset = float2(x, y) * pixel * radius;
+                        float2 uv = baseUV + offset;
+
+                        float w = exp(-dot(float2(x, y), float2(x, y)) * 0.5);
+                        sum += SampleSceneColor(uv) * w;
+                        total += w;
+                    }
+                }
+
+                return sum / total;
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
 
@@ -84,24 +110,26 @@ Shader "Loy/Feature/SSR"
 
                 float2 uv = IN.positionCS.xy / _ScaledScreenParams.xy;
 
-                float4 ssrUV = SAMPLE_TEXTURE2D_X(_SSRResultTex, sampler_LinearClamp, uv);
-                float3 ssrColor = SampleSceneColor(ssrUV.xy);
+                float4 buffer1 =  SAMPLE_TEXTURE2D_X(_GBuffer1, my_point_clamp_sampler, uv);
 
-                float3 sceneColor = SampleSceneColor(uv);
-                float3 buffer0 =  SAMPLE_TEXTURE2D_X(_GBuffer1, my_point_clamp_sampler, uv);
-                float3 buffer1 =  SAMPLE_TEXTURE2D_X(_GBuffer1, my_point_clamp_sampler, uv);
+                float roughness = buffer1.g;
+
+                float ao = buffer1.a;
+                float metallic = buffer1.b;
+
+                float4 ssrRes = SAMPLE_TEXTURE2D_X(_SSRResultTex, sampler_LinearClamp, uv);
+                float3 ssrColor = BlurSSR(ssrRes.xy, roughness);
 
                 float3 normalWS = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
                 float3 viewDirWS = normalize(_WorldSpaceCameraPos - TransformObjectToWorld(float3(0,0,0)));
                 float NdotV = saturate(dot(normalWS, viewDirWS));
 
-                float3 F0 = lerp(0.04, buffer0, buffer1.b);
+                float3 F0 = lerp(0.04, ssrColor, metallic);
                 float3 fresnel = FresnelSchlick(NdotV, F0);
 
-                float mask = (1 - buffer1.g) * fresnel;
-                //return fresnel.rrrr;
+                float mask =  ao * fresnel * ssrRes.b;
 
-                return float4(sceneColor * (1 - mask) + mask * ssrColor.rgb, 1);
+                return float4(ssrColor.rgb, mask);
             }
 
             ENDHLSL

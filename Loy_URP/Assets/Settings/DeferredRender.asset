@@ -240,7 +240,7 @@ MonoBehaviour:
     ssrMaterial: {fileID: 2100000, guid: a0b69173d7461ff418dbf3af528142a3, type: 2}
     passEvent: 240
     maxSteps: 200
-    stepSize: 0.08
+    stepSize: 0.2
 --- !u!114 &4936139588684103378
 MonoBehaviour:
   m_ObjectHideFlags: 0
