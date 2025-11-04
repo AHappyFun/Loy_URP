@@ -277,7 +277,7 @@ namespace UnityEngine.Rendering.Universal
             m_MotionVectorPass = new MotionVectorRenderPass(copyDepthEvent + 1, m_CameraMotionVecMaterial, m_ObjectMotionVecMaterial);
 
             m_DrawSkyboxPass = new DrawSkyboxPass(RenderPassEvent.BeforeRenderingSkybox);
-            m_CopyColorPass = new CopyColorPass(RenderPassEvent.AfterRenderingTransparents, m_SamplingMaterial, m_BlitMaterial);
+            m_CopyColorPass = new CopyColorPass(RenderPassEvent.AfterRenderingDeferredLights, m_SamplingMaterial, m_BlitMaterial);
 #if ADAPTIVE_PERFORMANCE_2_1_0_OR_NEWER
             if (needTransparencyPass)
 #endif
@@ -1098,18 +1098,18 @@ namespace UnityEngine.Rendering.Universal
             if (cameraData.renderType == CameraRenderType.Base && !requiresDepthPrepass && !requiresDepthCopyPass)
                 Shader.SetGlobalTexture("_CameraDepthTexture", SystemInfo.usesReversedZBuffer ? Texture2D.blackTexture : Texture2D.whiteTexture);
 
-            //if (copyColorPass)
-            //{
-            //    // TODO: Downsampling method should be stored in the renderer instead of in the asset.
-            //    // We need to migrate this data to renderer. For now, we query the method in the active asset.
-            //    Downsampling downsamplingMethod = UniversalRenderPipeline.asset.opaqueDownsampling;
-            //    var descriptor = cameraTargetDescriptor;
-            //    CopyColorPass.ConfigureDescriptor(downsamplingMethod, ref descriptor, out var filterMode);
+            if (copyColorPass)
+            {
+                // TODO: Downsampling method should be stored in the renderer instead of in the asset.
+                // We need to migrate this data to renderer. For now, we query the method in the active asset.
+                Downsampling downsamplingMethod = UniversalRenderPipeline.asset.opaqueDownsampling;
+                var descriptor = cameraTargetDescriptor;
+                CopyColorPass.ConfigureDescriptor(downsamplingMethod, ref descriptor, out var filterMode);
 //
-            //    RenderingUtils.ReAllocateIfNeeded(ref m_OpaqueColor, descriptor, filterMode, TextureWrapMode.Clamp, name: "_CameraOpaqueTexture");
-            //    m_CopyColorPass.Setup(m_ActiveCameraColorAttachment, m_OpaqueColor, downsamplingMethod);
-            //    EnqueuePass(m_CopyColorPass);
-            //}
+                RenderingUtils.ReAllocateIfNeeded(ref m_OpaqueColor, descriptor, filterMode, TextureWrapMode.Clamp, name: "_CameraOpaqueTexture");
+                m_CopyColorPass.Setup(m_ActiveCameraColorAttachment, m_OpaqueColor, downsamplingMethod);
+                EnqueuePass(m_CopyColorPass);
+            }
 
             // Motion vectors
             if (renderPassInputs.requiresMotionVectors)
@@ -1155,20 +1155,6 @@ namespace UnityEngine.Rendering.Universal
                 m_RenderTransparentForwardPass.ConfigureColorStoreAction(transparentPassColorStoreAction);
                 m_RenderTransparentForwardPass.ConfigureDepthStoreAction(transparentPassDepthStoreAction);
                 EnqueuePass(m_RenderTransparentForwardPass);
-            }
-            //CopyColor放在半透明之后
-            if (copyColorPass)
-            {
-                // TODO: Downsampling method should be stored in the renderer instead of in the asset.
-                // We need to migrate this data to renderer. For now, we query the method in the active asset.
-                Downsampling downsamplingMethod = UniversalRenderPipeline.asset.opaqueDownsampling;
-                var descriptor = cameraTargetDescriptor;
-                CopyColorPass.ConfigureDescriptor(downsamplingMethod, ref descriptor, out var filterMode);
-
-                RenderingUtils.ReAllocateIfNeeded(ref m_OpaqueColor, descriptor, filterMode, TextureWrapMode.Clamp, name: "_CameraOpaqueTexture");
-                m_CopyColorPass.Setup(m_ActiveCameraColorAttachment, m_OpaqueColor, downsamplingMethod);
-                m_CopyColorPass.renderPassEvent = RenderPassEvent.AfterRenderingTransparents;
-                EnqueuePass(m_CopyColorPass);
             }
 
             EnqueuePass(m_OnRenderObjectCallbackPass);

@@ -50,6 +50,34 @@ MonoBehaviour:
   Iteration:
     m_OverrideState: 1
     m_Value: 6.3
+--- !u!114 &-8320295854160828581
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4fc6eda0bb594936bdf389a5f4f9088b, type: 3}
+  m_Name: SSRConfig
+  m_EditorClassIdentifier: 
+  active: 1
+  enable:
+    m_OverrideState: 1
+    m_Value: 1
+  MaxRayStep:
+    m_OverrideState: 1
+    m_Value: 100
+  MaxRayDistance:
+    m_OverrideState: 1
+    m_Value: 200
+  StepSize:
+    m_OverrideState: 1
+    m_Value: 0.001
+  DepthThickness:
+    m_OverrideState: 1
+    m_Value: 1
 --- !u!114 &-7893295128165547882
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -202,6 +230,7 @@ MonoBehaviour:
   - {fileID: -7011558710299706105}
   - {fileID: -6304108042364094126}
   - {fileID: -8734475029538413446}
+  - {fileID: -8320295854160828581}
 --- !u!114 &849379129802519247
 MonoBehaviour:
   m_ObjectHideFlags: 3

@@ -31,6 +31,21 @@ MonoBehaviour:
   m_Active: 1
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: d46e7bbcb7764fa78c85a736400aa93d, type: 3}
+--- !u!114 &-2246465050184658640
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d641f507507a46a7be4b0f463f12f80f, type: 3}
+  m_Name: SSRCombineRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  renderPassEvent: 350
+  Shader: {fileID: 4800000, guid: 3f2b951b16784896a70c79306fdf6d62, type: 3}
 --- !u!114 &-395912316842763224
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -85,7 +100,9 @@ MonoBehaviour:
   - {fileID: -395912316842763224}
   - {fileID: 4041069810517058087}
   - {fileID: 4936139588684103378}
-  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb08044
+  - {fileID: 4245399114209149564}
+  - {fileID: -2246465050184658640}
+  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080447cc2315400b0ea3a30d1696bf0f3d2e0
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -206,6 +223,24 @@ MonoBehaviour:
   - {fileID: 2800000, guid: 58862f1308ff08345ab6700f0fd5c6dd, type: 3}
   - {fileID: 2800000, guid: 633194aa54cfa7c4290824f24b80639c, type: 3}
   - {fileID: 2800000, guid: 5a0de702ef6225a418b371066a53d00b, type: 3}
+--- !u!114 &4245399114209149564
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67ac33fd3070478291c12539dbb9fe51, type: 3}
+  m_Name: SSRRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  settings:
+    ssrMaterial: {fileID: 2100000, guid: a0b69173d7461ff418dbf3af528142a3, type: 2}
+    passEvent: 240
+    maxSteps: 200
+    stepSize: 0.08
 --- !u!114 &4936139588684103378
 MonoBehaviour:
   m_ObjectHideFlags: 0

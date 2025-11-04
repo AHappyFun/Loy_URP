@@ -242,7 +242,8 @@ LoyFragmentOutput GetGBuffer(Varyings input, LoySurfaceData surfaceData, LoyInpu
 
     half3 packedMetallic;
     packedMetallic.r = brdfData.reflectivity;
-    packedMetallic.gb = 0.0;
+    packedMetallic.g =  1 - surfaceData.smoothness;
+    packedMetallic.b = surfaceData.metallic;
 
 #if defined(LIGHTMAP_ON) && defined(_MIXED_LIGHTING_SUBTRACTIVE)
     materialFlags |= kMaterialFlagSubtractiveMixedLighting;
