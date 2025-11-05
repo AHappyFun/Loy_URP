@@ -6,11 +6,20 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
+// jitter dither map
+static half dither[16] = {
+    0.0, 0.5, 0.125, 0.625,
+    0.75, 0.25, 0.875, 0.375,
+    0.187, 0.687, 0.0625, 0.562,
+    0.937, 0.437, 0.812, 0.312
+};
+
 
 TEXTURE2D_X(_CameraOpaqueTexture);
 SAMPLER(sampler_CameraOpaqueTexture);
 TEXTURE2D_X_HALF(_GBuffer2);
 SAMPLER(sampler_GBuffer2);
+
 
 float4x4 _CameraView;
 float4x4 _CameraInvView;
@@ -22,6 +31,7 @@ float3 _WorldSpaceViewForward;
 int _SSRMaxSteps;
 float _SSRStepSize;
 //float _SSRThickness;
+int _Frame;
 #define minSmoothness 0.5
 #define binaryStepCount 16
 //int _SSRBinarySearch;
@@ -59,7 +69,7 @@ float3 SampleWorldNormal(float2 uv)
 }
 
 // ======================================================================
-// Ray March
+// Ray March  ViewPos 视角空间
 // ======================================================================
 
 float4 SSRRaymarch(float2 uv)
@@ -77,22 +87,15 @@ float4 SSRRaymarch(float2 uv)
 
     float3 worldPos = ReconstructWorldPos(uv, rawDepth);
     float3 viewPos = ReconstructViewPos(uv, rawDepth);
-    //对了
-    //return float4(viewPos, 1);
 
     //都需要转换到View
     float3 N = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
-    //N = TransformWorldToViewDir(N);
 
     float3 V = normalize(float3(worldPos.xyz) - _WorldSpaceCameraPos);
-    //V = mul(UNITY_MATRIX_V, V);
 
     //反射方向转换到View
     float3 R = normalize(reflect(V, N));
     R = mul(UNITY_MATRIX_V, R);
-
-    //对了
-    //return float4(R, 1);
 
     R.z *= -1;
     viewPos.z *= -1;
@@ -108,7 +111,31 @@ float4 SSRRaymarch(float2 uv)
     _SSRStepSize /= oneMinusViewReflectDot;
     thickness /= oneMinusViewReflectDot;
 
-    float3 hitColor = float3(0,0,0);
+    //Jitter优化 根据粗糙度和随机，调整步长的Scale，减少实际步数
+    float2 pixel = uv * _ScreenParams.xy; // tile noise pattern or scale to BlueNoise resolution
+
+    // 在 uv 上加一个基于帧数的偏移, halftone，TAA同理
+    int2 ditherCoord = int2(
+        fmod(pixel.x + _Frame * 1.3, 4),
+        fmod(pixel.y + _Frame * 2.1, 4)
+    );
+    //int2 ditherCoord = int2(fmod(pixel.x, 4), fmod(pixel.y, 4));
+
+    float ditherValue = dither[ditherCoord.x * 4 + ditherCoord.y]; // range 0..1
+
+    float roughness = 1 - smoothness;
+    float jitterAmp = lerp(0.25, 1.0, saturate(roughness)); // 粗糙度越大，jitter越强
+
+    //步长Scale通过Jitter随机
+    float stepJitter = 1.0 + ditherValue * 0.5 * jitterAmp;
+    //采样UV进行偏移
+    //dirJitterUV 其实就是把这种“方向抖动”转换成 UV 空间的偏移量，
+    //简单理解为：
+    //“在屏幕空间上，射线方向稍微歪一点。”
+    //通常 SSR 的光线是基于view-space 反射方向算的。
+    //要让它 jitter，有两种常见写法：ViewDir上直接加扰动(费) 、 在屏幕空间偏移UV
+    float2 jitterUVOffset = ditherValue * rcp(_ScreenParams.xy) * jitterAmp;
+
     float hit = 0.0;
     float maskOut = 1;
 
@@ -124,7 +151,7 @@ float4 SSRRaymarch(float2 uv)
 
     if(doRayMarch)
     {
-        float3 rayPer = R * _SSRStepSize;
+        float3 rayPer = R * _SSRStepSize * stepJitter;
         float deltaDepth = 0;
 
         [loop]
@@ -179,6 +206,9 @@ float4 SSRRaymarch(float2 uv)
 
             float4 clip = mul(_CameraProjection, float4(rayPos.x, -rayPos.y, -rayPos.z, 1));
             float2 ndc = clip.xy / clip.w;
+
+            ndc += jitterUVOffset;// jitter in screen space to break coherent misses
+
             float2 sampleUV = ndc * 0.5 + 0.5;
             currentScreenSpacePosition = sampleUV;
 

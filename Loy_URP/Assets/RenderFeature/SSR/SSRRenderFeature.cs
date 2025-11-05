@@ -74,6 +74,8 @@ public class SSRRenderFeature : ScriptableRendererFeature
             //ssrMaterial.SetFloat("_SSRThickness", thickness);
             //ssrMaterial.SetInt("_SSRBinarySearch", binarySearchSteps);
 
+            ssrMaterial.SetInt("_Frame", Time.frameCount % 1024);
+
 
             cmd.DrawProcedural(Matrix4x4.identity, ssrMaterial, 0, MeshTopology.Triangles, 3, 1);
             context.ExecuteCommandBuffer(cmd);
@@ -86,6 +88,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
 
             cmd.Blit(ssrTex, ssrHistoryTex);
             cmd.SetGlobalTexture(ssrHistoryHandle.id, ssrHistoryTex);
+
 
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
@@ -106,8 +109,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
         public RenderPassEvent passEvent = RenderPassEvent.AfterRenderingDeferredLights;
         public int maxSteps = 64;
         public float stepSize = 0.5f;
-        //public float thickness = 0.1f;
-        //public int binarySearch = 3;
+
     }
 
     public SSRSettings settings = new SSRSettings();
