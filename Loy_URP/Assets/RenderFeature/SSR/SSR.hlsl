@@ -30,11 +30,9 @@ float3 _WorldSpaceViewForward;
 
 int _SSRMaxSteps;
 float _SSRStepSize;
-//float _SSRThickness;
 int _Frame;
 #define minSmoothness 0.5
 #define binaryStepCount 16
-//int _SSRBinarySearch;
 
 // ======================================================================
 // Helpers

@@ -1,0 +1,56 @@
+// Hidden/HiZ/HiZBuild.compute
+// KCopyDepth: copy input depth texture -> DstMip (RFloat)
+// KBuildMip: build dst mip from src mip (2x2 max)
+
+#pragma kernel KCopyDepth
+
+Texture2D<float> _SrcDepthTexture; // bound in C# or using copy temp
+SamplerState sampler_linear_clamp;
+RWTexture2D<float> _FirstMip;
+
+[numthreads(8,8,1)]
+void KCopyDepth(uint3 id : SV_DispatchThreadID)
+{
+    uint2 xy = id.xy;
+    uint w, h;
+    _FirstMip.GetDimensions(w,h);
+    if (xy.x >= w || xy.y >= h) return;
+//
+    float2 uv = (float2(xy+ 0.5)) / float2(w, h);
+    float d = _SrcDepthTexture.SampleLevel(sampler_linear_clamp, uv, 0);
+    _FirstMip[int2(xy)] = d;
+}
+
+
+#pragma kernel KBuildMip
+
+Texture2D<float> _SrcMip;
+RWTexture2D<float> _DstMip;
+
+int SrcWidth;
+int SrcHeight;
+
+[numthreads(8,8,1)]
+void KBuildMip(uint3 id : SV_DispatchThreadID)
+{
+    uint dx = id.x;
+    uint dy = id.y;
+    uint dstW, dstH;
+    _DstMip.GetDimensions(dstW, dstH);
+    if (dx >= dstW || dy >= dstH) return;
+
+    // map dst texel to 2x2 block in src
+    int sx = int(dx) * 2;
+    int sy = int(dy) * 2;
+
+    float d00 = _SrcMip.Load(int3(sx, sy, 0));
+    float d10 = 0;
+    float d01 = 0;
+    float d11 = 0;
+    if (sx + 1 < SrcWidth) d10 = _SrcMip.Load(int3(sx + 1, sy, 0));
+    if (sy + 1 < SrcHeight) d01 = _SrcMip.Load(int3(sx, sy + 1, 0));
+    if (sx + 1 < SrcWidth && sy + 1 < SrcHeight) d11 = _SrcMip.Load(int3(sx + 1, sy + 1, 0));
+
+    float m = max(max(d00, d10), max(d01, d11));
+    _DstMip[int2(dx, dy)] = m;
+}
