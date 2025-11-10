@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: YCT_Feature_SSR
+  m_Name: Loy_Feature_SSR
   m_Shader: {fileID: 4800000, guid: 3f2b951b16784896a70c79306fdf6d62, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0

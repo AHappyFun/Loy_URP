@@ -1,4 +1,4 @@
-Shader "Loy/Feature/SSR_View"
+﻿Shader "Loy/Feature/SSR_DDA"
 {
     Properties
     {
@@ -10,12 +10,11 @@ Shader "Loy/Feature/SSR_View"
 
         Pass
         {
-            Name "SSR Compute"
+            Name "SSR_DDA Compute"
             ZTest Always Cull Off ZWrite Off
-            //Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
-            #include "SSR.hlsl"
+            #include "SSR_DDA.hlsl"
             #pragma vertex vert
             #pragma fragment frag
 
@@ -50,7 +49,7 @@ Shader "Loy/Feature/SSR_View"
             Blend SrcAlpha OneMinusSrcAlpha
 
             HLSLPROGRAM
-            #include "SSR.hlsl"
+            #include "SSR_DDA.hlsl"
             #pragma vertex vert
             #pragma fragment frag
 

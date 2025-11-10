@@ -1,0 +1,140 @@
+﻿using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+
+public class SSRDDARenderFeature : ScriptableRendererFeature
+{
+    class SSRDDAPass : ScriptableRenderPass
+    {
+
+        Material ssrMaterial;
+
+        RenderTargetHandle ssrHandle;
+        private RenderTargetIdentifier ssrTex;
+        RenderTargetHandle ssrHistoryHandle;
+        private RenderTargetIdentifier ssrHistoryTex;
+
+        // settings
+        public float maxDistance = 200;
+        public int maxSteps = 64;
+        public float thickness = 0.5f;
+
+        public RenderPassEvent passEventToUse = RenderPassEvent.AfterRenderingDeferredLights;
+
+        public SSRDDAPass(Material mat)
+        {
+            ssrMaterial = mat;
+            ssrHandle.Init("_SSRResultTex");
+            ssrHistoryHandle.Init("_SSRHistoryTex");
+        }
+
+        public void Setup()
+        {
+
+        }
+
+        public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
+        {
+            var desc = cameraTextureDescriptor;
+            desc.depthBufferBits = 0;
+            desc.colorFormat = RenderTextureFormat.DefaultHDR;
+            cmd.GetTemporaryRT(ssrHandle.id, desc, FilterMode.Bilinear);
+            cmd.GetTemporaryRT(ssrHistoryHandle.id, desc, FilterMode.Bilinear);
+
+            ssrTex = new RenderTargetIdentifier(ssrHandle.id);
+            ssrHistoryTex = new RenderTargetIdentifier(ssrHistoryHandle.id);
+
+            ConfigureTarget(ssrTex);
+            ConfigureClear(ClearFlag.All, Color.clear);
+        }
+
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            if (ssrMaterial == null) return;
+
+            var cmd = CommandBufferPool.Get("Loy_DDA_SSR Compute Pass");
+
+            // pass parameters
+            Camera cam = renderingData.cameraData.camera;
+            Matrix4x4 proj = renderingData.cameraData.GetGPUProjectionMatrix();
+            Matrix4x4 invProj = proj.inverse;
+            Matrix4x4 view = renderingData.cameraData.GetViewMatrix();
+            Matrix4x4 invView = view.inverse;
+
+            ssrMaterial.SetMatrix("_CameraProjection", proj);
+            ssrMaterial.SetMatrix("_CameraInvProjection", invProj);
+            ssrMaterial.SetMatrix("_CameraView", view);
+            ssrMaterial.SetMatrix("_CameraInvView", invView);
+            ssrMaterial.SetVector("_WorldSpaceViewForward", cam.transform.forward);
+
+            ssrMaterial.SetInt("_SSRMaxSteps", maxSteps);
+            ssrMaterial.SetFloat("_SSRMaxDistance", maxDistance);
+            ssrMaterial.SetFloat("_Thickness", thickness);
+
+            ssrMaterial.SetInt("_Frame", Time.frameCount % 1024);
+
+
+            cmd.DrawProcedural(Matrix4x4.identity, ssrMaterial, 0, MeshTopology.Triangles, 3, 1);
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+
+
+            cmd.SetGlobalTexture(ssrHandle.id, ssrTex);
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+
+            cmd.Blit(ssrTex, ssrHistoryTex);
+            cmd.SetGlobalTexture(ssrHistoryHandle.id, ssrHistoryTex);
+
+
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+
+            CommandBufferPool.Release(cmd);
+        }
+
+        public override void FrameCleanup(CommandBuffer cmd)
+        {
+            cmd.ReleaseTemporaryRT(ssrHandle.id);
+        }
+    }
+
+    [System.Serializable]
+    public class SSRSettings
+    {
+        public Material ssrMaterial = null;
+        public RenderPassEvent passEvent = RenderPassEvent.AfterRenderingDeferredLights;
+        public float maxDistance = 200;
+        public int maxSteps = 64;
+        public float thickness = 0.5f;
+
+    }
+
+    public SSRSettings settings = new SSRSettings();
+    SSRDDAPass _mSsrddaPass;
+
+    public override void Create()
+    {
+        if (settings.ssrMaterial == null)
+        {
+            Debug.LogWarning("SSRFeature: ssrMaterial is null.");
+            return;
+        }
+
+        _mSsrddaPass = new SSRDDAPass(settings.ssrMaterial)
+        {
+            renderPassEvent = settings.passEvent,
+            maxSteps = settings.maxSteps,
+            maxDistance = settings.maxDistance,
+            thickness = settings.thickness
+        };
+    }
+
+    // Inject the pass
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+    {
+        if (_mSsrddaPass == null) return;
+        _mSsrddaPass.Setup();
+        renderer.EnqueuePass(_mSsrddaPass);
+    }
+}
