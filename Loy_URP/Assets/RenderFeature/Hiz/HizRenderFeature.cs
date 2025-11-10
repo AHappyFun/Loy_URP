@@ -87,6 +87,7 @@ public class HizRenderFeature : ScriptableRendererFeature
             }
 
             if (mipCount < 1) mipCount = 1;
+            mipCount = 8;
 
             if(mipsTex == null)
             {
