@@ -43,7 +43,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4b0a034b11de432dab89ced59c205298, type: 3}
   m_Name: SSRDDARenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   settings:
     ssrMaterial: {fileID: 2100000, guid: 1ca1ab8c00ce36f4abba2484af9ea03d, type: 2}
     passEvent: 240
@@ -66,7 +66,7 @@ MonoBehaviour:
   settings:
     renderPassEvent: 220
     hizBuildCS: {fileID: 7200000, guid: 9d492db186c04ae79711290a79e51232, type: 3}
-    minSize: 8
+    minSize: 7
 --- !u!114 &-2246465050184658640
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -273,7 +273,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 67ac33fd3070478291c12539dbb9fe51, type: 3}
   m_Name: SSRRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 0
+  m_Active: 1
   settings:
     ssrMaterial: {fileID: 2100000, guid: a0b69173d7461ff418dbf3af528142a3, type: 2}
     passEvent: 240

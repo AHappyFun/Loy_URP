@@ -9,8 +9,7 @@ public class HiZSettings
 {
     public RenderPassEvent renderPassEvent = RenderPassEvent.AfterRenderingGbuffer;
     public ComputeShader hizBuildCS = null;
-    //public bool enableCopyDepth = false;
-    public int minSize = 8; // stop mip when smaller than this
+    public int mipCount = 8; // stop mip when smaller than this
 }
 
 public class HizRenderFeature : ScriptableRendererFeature
@@ -76,18 +75,9 @@ public class HizRenderFeature : ScriptableRendererFeature
             int w = desc.width;
             int h = desc.height;
 
-            // compute mip count
-            int maxDim = Math.Max(w, h);
-            mipCount = 0;
-            int dim = maxDim;
-            while (dim >= s.minSize)
-            {
-                dim = dim >> 1;
-                mipCount++;
-            }
+            mipCount = s.mipCount;
 
             if (mipCount < 1) mipCount = 1;
-            mipCount = 8;
 
             if(mipsTex == null)
             {
