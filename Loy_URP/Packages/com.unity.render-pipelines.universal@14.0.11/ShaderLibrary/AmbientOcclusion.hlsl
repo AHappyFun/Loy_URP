@@ -8,6 +8,9 @@
 TEXTURE2D_X(_ScreenSpaceOcclusionTexture);
 SAMPLER(sampler_ScreenSpaceOcclusionTexture);
 
+TEXTURE2D_X(_HBAOResultTex);
+SAMPLER(sampler_HBAOResultTex);
+
 struct AmbientOcclusionFactor
 {
     half indirectAmbientOcclusion;
@@ -20,14 +23,21 @@ half SampleAmbientOcclusion(float2 normalizedScreenSpaceUV)
     return half(SAMPLE_TEXTURE2D_X(_ScreenSpaceOcclusionTexture, sampler_ScreenSpaceOcclusionTexture, uv).x);
 }
 
+half SampleHBAO(float2 normalizedScreenSpaceUV)
+{
+    float2 uv = UnityStereoTransformScreenSpaceTex(normalizedScreenSpaceUV);
+    return half(SAMPLE_TEXTURE2D_X(_HBAOResultTex, sampler_HBAOResultTex, uv).x);
+}
+
 AmbientOcclusionFactor GetScreenSpaceAmbientOcclusion(float2 normalizedScreenSpaceUV)
 {
     AmbientOcclusionFactor aoFactor;
 
     #if defined(_SCREEN_SPACE_OCCLUSION) && !defined(_SURFACE_TYPE_TRANSPARENT)
-        float ssao = saturate(SampleAmbientOcclusion(normalizedScreenSpaceUV) + (1.0 - _AmbientOcclusionParam.x));
-        aoFactor.indirectAmbientOcclusion = ssao;
-        aoFactor.directAmbientOcclusion = lerp(half(1.0), ssao, _AmbientOcclusionParam.w);
+        //float ssao = saturate(SampleAmbientOcclusion(normalizedScreenSpaceUV) + (1.0 - _AmbientOcclusionParam.x));
+        float hbao = saturate(SampleHBAO(normalizedScreenSpaceUV));// + (1.0 - _AmbientOcclusionParam.x));
+        aoFactor.indirectAmbientOcclusion = hbao;
+        aoFactor.directAmbientOcclusion = lerp(half(1.0), hbao, _AmbientOcclusionParam.w);
     #else
         aoFactor.directAmbientOcclusion = half(1.0);
         aoFactor.indirectAmbientOcclusion = half(1.0);

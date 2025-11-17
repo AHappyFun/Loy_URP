@@ -66,7 +66,7 @@ MonoBehaviour:
   settings:
     renderPassEvent: 220
     hizBuildCS: {fileID: 7200000, guid: 9d492db186c04ae79711290a79e51232, type: 3}
-    minSize: 7
+    mipCount: 8
 --- !u!114 &-2246465050184658640
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -140,7 +140,8 @@ MonoBehaviour:
   - {fileID: 4245399114209149564}
   - {fileID: -5023459535811012837}
   - {fileID: -2246465050184658640}
-  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e0
+  - {fileID: 5079983152399928941}
+  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -293,6 +294,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Active: 1
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
+--- !u!114 &5079983152399928941
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 955d35bc18444448956540aee140d2a4, type: 3}
+  m_Name: HBAORenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  settings:
+    hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
+    passEvent: 220
+    AOIntensity: 1.2
+    Radius: 1
+    Bias: 0.02
+    NumDirs: 8
+    NumSteps: 12
+    StepScale: 1.5
 --- !u!114 &5509125397862468847
 MonoBehaviour:
   m_ObjectHideFlags: 0
