@@ -52,7 +52,7 @@ float _Bias;
 int _NumDirs;
 int _NumSteps;
 float _StepScale;
-float _BlurRadius;
+
 #define BlurRadius 2
 
 float4 HBAORaymarch(float2 uv)
@@ -111,8 +111,14 @@ float4 HBAORaymarch(float2 uv)
         if(maxSlope > -1e8)
         {
             float horizon = atan(maxSlope);
+
+            //把(0,90°)转换到(0,1)，不过现在horizon是弧度的，所以除以 pi/2
+            //θ = 0 → 完全无遮挡 → occl=0
+            //θ = 45° → 遮掉半个半球 → occl = 0.5
+            //θ = π/2 → 完全封顶 → occl=1
             float contribte = saturate(horizon * 2 / PI);
 
+            //计算法线Dot，剔除背面三角形的影响。如果是背面三角形
             float2 dir2 = normalize(dir);
             float nl = saturate(dot(Normal.xy , dir2));
 
@@ -132,8 +138,6 @@ float4 HBAORaymarch(float2 uv)
 }
 
 
-TEXTURE2D_X_HALF(_HBAOResultTex);
-SAMPLER(sampler_HBAOResultTex);
 TEXTURE2D(_MainTex);
 SAMPLER(sampler_MainTex);
 
