@@ -20,6 +20,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public int NumDirs = 8;
         public int NumSteps = 12;
         public float StepScale = 1.4f;
+        public bool isHalfSize = true;
 
         public HBAOPass(Material mat)
         {
@@ -32,8 +33,10 @@ public class HBAORenderFeature : ScriptableRendererFeature
         {
             var desc = cameraTextureDescriptor;
 
-            cmd.GetTemporaryRT(hbaoHandle.id, desc.width , desc.height, 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
-            cmd.GetTemporaryRT(tempHanle.id, desc.width , desc.height, 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
+            float scale = isHalfSize ? 0.5f : 1.0f;
+
+            cmd.GetTemporaryRT(hbaoHandle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
+            cmd.GetTemporaryRT(tempHanle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
 
             hbaoTex = new RenderTargetIdentifier(hbaoHandle.id);
             tempTex = new RenderTargetIdentifier(tempHanle.id);
@@ -55,6 +58,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
             hbaoMaterial.SetInt("_NumDirs", NumDirs);
             hbaoMaterial.SetInt("_NumSteps", NumSteps);
             hbaoMaterial.SetFloat("_StepScale", StepScale);
+            hbaoMaterial.SetFloat("_AOTexRes", isHalfSize ? 0.5f : 1.0f);
 
             cmd.DrawProcedural(Matrix4x4.identity, hbaoMaterial, 0, MeshTopology.Triangles, 3, 1);
             context.ExecuteCommandBuffer(cmd);
@@ -87,7 +91,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public int NumDirs = 8;
         public int NumSteps = 12;
         public float StepScale = 1.4f;
-
+        public bool isHalfSize = true;
 
     }
 
@@ -110,7 +114,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
             Bias = settings.Bias,
             NumDirs = settings.NumDirs,
             NumSteps = settings.NumSteps,
-            StepScale = settings.StepScale
+            StepScale = settings.StepScale,
+            isHalfSize = settings.isHalfSize
         };
     }
 

@@ -43,6 +43,8 @@ float2 RandomDir(float2 uv)
     return float2(cos(angle), sin(angle));
 }
 
+
+
 #define TWO_PI 6.28318530718
 #define PI 3.1415926
 
@@ -52,12 +54,19 @@ float _Bias;
 int _NumDirs;
 int _NumSteps;
 float _StepScale;
+float _AOTexRes;
 
 #define BlurRadius 2
 
+float2 GetAOTexSize()
+{
+    return _AOTexRes * _ScaledScreenParams.xy;
+}
+
 float4 HBAORaymarch(float2 uv)
 {
-    float rawDepth = SampleSceneDepth(uv);
+    //如果使用半分辨率的AO，深度也需要用半分辨的。不然会出现横竖线。
+    float rawDepth = SampleHIZ(uv, 1);
     if(rawDepth > 0.999f)
         return 1;
 
@@ -90,12 +99,12 @@ float4 HBAORaymarch(float2 uv)
             // convert a view-space lateral offset to uv offset approximately
             // approximate: view-space dx -> uv offset = dx * (proj.x / -viewPos.z) * 0.5 + 0.5 ???
             // We'll use screen-space approximation: scale by pixel size and a fudge factor
-            float2 pixelStep = sampleDistance * rcp(_ScaledScreenParams.xy) * 1.0; // tuning factor = 1.0
+            float2 pixelStep = sampleDistance * rcp(GetAOTexSize().xy) * 1.0; // tuning factor = 1.0
             float2 sampleUV = uv + dir * pixelStep;
 
             if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) break;
 
-            float3 sampleView = ReconstructViewPos(sampleUV, SampleSceneDepth(sampleUV));
+            float3 sampleView = ReconstructViewPos(sampleUV, SampleHIZ(sampleUV, 1));
 
             float diff = -sampleView.z - (-ViewPos.z);
 
@@ -152,7 +161,7 @@ float4 HBAO_BlurV(float2 uv)
 
     for (int o = -radius; o <= radius ; o++)
     {
-        float2 sampleUV = uv + float2(0, o * rcp(_ScaledScreenParams.y));
+        float2 sampleUV = uv + float2(0, o * rcp(GetAOTexSize().y));
         float ao = SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, sampleUV);
         float sampleDepth = SampleSceneDepth(sampleUV);
         float diff = abs(sampleDepth - centerDepth);
@@ -173,7 +182,7 @@ float4 HBAO_BlurH(float2 uv)
 
     for (int o = -radius; o <= radius ; o++)
     {
-        float2 sampleUV = uv + float2(o * rcp(_ScaledScreenParams.x), 0);
+        float2 sampleUV = uv + float2(o * rcp(GetAOTexSize().x), 0);
         float ao = SAMPLE_TEXTURE2D_X(_MainTex,sampler_MainTex, sampleUV);
         float sampleDepth = SampleSceneDepth(sampleUV);
         float diff = abs(sampleDepth - centerDepth);

@@ -33,7 +33,7 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / _ScaledScreenParams.xy;
+                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
 
                 return HBAORaymarch(uv);
             }
@@ -70,7 +70,7 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / _ScaledScreenParams.xy;
+                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
 
                 return HBAO_BlurV(uv);
             }
@@ -106,7 +106,7 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / _ScaledScreenParams.xy;
+                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
 
                 return HBAO_BlurH(uv);
             }

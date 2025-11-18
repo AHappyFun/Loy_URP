@@ -95,7 +95,6 @@ public class HizRenderFeature : ScriptableRendererFeature
                 }
             }
 
-
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -130,10 +129,10 @@ public class HizRenderFeature : ScriptableRendererFeature
             }
 //
             // 3) Expose as global textures (_HiZMip0, _HiZMip1, ..., _HiZMipN) and set mip count
-            Shader.SetGlobalInt(kHiZMipCount, mipCount);
+            cmd.SetGlobalInt(kHiZMipCount, mipCount);
             for (int i = 0; i < mipCount; ++i)
             {
-                Shader.SetGlobalTexture(kHiZNamePrefix + i, mipsTex[i]);
+                cmd.SetGlobalTexture(kHiZNamePrefix + i, mipsTex[i]);
             }
 
             context.ExecuteCommandBuffer(cmd);

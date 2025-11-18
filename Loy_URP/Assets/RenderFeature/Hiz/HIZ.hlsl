@@ -10,6 +10,7 @@ TEXTURE2D(_HiZMip5);
 TEXTURE2D(_HiZMip6);
 TEXTURE2D(_HiZMip7);
 SAMPLER(sampler_HiZMip0);
+SAMPLER(sampler_HiZMip1);
 
 int _HiZMipCount;
 
@@ -21,7 +22,7 @@ float SampleHIZ(float2 uv, int mip)
     switch (mip)
     {
         case 0: depth = SAMPLE_TEXTURE2D(_HiZMip0, sampler_HiZMip0, uv).r; break;
-        case 1: depth = SAMPLE_TEXTURE2D(_HiZMip1, sampler_HiZMip0, uv).r; break;
+        case 1: depth = SAMPLE_TEXTURE2D(_HiZMip1, sampler_HiZMip1, uv).r; break;
         case 2: depth = SAMPLE_TEXTURE2D(_HiZMip2, sampler_HiZMip0, uv).r; break;
         case 3: depth = SAMPLE_TEXTURE2D(_HiZMip3, sampler_HiZMip0, uv).r; break;
         case 4: depth = SAMPLE_TEXTURE2D(_HiZMip4, sampler_HiZMip0, uv).r; break;
