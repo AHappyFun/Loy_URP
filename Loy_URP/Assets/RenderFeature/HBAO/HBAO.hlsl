@@ -63,6 +63,10 @@ float2 GetAOTexSize()
     return _AOTexRes * _ScaledScreenParams.xy;
 }
 
+//基础Raymarch步进版本。
+//理解基础几何点的各个方向水平角计算。
+//优化项：半分辨率
+//这是个DDA的版本
 float4 HBAORaymarch(float2 uv)
 {
     //如果使用半分辨率的AO，深度也需要用半分辨的。不然会出现横竖线。
@@ -146,6 +150,11 @@ float4 HBAORaymarch(float2 uv)
     return float4(ao, ao, ao, 1);
 }
 
+//HIZ优化版本
+float4 HBAORaymarchHIZ(float2 uv)
+{
+
+}
 
 TEXTURE2D(_MainTex);
 SAMPLER(sampler_MainTex);

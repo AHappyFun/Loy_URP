@@ -1,4 +1,4 @@
-﻿Shader "Loy/Feature/HBAO"
+﻿Shader "Loy/Feature/SSGI"
 {
     Properties
     {
@@ -9,11 +9,11 @@
         Tags { "RenderType"="Opaque" "Queue"="Overlay" }
         Pass
         {
-            Name "SSR Compute"
+            Name "SSGI Compute"
             ZTest Always Cull Off ZWrite Off
 
             HLSLPROGRAM
-            #include "HBAO.hlsl"
+            #include "SSGI.hlsl"
             #pragma vertex vert
             #pragma fragment frag
 
@@ -33,9 +33,9 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
+                float2 uv = IN.positionCS.xy / GetGITexSize().xy;
 
-                return HBAORaymarch(uv);
+                return SSGIRaymarch(uv);
             }
 
             ENDHLSL
@@ -43,11 +43,11 @@
 
         Pass
         {
-            Name "HBAO Blur V"
+            Name "SSR Blur V"
             ZTest Always Cull Off ZWrite Off
 
             HLSLPROGRAM
-            #include "HBAO.hlsl"
+            #include "SSGI.hlsl"
             #pragma vertex vert
             #pragma fragment frag
 
@@ -67,9 +67,9 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
+                float2 uv = IN.positionCS.xy / GetGITexSize().xy;
 
-                return HBAO_BlurV(uv);
+                return SSGI_BlurV(uv);
             }
 
             ENDHLSL
@@ -77,11 +77,11 @@
 
         Pass
         {
-            Name "HBAO Blur H"
+            Name "SSR Blur H"
             ZTest Always Cull Off ZWrite Off
 
             HLSLPROGRAM
-            #include "HBAO.hlsl"
+            #include "SSGI.hlsl"
             #pragma vertex vert
             #pragma fragment frag
 
@@ -103,13 +103,56 @@
 
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
-                float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
+                float2 uv = IN.positionCS.xy / GetGITexSize().xy;
 
-                return HBAO_BlurH(uv);
+                return SSGI_BlurH(uv);
             }
 
             ENDHLSL
         }
 
+        Pass
+        {
+            Name "SSGI Combine"
+            ZTest Always Cull Off ZWrite Off
+            Blend SrcAlpha One
+
+            HLSLPROGRAM
+            #include "SSGI.hlsl"
+            #pragma vertex vert
+            #pragma fragment frag
+
+            TEXTURE2D_X(_HBAOResultTex);
+            SAMPLER(sampler_HBAOResultTex);
+
+            float _GIRange;
+
+            Varyings vert(Attributes IN)
+            {
+                Varyings OUT;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
+
+                OUT.positionCS = GetFullScreenTriangleVertexPosition(IN.vertexID);
+
+                return OUT;
+            }
+
+
+            half4 frag(Varyings IN) : SV_Target
+            {
+
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
+
+                float2 uv = IN.positionCS.xy /  _ScaledScreenParams.xy;
+
+                float ao = SAMPLE_TEXTURE2D_X(_HBAOResultTex, sampler_HBAOResultTex, uv).x;
+                //return ao;
+
+                return float4(SampleSSGI(uv).rgb * ao, _GIRange);
+            }
+
+            ENDHLSL
+        }
     }
 }

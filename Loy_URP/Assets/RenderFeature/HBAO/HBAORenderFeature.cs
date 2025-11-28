@@ -102,7 +102,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
     {
         if (settings.hbaoMaterial == null)
         {
-            Debug.LogWarning("SSRFeature: ssrMaterial is null.");
+            Debug.LogWarning("HBAOFeature: ssrMaterial is null.");
             return;
         }
 

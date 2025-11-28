@@ -50,6 +50,27 @@ MonoBehaviour:
     maxDistance: 200
     maxSteps: 1000
     thickness: 0.1
+--- !u!114 &-3740695033398849134
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0298ea3295ac4653ab2af08d3297ebb4, type: 3}
+  m_Name: SSGIRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  settings:
+    ssgiMaterial: {fileID: 2100000, guid: 16b6f32f3e0ef4741b803e3e85a7ed9e, type: 2}
+    passEvent: 220
+    NumDir: 8
+    MaxRayDistance: 50
+    NumSteps: 20
+    isHalfSize: 1
+    DepthBias: 2.2
 --- !u!114 &-2836546898973219532
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -141,7 +162,9 @@ MonoBehaviour:
   - {fileID: -5023459535811012837}
   - {fileID: -2246465050184658640}
   - {fileID: 5079983152399928941}
-  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46
+  - {fileID: -3740695033398849134}
+  - {fileID: 940993687253614422}
+  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46929131a9af6116cc56ffa2e0c5140f0d
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -211,6 +234,22 @@ MonoBehaviour:
   m_Active: 1
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
+--- !u!114 &940993687253614422
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7bcee238f304e4bae15aaf510b7aea3, type: 3}
+  m_Name: SSGICombineRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  renderPassEvent: 350
+  Shader: {fileID: 4800000, guid: 91932eec7f76406da20706bacc5fe9dc, type: 3}
+  GIRange: 0.15
 --- !u!114 &3250433244120867298
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -315,7 +354,8 @@ MonoBehaviour:
     Bias: 0.02
     NumDirs: 8
     NumSteps: 12
-    StepScale: 1.5
+    StepScale: 1.4
+    isHalfSize: 1
 --- !u!114 &5509125397862468847
 MonoBehaviour:
   m_ObjectHideFlags: 0
