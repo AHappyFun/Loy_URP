@@ -164,7 +164,8 @@ MonoBehaviour:
   - {fileID: 5079983152399928941}
   - {fileID: -3740695033398849134}
   - {fileID: 940993687253614422}
-  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46929131a9af6116cc56ffa2e0c5140f0d
+  - {fileID: 5991207707886691739}
+  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46929131a9af6116cc56ffa2e0c5140f0d9b252be4aa0b2553
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -246,7 +247,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f7bcee238f304e4bae15aaf510b7aea3, type: 3}
   m_Name: SSGICombineRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 350
   Shader: {fileID: 4800000, guid: 91932eec7f76406da20706bacc5fe9dc, type: 3}
   GIRange: 0.15
@@ -372,6 +373,22 @@ MonoBehaviour:
   renderPassEvent: 250
   m_ssrConfig: {fileID: 0}
   SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
+--- !u!114 &5991207707886691739
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35123f25234847e8a06663fb64049041, type: 3}
+  m_Name: VolumeCloudRenderFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  Settings:
+    vcMaterial: {fileID: 2100000, guid: 37d18cba5b861fd4da7329f6502c0025, type: 2}
+    passEvent: 240
 --- !u!114 &6134060063955588469
 MonoBehaviour:
   m_ObjectHideFlags: 0

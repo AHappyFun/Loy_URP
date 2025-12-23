@@ -100,7 +100,7 @@ public class HizRenderFeature : ScriptableRendererFeature
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             var renderer = renderingData.cameraData.renderer;
-            var cmd = CommandBufferPool.Get("HiZ Build");
+            var cmd = CommandBufferPool.Get("Loy_HiZ Build");
             Camera cam = renderingData.cameraData.camera;
 
             //第一次CopyDepth

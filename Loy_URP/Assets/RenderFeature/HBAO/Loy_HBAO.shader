@@ -9,7 +9,7 @@
         Tags { "RenderType"="Opaque" "Queue"="Overlay" }
         Pass
         {
-            Name "SSR Compute"
+            Name "HBAO Compute"
             ZTest Always Cull Off ZWrite Off
 
             HLSLPROGRAM
