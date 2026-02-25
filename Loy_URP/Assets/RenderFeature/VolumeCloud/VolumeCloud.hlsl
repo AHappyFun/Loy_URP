@@ -22,7 +22,10 @@ SAMPLER(sampler_NoiseTex);
 
 float _CloudDensity;
 float _StepSize;
-float _PhaseG;
+float _PhaseG; //相函数g
+
+int _LightSteps;
+float _LightStepSize;
 
 float3 _BoxCenter;
 float3 _BoxSize;
@@ -88,6 +91,9 @@ float4 VolumeCloudRayMarch(Varyings IN)
     Light mainLight = GetMainLight();
     float3 lightDir = normalize(mainLight.direction);
 
+    float cosTheta = dot(rayDirWS, -lightDir);
+    float phase = PhaseHG(cosTheta, _PhaseG);
+
     [loop]
     for (int step = 0; step < 128 && t < tExit; step++)
     {
@@ -96,15 +102,37 @@ float4 VolumeCloudRayMarch(Varyings IN)
         float3 uvw = (pos - _BoxCenter) / _BoxSize + 0.5;
 
         float density = SAMPLE_TEXTURE3D(_NoiseTex, sampler_NoiseTex, uvw).r;
-        density *= _CloudDensity;
+        //density *= _CloudDensity;
 
         if (density > 0.001)
         {
-            float phase = PhaseHG(dot(rayDirWS, -lightDir), _PhaseG);
-            float3 scatter = mainLight.color * density * phase;
-            col += T * scatter * _StepSize;
+            float sigma = density * _CloudDensity;
+            sigma = pow(saturate(density), 5);
+            float dt = _StepSize;
 
-            T *= exp(-density * _StepSize);
+            // --- 光线透射（丁达尔） ---
+            float T_light = 1.0;
+            float lt = 0;
+
+            [loop]
+            for (int l = 0; l<_LightSteps; l++)
+            {
+                float3 lpos = pos + lightDir * lt;
+                float3 luvw = (lpos - _BoxCenter) / _BoxSize + 0.5;
+                float ld = SAMPLE_TEXTURE3D(_NoiseTex, sampler_NoiseTex, luvw).r;
+                T_light *= exp(-ld * _CloudDensity * _LightStepSize);
+
+                if (T_light < 0.01) break;
+
+                lt += _LightStepSize;
+            }
+
+            //float phase = PhaseHG(dot(rayDirWS, -lightDir), _PhaseG);
+            float3 scatter = mainLight.color * T_light * sigma * phase * dt;
+            col += T * scatter;
+
+            T *= exp(-sigma * dt);
+
             if (T < 0.01) break;
         }
 

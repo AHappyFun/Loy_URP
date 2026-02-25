@@ -30,9 +30,11 @@ Material:
     m_Ints: []
     m_Floats:
     - _CloudDensity: 1.5
-    - _PhaseG: 0.06
-    - _StepSize: 0.2
+    - _LightStep: 7
+    - _LightStepSize: 1
+    - _PhaseG: 0.24
+    - _StepSize: 0.05
     m_Colors:
-    - _BoxCenter: {r: 0, g: 3.78, b: 0, a: 0}
-    - _BoxSize: {r: 2, g: 2, b: 2, a: 0}
+    - _BoxCenter: {r: 0, g: 4.71, b: 0, a: 0}
+    - _BoxSize: {r: 8.81, g: 5.06, b: 13.39, a: 0}
   m_BuildTextureStacks: []

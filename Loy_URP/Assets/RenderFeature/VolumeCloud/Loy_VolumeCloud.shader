@@ -7,6 +7,9 @@
         _StepSize ("Step Size", Float) = 1.0
         _PhaseG ("Phase G", Range(-0.9, 0.9)) = 0.6
 
+        _LightStep("Light Step", int) = 7
+        _LightStepSize ("Light Step Size", Float) = 1.0
+
         _BoxCenter ("Box Center", Vector) = (0,10,0,0)
         _BoxSize ("Box Size", Vector) = (100,50,100,0)
     }
@@ -17,7 +20,9 @@
         Pass
         {
             Name "VolumeCloud"
-            ZTest Always Cull Off ZWrite Off
+            ZTest LEqual
+            Cull Off
+            ZWrite Off
             Blend One OneMinusSrcAlpha
 
             HLSLPROGRAM

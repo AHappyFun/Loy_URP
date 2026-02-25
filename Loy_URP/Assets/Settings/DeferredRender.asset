@@ -385,7 +385,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 35123f25234847e8a06663fb64049041, type: 3}
   m_Name: VolumeCloudRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   Settings:
     vcMaterial: {fileID: 2100000, guid: 37d18cba5b861fd4da7329f6502c0025, type: 2}
     passEvent: 240
