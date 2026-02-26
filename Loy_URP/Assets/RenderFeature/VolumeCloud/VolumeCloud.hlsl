@@ -94,12 +94,14 @@ float4 VolumeCloudRayMarch(Varyings IN)
     float cosTheta = dot(rayDirWS, -lightDir);
     float phase = PhaseHG(cosTheta, _PhaseG);
 
+    float3 uvwOffset = float3(0,0,_Time.y * 0.1f);
+
     [loop]
     for (int step = 0; step < 128 && t < tExit; step++)
     {
         float3 pos = rayOriginWS + rayDirWS * t;
 
-        float3 uvw = (pos - _BoxCenter) / _BoxSize + 0.5;
+        float3 uvw = (pos - _BoxCenter) / _BoxSize + 0.5 + uvwOffset;
 
         float density = SAMPLE_TEXTURE3D(_NoiseTex, sampler_NoiseTex, uvw).r;
         //density *= _CloudDensity;
@@ -118,7 +120,7 @@ float4 VolumeCloudRayMarch(Varyings IN)
             for (int l = 0; l<_LightSteps; l++)
             {
                 float3 lpos = pos + lightDir * lt;
-                float3 luvw = (lpos - _BoxCenter) / _BoxSize + 0.5;
+                float3 luvw = (lpos - _BoxCenter) / _BoxSize + 0.5 + uvwOffset;
                 float ld = SAMPLE_TEXTURE3D(_NoiseTex, sampler_NoiseTex, luvw).r;
                 T_light *= exp(-ld * _CloudDensity * _LightStepSize);
 

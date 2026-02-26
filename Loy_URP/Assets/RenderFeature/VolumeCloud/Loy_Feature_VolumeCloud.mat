@@ -36,5 +36,5 @@ Material:
     - _StepSize: 0.05
     m_Colors:
     - _BoxCenter: {r: 0, g: 4.71, b: 0, a: 0}
-    - _BoxSize: {r: 8.81, g: 5.06, b: 13.39, a: 0}
+    - _BoxSize: {r: 2, g: 2, b: 2, a: 0}
   m_BuildTextureStacks: []
