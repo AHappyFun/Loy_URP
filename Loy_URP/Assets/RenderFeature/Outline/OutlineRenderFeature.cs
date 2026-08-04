@@ -90,14 +90,13 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
         private readonly Material material;
         private readonly Settings settings;
         private readonly ProfilingSampler outlineProfilingSampler = new ProfilingSampler("Loy Post Process Outline");
-        private readonly RenderTargetHandle temporaryColor;
+        private RTHandle temporaryColor;
         private RTHandle source;
 
         public OutlinePass(Material material, Settings settings)
         {
             this.material = material;
             this.settings = settings;
-            temporaryColor.Init("_OutlineColorTexture");
             ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
         }
 
@@ -111,7 +110,7 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
             RenderTextureDescriptor descriptor = renderingData.cameraData.cameraTargetDescriptor;
             descriptor.depthBufferBits = 0;
             descriptor.msaaSamples = 1;
-            cmd.GetTemporaryRT(temporaryColor.id, descriptor, FilterMode.Bilinear);
+            RenderingUtils.ReAllocateHandleIfNeeded(ref temporaryColor, descriptor, FilterMode.Bilinear, name: "_OutlineColorTexture");
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -130,8 +129,8 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
                 material.SetVector(FadeParamsId, new Vector4(
                     settings.fadeStart, Mathf.Max(settings.fadeStart + 0.01f, settings.fadeEnd), 0f, 0f));
 
-                cmd.Blit(source, temporaryColor.Identifier(), material, 0);
-                cmd.Blit(temporaryColor.Identifier(), source);
+                cmd.Blit(source, temporaryColor, material, 0);
+                cmd.Blit(temporaryColor, source);
             }
 
             context.ExecuteCommandBuffer(cmd);
@@ -140,7 +139,7 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
 
         public override void OnCameraCleanup(CommandBuffer cmd)
         {
-            cmd.ReleaseTemporaryRT(temporaryColor.id);
+            temporaryColor?.Release();
         }
     }
 }

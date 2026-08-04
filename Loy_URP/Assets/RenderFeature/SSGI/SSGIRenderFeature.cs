@@ -9,11 +9,8 @@ public class SSGIRenderFeature : ScriptableRendererFeature
     {
         Material ssgiMaterial;
 
-        RenderTargetHandle ssgiHandle;
-        private RenderTargetIdentifier ssgiTex;
-
-        RenderTargetHandle tempHanle;
-        private RenderTargetIdentifier tempTex;
+        RTHandle ssgiHandle;
+        RTHandle tempHanle;
 
         public int NumDir = 8;
         public float MaxRayDistance = 200;
@@ -25,8 +22,6 @@ public class SSGIRenderFeature : ScriptableRendererFeature
         public SSGIPass(Material mat)
         {
             ssgiMaterial = mat;
-            ssgiHandle.Init("_SSGIResultTex");
-            tempHanle.Init("_TempTex");
         }
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
         {
@@ -34,13 +29,14 @@ public class SSGIRenderFeature : ScriptableRendererFeature
 
             float scale = isHalfSize ? 0.5f : 1.0f;
 
-            cmd.GetTemporaryRT(ssgiHandle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear);
-            cmd.GetTemporaryRT(tempHanle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear);
+            desc.width = (int)(desc.width * scale);
+            desc.height = (int)(desc.height * scale);
+            desc.depthBufferBits = 0;
 
-            ssgiTex = new RenderTargetIdentifier(ssgiHandle.id);
-            tempTex = new RenderTargetIdentifier(tempHanle.id);
+            RenderingUtils.ReAllocateHandleIfNeeded(ref ssgiHandle, desc, FilterMode.Bilinear, name: "_SSGIResultTex");
+            RenderingUtils.ReAllocateHandleIfNeeded(ref tempHanle, desc, FilterMode.Bilinear, name: "_TempTex");
 
-            ConfigureTarget(ssgiTex);
+            ConfigureTarget(ssgiHandle);
             ConfigureClear(ClearFlag.All, Color.clear);
         }
 
@@ -61,20 +57,22 @@ public class SSGIRenderFeature : ScriptableRendererFeature
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.Blit(ssgiTex, tempTex, ssgiMaterial, 1);
-            cmd.Blit(tempTex, ssgiTex, ssgiMaterial, 2);
+            cmd.Blit(ssgiHandle, tempHanle, ssgiMaterial, 1);
+            cmd.Blit(tempHanle, ssgiHandle, ssgiMaterial, 2);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.SetGlobalTexture(ssgiHandle.id, ssgiTex);
-            context.ExecuteCommandBuffer(cmd);
-            cmd.Clear();
-
-            cmd.ReleaseTemporaryRT(tempHanle.id);
+            cmd.SetGlobalTexture(ssgiHandle.name, ssgiHandle.nameID);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
             CommandBufferPool.Release(cmd);
+        }
+
+        public override void OnCameraCleanup(CommandBuffer cmd)
+        {
+            ssgiHandle?.Release();
+            tempHanle?.Release();
         }
     }
 

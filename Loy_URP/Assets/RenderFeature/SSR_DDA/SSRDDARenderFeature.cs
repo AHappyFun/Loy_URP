@@ -9,10 +9,8 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
 
         Material ssrMaterial;
 
-        RenderTargetHandle ssrHandle;
-        private RenderTargetIdentifier ssrTex;
-        RenderTargetHandle ssrHistoryHandle;
-        private RenderTargetIdentifier ssrHistoryTex;
+        RTHandle ssrHandle;
+        RTHandle ssrHistoryHandle;
 
         // settings
         public float maxDistance = 200;
@@ -24,8 +22,6 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
         public SSRDDAPass(Material mat)
         {
             ssrMaterial = mat;
-            ssrHandle.Init("_SSRResultTex");
-            ssrHistoryHandle.Init("_SSRHistoryTex");
         }
 
         public void Setup()
@@ -38,13 +34,10 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
             var desc = cameraTextureDescriptor;
             desc.depthBufferBits = 0;
             desc.colorFormat = RenderTextureFormat.DefaultHDR;
-            cmd.GetTemporaryRT(ssrHandle.id, desc, FilterMode.Bilinear);
-            cmd.GetTemporaryRT(ssrHistoryHandle.id, desc, FilterMode.Bilinear);
+            RenderingUtils.ReAllocateHandleIfNeeded(ref ssrHandle, desc, FilterMode.Bilinear, name: "_SSRResultTex");
+            RenderingUtils.ReAllocateHandleIfNeeded(ref ssrHistoryHandle, desc, FilterMode.Bilinear, name: "_SSRHistoryTex");
 
-            ssrTex = new RenderTargetIdentifier(ssrHandle.id);
-            ssrHistoryTex = new RenderTargetIdentifier(ssrHistoryHandle.id);
-
-            ConfigureTarget(ssrTex);
+            ConfigureTarget(ssrHandle);
             ConfigureClear(ClearFlag.All, Color.clear);
         }
 
@@ -79,12 +72,12 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
             cmd.Clear();
 
 
-            cmd.SetGlobalTexture(ssrHandle.id, ssrTex);
+            cmd.SetGlobalTexture(ssrHandle.name, ssrHandle.nameID);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.Blit(ssrTex, ssrHistoryTex);
-            cmd.SetGlobalTexture(ssrHistoryHandle.id, ssrHistoryTex);
+            cmd.Blit(ssrHandle, ssrHistoryHandle);
+            cmd.SetGlobalTexture(ssrHistoryHandle.name, ssrHistoryHandle.nameID);
 
 
             context.ExecuteCommandBuffer(cmd);
@@ -93,9 +86,10 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
             CommandBufferPool.Release(cmd);
         }
 
-        public override void FrameCleanup(CommandBuffer cmd)
+        public override void OnCameraCleanup(CommandBuffer cmd)
         {
-            cmd.ReleaseTemporaryRT(ssrHandle.id);
+            // 只释放当前帧结果缓冲；历史缓冲跨帧持久保留，以维持时序重投影
+            ssrHandle?.Release();
         }
     }
 

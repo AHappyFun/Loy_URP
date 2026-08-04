@@ -49,14 +49,12 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
     {
         private SunShaftRenderFeature renderFeature;
         const string m_ProfilerTag = "Loy_SunShaft";
-        private RenderTargetHandle _temp1, _temp2;
+        private RTHandle _temp1, _temp2;
         private Vector4[] Params;
         public SunShaftRenderPass(SunShaftRenderFeature renderFeature)
         {
             this.renderFeature = renderFeature;
             this.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
-            _temp1.Init("_SunShaftTemp1");
-            _temp2.Init("_SunShaftTemp2");
             Params = new Vector4[3];
         }
 
@@ -79,8 +77,8 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             int width = (int)(camera.pixelWidth * renderingData.cameraData.renderScale);
             int height = (int)(camera.pixelHeight * renderingData.cameraData.renderScale);
             var desc = new RenderTextureDescriptor(width / 2, height / 2, renderingData.cameraData.cameraTargetDescriptor.colorFormat, 0);
-            cmd.GetTemporaryRT(_temp1.id, desc);
-            cmd.GetTemporaryRT(_temp2.id, desc);
+            RenderingUtils.ReAllocateHandleIfNeeded(ref _temp1, desc, FilterMode.Point, name: "_SunShaftTemp1");
+            RenderingUtils.ReAllocateHandleIfNeeded(ref _temp2, desc, FilterMode.Point, name: "_SunShaftTemp2");
 
             var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
             Params[0] = new Vector4(renderFeature.BloomThreshold, renderFeature.BloomScale,
@@ -91,16 +89,20 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
 
             renderFeature.material.SetVectorArray("SunShaftParams", Params);
 
-            cmd.Blit(source, _temp1.Identifier(), renderFeature.material, 0);
-            cmd.Blit(_temp1.Identifier(), _temp2.Identifier(), renderFeature.material, 1);
-            cmd.Blit(_temp2.Identifier(), _temp1.Identifier(), renderFeature.material, 2);
-            cmd.Blit(_temp1.Identifier(), _temp2.Identifier(), renderFeature.material, 3);
-            cmd.Blit(_temp2.Identifier(), source, renderFeature.material, 4);
+            cmd.Blit(source, _temp1, renderFeature.material, 0);
+            cmd.Blit(_temp1, _temp2, renderFeature.material, 1);
+            cmd.Blit(_temp2, _temp1, renderFeature.material, 2);
+            cmd.Blit(_temp1, _temp2, renderFeature.material, 3);
+            cmd.Blit(_temp2, source, renderFeature.material, 4);
 
-            cmd.ReleaseTemporaryRT(_temp1.id);
-            cmd.ReleaseTemporaryRT(_temp2.id);
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
+        }
+
+        public override void OnCameraCleanup(CommandBuffer cmd)
+        {
+            _temp1?.Release();
+            _temp2?.Release();
         }
     }
 }

@@ -8,11 +8,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
     class HBAOPass : ScriptableRenderPass
     {
         Material hbaoMaterial;
-        RenderTargetHandle hbaoHandle;
-        private RenderTargetIdentifier hbaoTex;
-
-        RenderTargetHandle tempHanle;
-        private RenderTargetIdentifier tempTex;
+        RTHandle hbaoHandle;
+        RTHandle tempHanle;
 
         public float AOIntensity = 1.0f;
         public float Radius = 1.0f;
@@ -25,8 +22,6 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public HBAOPass(Material mat)
         {
             hbaoMaterial = mat;
-            hbaoHandle.Init("_HBAOResultTex");
-            tempHanle.Init("_TempTex");
         }
 
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
@@ -35,13 +30,15 @@ public class HBAORenderFeature : ScriptableRendererFeature
 
             float scale = isHalfSize ? 0.5f : 1.0f;
 
-            cmd.GetTemporaryRT(hbaoHandle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
-            cmd.GetTemporaryRT(tempHanle.id, (int)(desc.width * scale) , (int)(desc.height * scale), 0 ,FilterMode.Bilinear, RenderTextureFormat.R8);
+            desc.width = (int)(desc.width * scale);
+            desc.height = (int)(desc.height * scale);
+            desc.depthBufferBits = 0;
+            desc.colorFormat = RenderTextureFormat.R8;
 
-            hbaoTex = new RenderTargetIdentifier(hbaoHandle.id);
-            tempTex = new RenderTargetIdentifier(tempHanle.id);
+            RenderingUtils.ReAllocateHandleIfNeeded(ref hbaoHandle, desc, FilterMode.Bilinear, name: "_HBAOResultTex");
+            RenderingUtils.ReAllocateHandleIfNeeded(ref tempHanle, desc, FilterMode.Bilinear, name: "_TempTex");
 
-            ConfigureTarget(hbaoTex);
+            ConfigureTarget(hbaoHandle);
             ConfigureClear(ClearFlag.All, Color.clear);
         }
 
@@ -64,18 +61,22 @@ public class HBAORenderFeature : ScriptableRendererFeature
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.Blit(hbaoTex, tempTex, hbaoMaterial, 1);
-            cmd.Blit(tempTex, hbaoTex, hbaoMaterial, 2);
+            cmd.Blit(hbaoHandle, tempHanle, hbaoMaterial, 1);
+            cmd.Blit(tempHanle, hbaoHandle, hbaoMaterial, 2);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.SetGlobalTexture(hbaoHandle.id, hbaoTex);
+            cmd.SetGlobalTexture(hbaoHandle.name, hbaoHandle.nameID);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
 
-            cmd.ReleaseTemporaryRT(tempHanle.id);
-            context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
+        }
+
+        public override void OnCameraCleanup(CommandBuffer cmd)
+        {
+            hbaoHandle?.Release();
+            tempHanle?.Release();
         }
 
     }

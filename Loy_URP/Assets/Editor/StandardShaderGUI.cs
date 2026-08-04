@@ -105,7 +105,7 @@ public class GAEAStandardShaderGUI : ShaderGUI
             }
             else
             {
-                if ((properties[index].flags & MaterialProperty.PropFlags.HideInInspector) == 0)
+                if ((properties[index].propertyFlags & ShaderPropertyFlags.HideInInspector) == 0)
                     materialEditor.ShaderProperty(EditorGUILayout.GetControlRect(true, materialEditor.GetPropertyHeight(properties[index], properties[index].displayName), EditorStyles.layerMaskField), properties[index], properties[index].displayName);
             }
         }

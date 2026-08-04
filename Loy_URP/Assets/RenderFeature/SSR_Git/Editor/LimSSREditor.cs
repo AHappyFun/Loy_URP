@@ -48,7 +48,7 @@ namespace LimWorksEditor.Rendering.ScreenSpaceReflections
         }
         bool AssetHasDepthPyramid()
         {
-            var pipeline = GraphicsSettings.renderPipelineAsset;
+            var pipeline = GraphicsSettings.defaultRenderPipeline;
             FieldInfo propertyInfo = pipeline.GetType().GetField("m_RendererDataList", BindingFlags.Instance | BindingFlags.NonPublic);
             var _scriptableRendererData = ((ScriptableRendererData[])propertyInfo?.GetValue(pipeline))?[0];
             var renderObjects = _scriptableRendererData.rendererFeatures;
