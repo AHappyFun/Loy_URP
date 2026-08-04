@@ -1,8 +1,7 @@
-﻿using UnityEngine;
-using UnityEngine.Experimental.Rendering;
+using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.Serialization;
 
 public class SunShaftRenderFeature : ScriptableRendererFeature
 {
@@ -42,59 +41,69 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             renderPass = new SunShaftRenderPass(this);
 
         shader = Shader.Find("Loy/Feature/SunShaft");
-
     }
 
     public class SunShaftRenderPass : ScriptableRenderPass
     {
-        private SunShaftRenderFeature renderFeature;
+        private readonly SunShaftRenderFeature renderFeature;
         const string m_ProfilerTag = "Loy_SunShaft";
+        readonly ProfilingSampler m_ProfilingSampler;
+        readonly Vector4[] Params = new Vector4[3];
+
+#if URP_COMPATIBILITY_MODE
         private RTHandle _temp1, _temp2;
-        private Vector4[] Params;
+#endif
+
         public SunShaftRenderPass(SunShaftRenderFeature renderFeature)
         {
             this.renderFeature = renderFeature;
             this.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
-            Params = new Vector4[3];
+            m_ProfilingSampler = new ProfilingSampler(m_ProfilerTag);
         }
 
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        /// <summary>计算太阳屏幕位置与材质参数；太阳被遮挡/不可见时返回 false。</summary>
+        bool ComputeParams(Camera cam)
         {
-            CommandBuffer cmd = CommandBufferPool.Get(m_ProfilerTag);
-            var camera = renderingData.cameraData.camera;
-
-            if (camera.cameraType == CameraType.Preview)
-            {
-                return;
-            }
-
-
             var sun = RenderSettings.sun;
+            if (sun == null) return false;
 
-            var vp = camera.WorldToViewportPoint(camera.transform.position - sun.transform.forward * 100);
-            if (Vector3.Dot(sun.transform.forward, camera.transform.forward) > 0) return;
+            var vp = cam.WorldToViewportPoint(cam.transform.position - sun.transform.forward * 100);
+            if (Vector3.Dot(sun.transform.forward, cam.transform.forward) > 0) return false;
 
-            int width = (int)(camera.pixelWidth * renderingData.cameraData.renderScale);
-            int height = (int)(camera.pixelHeight * renderingData.cameraData.renderScale);
-            var desc = new RenderTextureDescriptor(width / 2, height / 2, renderingData.cameraData.cameraTargetDescriptor.colorFormat, 0);
-            RenderingUtils.ReAllocateHandleIfNeeded(ref _temp1, desc, FilterMode.Point, name: "_SunShaftTemp1");
-            RenderingUtils.ReAllocateHandleIfNeeded(ref _temp2, desc, FilterMode.Point, name: "_SunShaftTemp2");
-
-            var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
             Params[0] = new Vector4(renderFeature.BloomThreshold, renderFeature.BloomScale,
-                renderFeature.BloomMaxBrightness, Mathf.Max (renderFeature.MaskDepth, 0));
+                renderFeature.BloomMaxBrightness, Mathf.Max(renderFeature.MaskDepth, 0));
             Params[1] = new Vector4(vp.x, vp.y, renderFeature.BlurRadius, renderFeature.BlurSamples);
             Params[2] = renderFeature.TintColor;
             Params[2].w = renderFeature.ScreenFade;
+            return true;
+        }
 
-            renderFeature.material.SetVectorArray("SunShaftParams", Params);
+#if URP_COMPATIBILITY_MODE
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            Camera cam = renderingData.cameraData.camera;
+            if (cam == null) return;
+            if (cam.cameraType == CameraType.Preview) return;
+            if (!ComputeParams(cam)) return;
 
-            cmd.Blit(source, _temp1, renderFeature.material, 0);
-            cmd.Blit(_temp1, _temp2, renderFeature.material, 1);
-            cmd.Blit(_temp2, _temp1, renderFeature.material, 2);
-            cmd.Blit(_temp1, _temp2, renderFeature.material, 3);
-            cmd.Blit(_temp2, source, renderFeature.material, 4);
+            CommandBuffer cmd = CommandBufferPool.Get(m_ProfilerTag);
+            using (new ProfilingScope(cmd, m_ProfilingSampler))
+            {
+                int width = (int)(cam.pixelWidth * renderingData.cameraData.renderScale);
+                int height = (int)(cam.pixelHeight * renderingData.cameraData.renderScale);
+                var desc = new RenderTextureDescriptor(width / 2, height / 2, renderingData.cameraData.cameraTargetDescriptor.colorFormat, 0);
+                RenderingUtils.ReAllocateHandleIfNeeded(ref _temp1, desc, FilterMode.Point, name: "_SunShaftTemp1");
+                RenderingUtils.ReAllocateHandleIfNeeded(ref _temp2, desc, FilterMode.Point, name: "_SunShaftTemp2");
 
+                var source = renderingData.cameraData.renderer.cameraColorTargetHandle;
+                renderFeature.material.SetVectorArray("SunShaftParams", Params);
+
+                cmd.Blit(source, _temp1, renderFeature.material, 0);
+                cmd.Blit(_temp1, _temp2, renderFeature.material, 1);
+                cmd.Blit(_temp2, _temp1, renderFeature.material, 2);
+                cmd.Blit(_temp1, _temp2, renderFeature.material, 3);
+                cmd.Blit(_temp2, source, renderFeature.material, 4);
+            }
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
@@ -103,6 +112,146 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
         {
             _temp1?.Release();
             _temp2?.Release();
+        }
+#endif
+
+        class PassData
+        {
+            public Material material;
+            public TextureHandle source;
+            public Vector4[] sunShaftParams;
+        }
+
+        static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
+        static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        static readonly int SunShaftParamsId = Shader.PropertyToID("SunShaftParams");
+
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+        {
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+            if (renderFeature.material == null || cameraData.camera == null) return;
+            if (cameraData.camera.cameraType == CameraType.Preview) return;
+            if (!ComputeParams(cameraData.camera)) return;
+
+            TextureDesc halfDesc = renderGraph.GetTextureDesc(resourcesData.activeColorTexture);
+            halfDesc.width = Mathf.Max(1, halfDesc.width / 2);
+            halfDesc.height = Mathf.Max(1, halfDesc.height / 2);
+            halfDesc.depthBufferBits = 0;
+            halfDesc.name = "_SunShaftTemp";
+            halfDesc.clearBuffer = true;
+
+            TextureHandle temp1 = renderGraph.CreateTexture(halfDesc);
+            TextureHandle temp2 = renderGraph.CreateTexture(halfDesc);
+
+            TextureHandle activeColor = resourcesData.activeColorTexture;
+            Vector4[] sunShaftParams = Params;
+
+            // Pass 0: 降采样 → temp1（读活动颜色 + 深度）
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Downsample", out var pass0, m_ProfilingSampler))
+            {
+                pass0.material = renderFeature.material;
+                pass0.source = activeColor;
+                pass0.sunShaftParams = sunShaftParams;
+
+                builder.UseTexture(activeColor, AccessFlags.Read);
+                builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+                builder.SetRenderAttachment(temp1, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetVectorArray(SunShaftParamsId, data.sunShaftParams);
+                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 1: 模糊1 temp1 → temp2
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur1", out var pass1, m_ProfilingSampler))
+            {
+                pass1.material = renderFeature.material;
+                pass1.source = temp1;
+                pass1.sunShaftParams = sunShaftParams;
+
+                builder.UseTexture(temp1, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+                builder.SetRenderAttachment(temp2, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetVectorArray(SunShaftParamsId, data.sunShaftParams);
+                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 1, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 2: 模糊2 temp2 → temp1
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur2", out var pass2, m_ProfilingSampler))
+            {
+                pass2.material = renderFeature.material;
+                pass2.source = temp2;
+                pass2.sunShaftParams = sunShaftParams;
+
+                builder.UseTexture(temp2, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+                builder.SetRenderAttachment(temp1, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetVectorArray(SunShaftParamsId, data.sunShaftParams);
+                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 3: 模糊3 temp1 → temp2
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur3", out var pass3, m_ProfilingSampler))
+            {
+                pass3.material = renderFeature.material;
+                pass3.source = temp1;
+                pass3.sunShaftParams = sunShaftParams;
+
+                builder.UseTexture(temp1, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+                builder.SetRenderAttachment(temp2, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetVectorArray(SunShaftParamsId, data.sunShaftParams);
+                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 3, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 4: 合成 temp2 → 活动颜色（加法混合，需读回目标）
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Combine", out var pass4, m_ProfilingSampler))
+            {
+                pass4.material = renderFeature.material;
+                pass4.source = temp2;
+                pass4.sunShaftParams = sunShaftParams;
+
+                builder.UseTexture(temp2, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+                builder.SetRenderAttachment(activeColor, 0, AccessFlags.ReadWrite);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetVectorArray(SunShaftParamsId, data.sunShaftParams);
+                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 4, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
         }
     }
 }

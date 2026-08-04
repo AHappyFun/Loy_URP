@@ -38,7 +38,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f68b0402f785911448c603263cd037dc, type: 3}
   m_Name: VolumeCloudRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: f76bd094d0f20254f9b3beba6cbffa20, type: 3}
   m_VolumeCloudConfig: {fileID: 0}
@@ -54,7 +54,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
   m_Name: SSAORenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: d46e7bbcb7764fa78c85a736400aa93d, type: 3}
 --- !u!114 &-5023459535811012837
@@ -163,7 +163,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f62c9c65cf3354c93be831c8bc075510, type: 3}
   m_Name: ScreenSpaceAmbientOcclusion
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_Settings:
     AOMethod: 0
     Downsample: 0
@@ -256,7 +256,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 419301a55e14e9a42ac5043d44b19c4d, type: 3}
   m_Name: ContactShadowFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_RenderPassEvent: 200
   m_ContactShadows: {fileID: 0}
   ContactShadowComputeShader: {fileID: 7200000, guid: 3e6900e06dc185a4380af4dacb4db0a4, type: 3}
@@ -272,7 +272,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
   m_Name: SSAORenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
 --- !u!114 &940993687253614422
@@ -303,7 +303,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 419301a55e14e9a42ac5043d44b19c4d, type: 3}
   m_Name: ContactShadowFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_RenderPassEvent: 200
   m_ContactShadows: {fileID: 0}
   ContactShadowComputeShader: {fileID: 7200000, guid: 3e6900e06dc185a4380af4dacb4db0a4, type: 3}
@@ -319,7 +319,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b19c7caa9c507104998bd47aaa68582d, type: 3}
   m_Name: CustomLensFlareRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   shader: {fileID: 4800000, guid: a5dce12b5783ae747b018cf0d0878db8, type: 3}
   FlareIntensity:
   - 0.1
@@ -372,7 +372,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e32e72b6a3f58a24c9033e2b9275eea0, type: 3}
   m_Name: ScreenSpaceShadows
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
 --- !u!114 &5079983152399928941
 MonoBehaviour:
@@ -409,7 +409,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b10bbbe4629c90a4d97495f08e21feb8, type: 3}
   m_Name: SSRRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   m_ssrConfig: {fileID: 0}
   SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
@@ -441,7 +441,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b10bbbe4629c90a4d97495f08e21feb8, type: 3}
   m_Name: SSRRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 450
   m_ssrConfig: {fileID: 0}
   SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
@@ -457,6 +457,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
   m_Name: SSAORenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   renderPassEvent: 250
   shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}

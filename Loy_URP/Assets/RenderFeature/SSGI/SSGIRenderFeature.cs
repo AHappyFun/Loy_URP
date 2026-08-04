@@ -1,5 +1,6 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.Serialization;
 
@@ -7,10 +8,8 @@ public class SSGIRenderFeature : ScriptableRendererFeature
 {
     class SSGIPass : ScriptableRenderPass
     {
-        Material ssgiMaterial;
-
-        RTHandle ssgiHandle;
-        RTHandle tempHanle;
+        readonly Material ssgiMaterial;
+        readonly ProfilingSampler m_ProfilingSampler;
 
         public int NumDir = 8;
         public float MaxRayDistance = 200;
@@ -19,10 +18,18 @@ public class SSGIRenderFeature : ScriptableRendererFeature
         public bool isHalfSize = true;
         public float DepthBias = 0.1f;
 
+#if URP_COMPATIBILITY_MODE
+        RTHandle ssgiHandle;
+        RTHandle tempHanle;
+#endif
+
         public SSGIPass(Material mat)
         {
             ssgiMaterial = mat;
+            m_ProfilingSampler = new ProfilingSampler("Loy_SSGI");
         }
+
+#if URP_COMPATIBILITY_MODE
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
         {
             var desc = cameraTextureDescriptor;
@@ -45,27 +52,20 @@ public class SSGIRenderFeature : ScriptableRendererFeature
             if (ssgiMaterial == null) return;
 
             var cmd = CommandBufferPool.Get("Loy_SSGI Compute Pass");
+            using (new ProfilingScope(cmd, m_ProfilingSampler))
+            {
+                ssgiMaterial.SetFloat("_NumDirs", NumDir);
+                ssgiMaterial.SetFloat("_MaxRayDistance", MaxRayDistance);
+                ssgiMaterial.SetInt("_NumSteps", NumSteps);
+                ssgiMaterial.SetFloat("_DepthBias", DepthBias);
+                ssgiMaterial.SetFloat("_GITexRes", isHalfSize ? 0.5f : 1.0f);
 
-            //set params
-           ssgiMaterial.SetFloat("_NumDirs", NumDir);
-           ssgiMaterial.SetFloat("_MaxRayDistance", MaxRayDistance);
-           ssgiMaterial.SetInt("_NumSteps", NumSteps);
-           ssgiMaterial.SetFloat("_DepthBias", DepthBias);
-           ssgiMaterial.SetFloat("_GITexRes", isHalfSize ? 0.5f : 1.0f);
-
-            cmd.DrawProcedural(Matrix4x4.identity, ssgiMaterial, 0, MeshTopology.Triangles, 3, 1);
+                cmd.DrawProcedural(Matrix4x4.identity, ssgiMaterial, 0, MeshTopology.Triangles, 3, 1);
+                cmd.Blit(ssgiHandle, tempHanle, ssgiMaterial, 1);
+                cmd.Blit(tempHanle, ssgiHandle, ssgiMaterial, 2);
+                cmd.SetGlobalTexture(ssgiHandle.name, ssgiHandle.nameID);
+            }
             context.ExecuteCommandBuffer(cmd);
-            cmd.Clear();
-
-            cmd.Blit(ssgiHandle, tempHanle, ssgiMaterial, 1);
-            cmd.Blit(tempHanle, ssgiHandle, ssgiMaterial, 2);
-            context.ExecuteCommandBuffer(cmd);
-            cmd.Clear();
-
-            cmd.SetGlobalTexture(ssgiHandle.name, ssgiHandle.nameID);
-            context.ExecuteCommandBuffer(cmd);
-            cmd.Clear();
-
             CommandBufferPool.Release(cmd);
         }
 
@@ -73,6 +73,143 @@ public class SSGIRenderFeature : ScriptableRendererFeature
         {
             ssgiHandle?.Release();
             tempHanle?.Release();
+        }
+#endif
+
+        class PassData
+        {
+            public Material material;
+            public TextureHandle source;
+            public TextureHandle gbuffer2;
+            public int numDirs;
+            public float maxRayDistance;
+            public int numSteps;
+            public float depthBias;
+            public float giTexRes;
+        }
+
+        static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
+        static bool s_warnedHiz;
+
+        static readonly int[] kHiZMipIds =
+        {
+            Shader.PropertyToID("_HiZMip0"), Shader.PropertyToID("_HiZMip1"), Shader.PropertyToID("_HiZMip2"), Shader.PropertyToID("_HiZMip3"),
+            Shader.PropertyToID("_HiZMip4"), Shader.PropertyToID("_HiZMip5"), Shader.PropertyToID("_HiZMip6"), Shader.PropertyToID("_HiZMip7")
+        };
+
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+        {
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            if (ssgiMaterial == null) return;
+
+            float scale = isHalfSize ? 0.5f : 1.0f;
+
+            TextureDesc desc = renderGraph.GetTextureDesc(resourcesData.activeColorTexture);
+            desc.width = Mathf.Max(1, (int)(desc.width * scale));
+            desc.height = Mathf.Max(1, (int)(desc.height * scale));
+            desc.depthBufferBits = 0;
+            desc.msaaSamples = MSAASamples.None;
+            desc.clearBuffer = true;
+            desc.name = "_SSGIResultTex";
+
+            TextureHandle ssgi = renderGraph.CreateTexture(desc);
+            TextureHandle temp = renderGraph.CreateTexture(desc);
+
+            // 延迟 G-Buffer 法线（RG 模式不暴露 _GBuffer2 全局，直接取资源）
+            TextureHandle gbuffer2 = default;
+            if (resourcesData.gBuffer != null && resourcesData.gBuffer.Length > 2)
+                gbuffer2 = resourcesData.gBuffer[2];
+
+            // Pass 0: 计算 SSGI → ssgi
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Compute", out var computeData, m_ProfilingSampler))
+            {
+                computeData.material = ssgiMaterial;
+                computeData.numDirs = NumDir;
+                computeData.maxRayDistance = MaxRayDistance;
+                computeData.numSteps = NumSteps;
+                computeData.depthBias = DepthBias;
+                computeData.giTexRes = isHalfSize ? 0.5f : 1.0f;
+                computeData.gbuffer2 = gbuffer2;
+
+                if (HizRenderFeature.IsActive)
+                {
+                    for (int i = 0; i < kHiZMipIds.Length; i++)
+                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
+                }
+                else if (!s_warnedHiz)
+                {
+                    s_warnedHiz = true;
+                    Debug.LogWarning("SSGI 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSGI 将不可用。");
+                }
+                if (gbuffer2.IsValid())
+                {
+                    builder.UseTexture(gbuffer2, AccessFlags.Read);
+                    builder.AllowGlobalStateModification(true);
+                }
+                builder.UseGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), AccessFlags.Read);
+
+                builder.SetRenderAttachment(ssgi, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetInt("_NumDirs", data.numDirs);
+                    block.SetFloat("_MaxRayDistance", data.maxRayDistance);
+                    block.SetInt("_NumSteps", data.numSteps);
+                    block.SetFloat("_DepthBias", data.depthBias);
+                    block.SetFloat("_GITexRes", data.giTexRes);
+                    if (data.gbuffer2.IsValid())
+                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 1: 垂直模糊 → temp
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur V", out var blurVData, m_ProfilingSampler))
+            {
+                blurVData.material = ssgiMaterial;
+                blurVData.source = ssgi;
+                blurVData.giTexRes = isHalfSize ? 0.5f : 1.0f;
+
+                builder.UseTexture(ssgi, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+
+                builder.SetRenderAttachment(temp, 0, AccessFlags.Write);
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetFloat("_GITexRes", data.giTexRes);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 1, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            // Pass 2: 水平模糊 → ssgi，并暴露 _SSGIResultTex 全局
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur H", out var blurHData, m_ProfilingSampler))
+            {
+                blurHData.material = ssgiMaterial;
+                blurHData.source = temp;
+                blurHData.giTexRes = isHalfSize ? 0.5f : 1.0f;
+
+                builder.UseTexture(temp, AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
+
+                builder.SetRenderAttachment(ssgi, 0, AccessFlags.Write);
+
+                builder.SetGlobalTextureAfterPass(ssgi, Shader.PropertyToID("_SSGIResultTex"));
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                {
+                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    block.Clear();
+                    block.SetFloat("_GITexRes", data.giTexRes);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
+                });
+            }
         }
     }
 
@@ -120,6 +257,9 @@ public class SSGIRenderFeature : ScriptableRendererFeature
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
         if (m_ssgiPass == null) return;
+
+        // shader 用 SampleSceneColor 读取 _CameraOpaqueTexture
+        renderingData.cameraData.requiresOpaqueTexture = true;
 
         renderer.EnqueuePass(m_ssgiPass);
     }
