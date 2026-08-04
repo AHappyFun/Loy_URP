@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d82f48a1de01465ca9edc75a642e80dc, type: 3}
   m_Name: ReaderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   settings:
     passEvent: 550
     outlineColor: {r: 1, g: 1, b: 1, a: 1}
@@ -88,7 +88,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9c8fa7c2cb1438d40ab109967d520ccf, type: 3}
   m_Name: SunShaftRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   shader: {fileID: 4800000, guid: 584c322f9f78a4849929139beee36779, type: 3}
   TintColor: {r: 1, g: 0.8506116, b: 0.58805025, a: 1}
   BloomThreshold: 0
