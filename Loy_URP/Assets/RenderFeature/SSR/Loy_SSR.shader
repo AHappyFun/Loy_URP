@@ -57,7 +57,6 @@ Shader "Loy/Feature/SSR_View"
 
             TEXTURE2D_X(_SSRResultTex);
             TEXTURE2D_X(_SSRHistoryTex);
-            SAMPLER(sampler_LinearClamp);
 
             TEXTURE2D_X_HALF(_GBuffer0);
             TEXTURE2D_X_HALF(_GBuffer1);

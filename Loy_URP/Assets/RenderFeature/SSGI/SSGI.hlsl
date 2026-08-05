@@ -9,7 +9,6 @@ TEXTURE2D_X(_CameraOpaqueTexture);
 SAMPLER(sampler_CameraOpaqueTexture);
 
 TEXTURE2D_X(_SSGIResultTex);
-SAMPLER(sampler_LinearClamp);
 TEXTURE2D(_MainTex);
 SAMPLER(sampler_MainTex);
 

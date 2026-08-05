@@ -4,7 +4,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UnityGBuffer.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
 
 struct Attributes
 {
@@ -46,38 +46,6 @@ struct LoySurfaceData
     half3 emission;
     half  occlusion;
     half  alpha;
-};
-
-struct LoyInputData
-{
-    float3  positionWS;
-    float4  positionCS;
-    float3  normalWS;
-    half3   viewDirectionWS;
-    float4  shadowCoord;
-    half    fogCoord;
-    half3   bakedGI;
-    float2  normalizedScreenSpaceUV;
-    half4   shadowMask;
-    half3x3 tangentToWorld;
-};
-
-struct LoyFragmentOutput
-{
-    half4 GBuffer0 : SV_Target0;
-    half4 GBuffer1 : SV_Target1;
-    half4 GBuffer2 : SV_Target2;
-    half4 GBuffer3 : SV_Target3; // Camera color attachment
-
-    #ifdef GBUFFER_OPTIONAL_SLOT_1
-    GBUFFER_OPTIONAL_SLOT_1_TYPE GBuffer4 : SV_Target4;
-    #endif
-    #ifdef GBUFFER_OPTIONAL_SLOT_2
-    half4 GBuffer5 : SV_Target5;
-    #endif
-    #ifdef GBUFFER_OPTIONAL_SLOT_3
-    half4 GBuffer6 : SV_Target6;
-    #endif
 };
 
 Varyings LitGBufferPassVert(Attributes input)
@@ -145,9 +113,10 @@ inline void InitSurfaceData(float2 uv, out LoySurfaceData outSurface)
     #endif
 }
 
-inline void InitInputData(Varyings input, half3 normalTS, out LoyInputData inputData)
+// 填充 URP 标准 InputData
+inline void InitInputData(Varyings input, half3 normalTS, out InputData inputData)
 {
-    inputData = (LoyInputData)0;
+    inputData = (InputData)0;
 
     inputData.positionWS = input.positionWS;
     inputData.positionCS = input.positionCS;
@@ -165,7 +134,7 @@ inline void InitInputData(Varyings input, half3 normalTS, out LoyInputData input
     inputData.normalWS = normalize(input.normalWS);
 #endif
 
-    //ShadowMap UV
+    //ShadowMap UV（实时阴影在延迟光照阶段计算，这里只用于 GI 混合）
 #if defined(MAIN_LIGHT_CALCULATE_SHADOWS)
     inputData.shadowCoord = TransformWorldToShadowCoord(inputData.positionWS);
 #else
@@ -173,6 +142,7 @@ inline void InitInputData(Varyings input, half3 normalTS, out LoyInputData input
 #endif
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.viewDirWS_fogFactor.w);
+    inputData.vertexLighting = half3(0, 0, 0);
 
     //BakedGI
     half3 bakedGI = half3(0,0,0);
@@ -185,11 +155,9 @@ inline void InitInputData(Varyings input, half3 normalTS, out LoyInputData input
         #endif
             half4 decodeInstructions = half4(LIGHTMAP_HDR_MULTIPLIER, LIGHTMAP_HDR_EXPONENT, 0.0h, 0.0h);
             half4 transformCoords = half4(1, 1, 0, 0);
-        #ifdef LIGHTMAP_ON
             bakedGI = SampleSingleLightmap(TEXTURE2D_LIGHTMAP_ARGS(unity_Lightmap, samplerunity_Lightmap), input.lightmapUV, transformCoords, encodedLightmap, decodeInstructions);
-        #endif
     #else
-        bakedGI = SampleSHPixel(input.vertexSH,  inputData.normalWS);
+        bakedGI = SampleSHPixel(input.vertexSH, inputData.normalWS);
     #endif
 
     inputData.bakedGI = bakedGI;
@@ -205,62 +173,32 @@ inline void InitInputData(Varyings input, half3 normalTS, out LoyInputData input
     inputData.shadowMask = shadowMask;
 
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
-
 }
 
 
-LoyFragmentOutput GetGBuffer(Varyings input, LoySurfaceData surfaceData, LoyInputData inputData)
+GBufferFragOutput GetGBuffer(Varyings input, LoySurfaceData surfaceData, InputData inputData)
 {
-    //Init Direct BRDF
-    BRDFData brdfDataClearCoat = (BRDFData)0;
+    // 使用 URP 标准 BRDF 初始化（金属流：specular 传 0）
+    half alpha = surfaceData.alpha;
     BRDFData brdfData;
-    half oneMinusReflectivity = kDielectricSpec.a - surfaceData.metallic * kDielectricSpec.a;
-    brdfData.albedo = surfaceData.albedo;
-    brdfData.diffuse = surfaceData.albedo * oneMinusReflectivity;
-    brdfData.specular = lerp(kDielectricSpec.rgb, surfaceData.albedo, surfaceData.metallic);
-    brdfData.reflectivity = 1.0 - oneMinusReflectivity;
-    brdfData.perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(surfaceData.smoothness);
-    brdfData.roughness = max(PerceptualRoughnessToRoughness(brdfData.perceptualRoughness), HALF_MIN_SQRT);
-    brdfData.roughness2 = max(brdfData.roughness * brdfData.roughness, HALF_MIN);
-    brdfData.grazingTerm = saturate(surfaceData.smoothness + brdfData.reflectivity);
-    brdfData.normalizationTerm = brdfData.roughness * 4.0h + 2.0h;
-    brdfData.roughness2MinusOne = brdfData.roughness2 - 1.0h;
+    InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, half3(0, 0, 0), surfaceData.smoothness, alpha, brdfData);
 
     Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, inputData.shadowMask);
     MixRealtimeAndBakedGI(mainLight, inputData.normalWS, inputData.bakedGI, inputData.shadowMask);
 
-    half3 GIColor = GlobalIllumination(brdfData, brdfDataClearCoat, 0,
+    half3 GIColor = GlobalIllumination(brdfData, (BRDFData)0, 0,
                                           inputData.bakedGI, surfaceData.occlusion, inputData.positionWS,
                                           inputData.normalWS, inputData.viewDirectionWS, inputData.normalizedScreenSpaceUV);
 
-    //合成Gbuffer
-    LoyFragmentOutput output;
-
-    half3 packedNormalWS = PackNormal(inputData.normalWS);
-
-    uint materialFlags = 0;
-
-    half3 packedMetallic;
-    packedMetallic.r = brdfData.reflectivity;
-    packedMetallic.g =  1 - surfaceData.smoothness;
-    packedMetallic.b = surfaceData.metallic;
-
-#if defined(LIGHTMAP_ON) && defined(_MIXED_LIGHTING_SUBTRACTIVE)
-    materialFlags |= kMaterialFlagSubtractiveMixedLighting;
-#endif
-
-    output.GBuffer0 = half4(brdfData.albedo.rgb, PackMaterialFlags(materialFlags));
-    output.GBuffer1 = half4(packedMetallic, surfaceData.occlusion);
-    output.GBuffer2 = half4(packedNormalWS, surfaceData.smoothness);
-    output.GBuffer3 = half4(GIColor, 1);
-#if _RENDER_PASS_ENABLED
-    output.GBuffer4 = inputData.positionCS.z;
-#endif
-
-    return output;
+    // URP 17 标准 GBuffer 打包：
+    //  GBuffer0 = albedo + materialFlags
+    //  GBuffer1 = reflectivity(金属流) + occlusion
+    //  GBuffer2 = Oct 编码法线 + smoothness
+    //  GBuffer3 = GI + emission（补上了之前丢失的自发光）
+    return PackGBuffersBRDFData(brdfData, inputData, surfaceData.smoothness, surfaceData.emission + GIColor, surfaceData.occlusion);
 }
 
-LoyFragmentOutput LitGBufferPassFrag(Varyings input)
+GBufferFragOutput LitGBufferPassFrag(Varyings input)
 {
     UNITY_SETUP_INSTANCE_ID(input);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -268,12 +206,12 @@ LoyFragmentOutput LitGBufferPassFrag(Varyings input)
     LoySurfaceData surfaceData;
     InitSurfaceData(input.uv, surfaceData);
 
-    LoyInputData inputData;
+    InputData inputData;
     InitInputData(input, surfaceData.normalTS, inputData);
 
     //Dbuffer Decal todo
 
-    LoyFragmentOutput gbuffer = GetGBuffer(input, surfaceData, inputData);
+    GBufferFragOutput gbuffer = GetGBuffer(input, surfaceData, inputData);
 
     return gbuffer;
 }
