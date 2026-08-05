@@ -10,6 +10,9 @@ public class SSGIRenderFeature : ScriptableRendererFeature
     {
         readonly Material ssgiMaterial;
         readonly ProfilingSampler m_ProfilingSampler;
+        readonly ProfilingSampler m_ProfilingSamplerCompute;
+        readonly ProfilingSampler m_ProfilingSamplerBlurV;
+        readonly ProfilingSampler m_ProfilingSamplerBlurH;
 
         public int NumDir = 8;
         public float MaxRayDistance = 200;
@@ -27,6 +30,12 @@ public class SSGIRenderFeature : ScriptableRendererFeature
         {
             ssgiMaterial = mat;
             m_ProfilingSampler = new ProfilingSampler("Loy_SSGI");
+            m_ProfilingSamplerCompute = new ProfilingSampler("Loy_SSGI Compute");
+            m_ProfilingSamplerBlurV = new ProfilingSampler("Loy_SSGI Blur V");
+            m_ProfilingSamplerBlurH = new ProfilingSampler("Loy_SSGI Blur H");
+
+            // 确保 _CameraDepthTexture 在 RG 模式下被生成（深度拷贝 pass）
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
 #if URP_COMPATIBILITY_MODE
@@ -79,23 +88,15 @@ public class SSGIRenderFeature : ScriptableRendererFeature
         class PassData
         {
             public Material material;
-            public TextureHandle source;
+            public TextureHandle source;   // 显式传入的模糊源（ssgi 或 temp）
             public TextureHandle gbuffer2;
+            public MaterialPropertyBlock block;   // 每个 pass 独立的参数块，避免跨 pass 共享状态
             public int numDirs;
             public float maxRayDistance;
             public int numSteps;
             public float depthBias;
             public float giTexRes;
         }
-
-        static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
-        static bool s_warnedHiz;
-
-        static readonly int[] kHiZMipIds =
-        {
-            Shader.PropertyToID("_HiZMip0"), Shader.PropertyToID("_HiZMip1"), Shader.PropertyToID("_HiZMip2"), Shader.PropertyToID("_HiZMip3"),
-            Shader.PropertyToID("_HiZMip4"), Shader.PropertyToID("_HiZMip5"), Shader.PropertyToID("_HiZMip6"), Shader.PropertyToID("_HiZMip7")
-        };
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
@@ -113,6 +114,8 @@ public class SSGIRenderFeature : ScriptableRendererFeature
             desc.name = "_SSGIResultTex";
 
             TextureHandle ssgi = renderGraph.CreateTexture(desc);
+
+            desc.name = "_SSGITemp"; // 中间缓冲用独立名字，避免和 _SSGIResultTex 混淆
             TextureHandle temp = renderGraph.CreateTexture(desc);
 
             // 延迟 G-Buffer 法线（RG 模式不暴露 _GBuffer2 全局，直接取资源）
@@ -120,8 +123,15 @@ public class SSGIRenderFeature : ScriptableRendererFeature
             if (resourcesData.gBuffer != null && resourcesData.gBuffer.Length > 2)
                 gbuffer2 = resourcesData.gBuffer[2];
 
+            // 记录阶段（主线程）直接设置材质参数，确保可靠到达 shader
+            ssgiMaterial.SetInt("_NumDirs", NumDir);
+            ssgiMaterial.SetFloat("_MaxRayDistance", MaxRayDistance);
+            ssgiMaterial.SetInt("_NumSteps", NumSteps);
+            ssgiMaterial.SetFloat("_DepthBias", DepthBias);
+            ssgiMaterial.SetFloat("_GITexRes", isHalfSize ? 0.5f : 1.0f);
+
             // Pass 0: 计算 SSGI → ssgi
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Compute", out var computeData, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Compute", out var computeData, m_ProfilingSamplerCompute))
             {
                 computeData.material = ssgiMaterial;
                 computeData.numDirs = NumDir;
@@ -130,17 +140,10 @@ public class SSGIRenderFeature : ScriptableRendererFeature
                 computeData.depthBias = DepthBias;
                 computeData.giTexRes = isHalfSize ? 0.5f : 1.0f;
                 computeData.gbuffer2 = gbuffer2;
+                computeData.block = new MaterialPropertyBlock();
 
-                if (HizRenderFeature.IsActive)
-                {
-                    for (int i = 0; i < kHiZMipIds.Length; i++)
-                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                }
-                else if (!s_warnedHiz)
-                {
-                    s_warnedHiz = true;
-                    Debug.LogWarning("SSGI 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSGI 将不可用。");
-                }
+                // shader 用 _CameraDepthTexture 直接采样深度
+                builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
                 if (gbuffer2.IsValid())
                 {
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
@@ -152,7 +155,7 @@ public class SSGIRenderFeature : ScriptableRendererFeature
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetInt("_NumDirs", data.numDirs);
                     block.SetFloat("_MaxRayDistance", data.maxRayDistance);
@@ -165,13 +168,15 @@ public class SSGIRenderFeature : ScriptableRendererFeature
                 });
             }
 
-            // Pass 1: 垂直模糊 → temp
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur V", out var blurVData, m_ProfilingSampler))
+            // Pass 1: 垂直模糊 → temp（显式传入 ssgi）
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur V", out var blurVData, m_ProfilingSamplerBlurV))
             {
                 blurVData.material = ssgiMaterial;
                 blurVData.source = ssgi;
                 blurVData.giTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurVData.block = new MaterialPropertyBlock();
 
+                // 显式声明读取 ssgi（不靠全局，生命周期精确到本 pass）
                 builder.UseTexture(ssgi, AccessFlags.Read);
                 builder.AllowGlobalStateModification(true);
 
@@ -179,34 +184,34 @@ public class SSGIRenderFeature : ScriptableRendererFeature
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_GITexRes", data.giTexRes);
-                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_SSGIBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 1, MeshTopology.Triangles, 3, 1, block);
                 });
             }
 
-            // Pass 2: 水平模糊 → ssgi，并暴露 _SSGIResultTex 全局
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur H", out var blurHData, m_ProfilingSampler))
+            // Pass 2: 水平模糊 → ssgi（显式传入 temp），并暴露 _SSGIResultTex 给 SSGICombine
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Blur H", out var blurHData, m_ProfilingSamplerBlurH))
             {
                 blurHData.material = ssgiMaterial;
                 blurHData.source = temp;
                 blurHData.giTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurHData.block = new MaterialPropertyBlock();
 
                 builder.UseTexture(temp, AccessFlags.Read);
                 builder.AllowGlobalStateModification(true);
 
                 builder.SetRenderAttachment(ssgi, 0, AccessFlags.Write);
-
                 builder.SetGlobalTextureAfterPass(ssgi, Shader.PropertyToID("_SSGIResultTex"));
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_GITexRes", data.giTexRes);
-                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_SSGIBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
                 });
             }
@@ -258,8 +263,9 @@ public class SSGIRenderFeature : ScriptableRendererFeature
     {
         if (m_ssgiPass == null) return;
 
-        // shader 用 SampleSceneColor 读取 _CameraOpaqueTexture
+        // shader 用 SampleSceneColor 读取 _CameraOpaqueTexture，用 SampleSceneDepth 读取 _CameraDepthTexture
         renderingData.cameraData.requiresOpaqueTexture = true;
+        renderingData.cameraData.requiresDepthTexture = true;
 
         renderer.EnqueuePass(m_ssgiPass);
     }

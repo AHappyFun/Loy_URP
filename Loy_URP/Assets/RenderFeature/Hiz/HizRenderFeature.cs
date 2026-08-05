@@ -156,27 +156,20 @@ public class HizRenderFeature : ScriptableRendererFeature
 
         int mipCount;
 
-        class CopyPassData
+        class PassData
         {
             public ComputeShader cs;
-            public int kernel;
+            public int copyKernel;
+            public int buildKernel;
             public TextureHandle srcDepth;
-            public TextureHandle dstMip;
-            public int dispatchX;
-            public int dispatchY;
+            public TextureHandle[] mips;
             public int mipCount;
-        }
-
-        class BuildPassData
-        {
-            public ComputeShader cs;
-            public int kernel;
-            public TextureHandle srcMip;
-            public TextureHandle dstMip;
-            public int srcWidth;
-            public int srcHeight;
-            public int dispatchX;
-            public int dispatchY;
+            public int copyDispatchX;
+            public int copyDispatchY;
+            public int[] srcWidths;
+            public int[] srcHeights;
+            public int[] dispatchXs;
+            public int[] dispatchYs;
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -188,13 +181,14 @@ public class HizRenderFeature : ScriptableRendererFeature
             if (mipCount < 1) mipCount = 1;
 
             // 在图中创建 RFloat 的 mip 纹理链（enableRandomWrite 供 RWTexture2D 写入）
+            // 每个 mip 每帧都被 compute pass 完全写入，无需 clear，减少调试器里的 Clear 条目
             TextureDesc mipDesc = renderGraph.GetTextureDesc(resourcesData.activeDepthTexture);
             mipDesc.format = GraphicsFormat.R32_SFloat;
             mipDesc.depthBufferBits = 0;
             mipDesc.msaaSamples = MSAASamples.None;
             mipDesc.enableRandomWrite = true;
             mipDesc.useMipMap = false;
-            mipDesc.clearBuffer = true;
+            mipDesc.clearBuffer = false;
 
             TextureHandle[] mips = new TextureHandle[mipCount];
             int cw = mipDesc.width, ch = mipDesc.height;
@@ -208,66 +202,66 @@ public class HizRenderFeature : ScriptableRendererFeature
                 ch = Math.Max(1, ch >> 1);
             }
 
-            // Pass 1: 拷贝深度 → mips[0]
-            using (var builder = renderGraph.AddComputePass<CopyPassData>("HiZ Copy Depth", out var copyData, m_ProfilingSampler))
+            // 单个 compute pass：先拷贝深度到 mips[0]，再逐级构建 mip。
+            // 合并成一个 pass，保证调试器里属于同一组。
+            // 消费者（HBAO/SSGI/SSR）通过 UseGlobalTexture(_HiZMip*) 声明依赖，
+            // RG 会根据依赖自然保留并正确排序本 pass（无消费者时按 RG 语义裁剪，属于正常优化）。
+            using (var builder = renderGraph.AddComputePass<PassData>("HiZ Build", out var passData, m_ProfilingSampler))
             {
-                copyData.cs = cs;
-                copyData.kernel = hizKernel_CopyDepth;
-                copyData.srcDepth = resourcesData.activeDepthTexture;
-                copyData.dstMip = mips[0];
-                copyData.dispatchX = Mathf.CeilToInt(renderGraph.GetTextureDesc(mips[0]).width / 8f);
-                copyData.dispatchY = Mathf.CeilToInt(renderGraph.GetTextureDesc(mips[0]).height / 8f);
-                copyData.mipCount = mipCount;
+                passData.cs = cs;
+                passData.copyKernel = hizKernel_CopyDepth;
+                passData.buildKernel = hizKernel_BuildMip;
+                passData.srcDepth = resourcesData.activeDepthTexture;
+                passData.mips = mips;
+                passData.mipCount = mipCount;
+                passData.copyDispatchX = Mathf.CeilToInt(renderGraph.GetTextureDesc(mips[0]).width / 8f);
+                passData.copyDispatchY = Mathf.CeilToInt(renderGraph.GetTextureDesc(mips[0]).height / 8f);
+                passData.srcWidths = new int[mipCount];
+                passData.srcHeights = new int[mipCount];
+                passData.dispatchXs = new int[mipCount];
+                passData.dispatchYs = new int[mipCount];
+                for (int i = 0; i < mipCount; ++i)
+                {
+                    TextureDesc d = renderGraph.GetTextureDesc(mips[i]);
+                    if (i > 0)
+                    {
+                        TextureDesc s = renderGraph.GetTextureDesc(mips[i - 1]);
+                        passData.srcWidths[i] = s.width;
+                        passData.srcHeights[i] = s.height;
+                    }
+                    passData.dispatchXs[i] = Mathf.CeilToInt(d.width / 8f);
+                    passData.dispatchYs[i] = Mathf.CeilToInt(d.height / 8f);
+                }
 
                 builder.UseTexture(resourcesData.activeDepthTexture, AccessFlags.Read);
-                builder.UseTexture(mips[0], AccessFlags.Write);
-                builder.SetGlobalTextureAfterPass(mips[0], Shader.PropertyToID(kHiZNamePrefix + 0));
+                for (int i = 0; i < mipCount; ++i)
+                {
+                    builder.UseTexture(mips[i], AccessFlags.ReadWrite);
+                    builder.SetGlobalTextureAfterPass(mips[i], Shader.PropertyToID(kHiZNamePrefix + i));
+                }
                 builder.AllowGlobalStateModification(true);
 
-                builder.SetRenderFunc(static (CopyPassData data, ComputeGraphContext ctx) =>
+                builder.SetRenderFunc(static (PassData data, ComputeGraphContext ctx) =>
                 {
-                    // 在最早的 pass 设置 mip 总数，供所有 SampleHIZ 使用者读取
+                    // 设置 mip 总数，供所有 SampleHIZ 使用者读取
                     ctx.cmd.SetGlobalInt(kHiZMipCount, data.mipCount);
-                    ctx.cmd.SetComputeTextureParam(data.cs, data.kernel, kSrcDepth, data.srcDepth);
-                    ctx.cmd.SetComputeTextureParam(data.cs, data.kernel, kFirstMip, data.dstMip);
-                    ctx.cmd.DispatchCompute(data.cs, data.kernel, data.dispatchX, data.dispatchY, 1);
+
+                    // 拷贝深度 → mips[0]
+                    ctx.cmd.SetComputeTextureParam(data.cs, data.copyKernel, kSrcDepth, data.srcDepth);
+                    ctx.cmd.SetComputeTextureParam(data.cs, data.copyKernel, kFirstMip, data.mips[0]);
+                    ctx.cmd.DispatchCompute(data.cs, data.copyKernel, data.copyDispatchX, data.copyDispatchY, 1);
+
+                    // 逐级构建 mip：mips[i-1] → mips[i]
+                    for (int i = 1; i < data.mipCount; ++i)
+                    {
+                        ctx.cmd.SetComputeTextureParam(data.cs, data.buildKernel, kSrcMip, data.mips[i - 1]);
+                        ctx.cmd.SetComputeTextureParam(data.cs, data.buildKernel, kDstMip, data.mips[i]);
+                        ctx.cmd.SetComputeIntParam(data.cs, kSrcWidth, data.srcWidths[i]);
+                        ctx.cmd.SetComputeIntParam(data.cs, kSrcHeight, data.srcHeights[i]);
+                        ctx.cmd.DispatchCompute(data.cs, data.buildKernel, data.dispatchXs[i], data.dispatchYs[i], 1);
+                    }
                 });
             }
-
-            // Pass 2..N: 逐级构建 mip
-            for (int i = 1; i < mipCount; ++i)
-            {
-                TextureHandle src = mips[i - 1];
-                TextureHandle dst = mips[i];
-                TextureDesc dstDesc = renderGraph.GetTextureDesc(dst);
-                TextureDesc srcDesc = renderGraph.GetTextureDesc(src);
-
-                using (var builder = renderGraph.AddComputePass<BuildPassData>("HiZ Build Mip " + i, out var buildData, m_ProfilingSampler))
-                {
-                    buildData.cs = cs;
-                    buildData.kernel = hizKernel_BuildMip;
-                    buildData.srcMip = src;
-                    buildData.dstMip = dst;
-                    buildData.srcWidth = srcDesc.width;
-                    buildData.srcHeight = srcDesc.height;
-                    buildData.dispatchX = Mathf.CeilToInt(dstDesc.width / 8f);
-                    buildData.dispatchY = Mathf.CeilToInt(dstDesc.height / 8f);
-
-                    builder.UseTexture(src, AccessFlags.Read);
-                    builder.UseTexture(dst, AccessFlags.Write);
-                    builder.SetGlobalTextureAfterPass(dst, Shader.PropertyToID(kHiZNamePrefix + i));
-
-                    builder.SetRenderFunc(static (BuildPassData data, ComputeGraphContext ctx) =>
-                    {
-                        ctx.cmd.SetComputeTextureParam(data.cs, data.kernel, kSrcMip, data.srcMip);
-                        ctx.cmd.SetComputeTextureParam(data.cs, data.kernel, kDstMip, data.dstMip);
-                        ctx.cmd.SetComputeIntParam(data.cs, kSrcWidth, data.srcWidth);
-                        ctx.cmd.SetComputeIntParam(data.cs, kSrcHeight, data.srcHeight);
-                        ctx.cmd.DispatchCompute(data.cs, data.kernel, data.dispatchX, data.dispatchY, 1);
-                    });
-                }
-            }
-
         }
     }
 }

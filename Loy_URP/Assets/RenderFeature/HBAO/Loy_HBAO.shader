@@ -34,7 +34,7 @@
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
 
                 float2 uv = IN.positionCS.xy / GetAOTexSize().xy;
-
+                
                 return HBAORaymarch(uv);
             }
 

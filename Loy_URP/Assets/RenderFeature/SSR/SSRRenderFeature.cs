@@ -26,6 +26,9 @@ public class SSRRenderFeature : ScriptableRendererFeature
         {
             ssrMaterial = mat;
             m_ProfilingSampler = new ProfilingSampler("Loy_SSR");
+
+            // 确保 _CameraDepthTexture 在 RG 模式下被生成
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
 #if URP_COMPATIBILITY_MODE
@@ -151,12 +154,10 @@ public class SSRRenderFeature : ScriptableRendererFeature
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
                     builder.AllowGlobalStateModification(true);
                 }
-                if (HizRenderFeature.IsActive)
-                {
-                    for (int i = 0; i < kHiZMipIds.Length; i++)
-                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                }
-                else if (!s_warnedHiz)
+                // 无条件声明 HIZ 依赖，保证 Hiz 不被 RG 裁剪、且正确排在 SSR 之前
+                for (int i = 0; i < kHiZMipIds.Length; i++)
+                    builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
+                if (!HizRenderFeature.IsActive && !s_warnedHiz)
                 {
                     s_warnedHiz = true;
                     Debug.LogWarning("SSR 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSR 将不可用。");

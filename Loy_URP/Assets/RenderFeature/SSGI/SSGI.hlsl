@@ -1,7 +1,6 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
-#include "Assets/RenderFeature/Hiz/HIZ.hlsl"
 
 TEXTURE2D_X_HALF(_GBuffer2);
 SAMPLER(sampler_GBuffer2);
@@ -9,8 +8,8 @@ TEXTURE2D_X(_CameraOpaqueTexture);
 SAMPLER(sampler_CameraOpaqueTexture);
 
 TEXTURE2D_X(_SSGIResultTex);
-TEXTURE2D(_MainTex);
-SAMPLER(sampler_MainTex);
+TEXTURE2D(_SSGIBlurSource);
+SAMPLER(sampler_SSGIBlurSource);
 
 struct Attributes
 {
@@ -26,12 +25,9 @@ struct Varyings
 
 float3 ReconstructViewPos(float2 uv, float rawDepth)
 {
-    float4 clip = float4(uv * 2.0 - 1.0, rawDepth, 1.0);
-
-    float4 view = mul(_InvProjMatrix, clip);
-    view /= view.w;
-    view.y *= -1;
-    return view;
+    // URP 17 不设置 _InvProjMatrix 全局，改用内置 UNITY_MATRIX_I_VP
+    float3 worldPos = ComputeWorldSpacePosition(uv * 2.0 - 1.0, rawDepth, UNITY_MATRIX_I_VP);
+    return mul(UNITY_MATRIX_V, float4(worldPos, 1.0)).xyz;
 }
 
 float3 SampleSceneColor(float2 uv)
@@ -90,7 +86,7 @@ float4 SSGIRaymarch(float2 uv)
 {
 
     //如果使用半分辨率的AO，深度也需要用半分辨的。不然会出现横竖线。
-    float rawDepth = SampleHIZ(uv, 1);
+    float rawDepth = SampleSceneDepth(uv);
     float3 ViewPos = ReconstructViewPos(uv, rawDepth);
     //ViewPos.z *= -1;
 
@@ -122,7 +118,7 @@ float4 SSGIRaymarch(float2 uv)
 
             if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) break;
 
-            float sampleDepth = SampleHIZ(sampleUV, 1);
+            float sampleDepth = SampleSceneDepth(sampleUV);
 
             float3 sampleUVViewPos = ReconstructViewPos(sampleUV, sampleDepth);
 
@@ -159,7 +155,7 @@ float4 SampleSSGI(float2 uv)
 
 float4 SampleMainTex(float2 uv)
 {
-    return SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, uv);
+    return SAMPLE_TEXTURE2D_X(_SSGIBlurSource, sampler_SSGIBlurSource, uv);
 }
 
 //

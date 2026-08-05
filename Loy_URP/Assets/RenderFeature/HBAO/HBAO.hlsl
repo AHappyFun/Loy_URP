@@ -1,7 +1,6 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
-#include "Assets/RenderFeature/Hiz/HIZ.hlsl"
 
 TEXTURE2D_X_HALF(_GBuffer2);
 SAMPLER(sampler_GBuffer2);
@@ -20,12 +19,10 @@ struct Varyings
 
 float3 ReconstructViewPos(float2 uv, float rawDepth)
 {
-    float4 clip = float4(uv * 2.0 - 1.0, rawDepth, 1.0);
-
-    float4 view = mul(_InvProjMatrix, clip);
-    view /= view.w;
-    view.y *= -1;
-    return view;
+    // URP 17 不设置 _InvProjMatrix/_ProjMatrix 全局，改用内置 UNITY_MATRIX_I_VP
+    // 先重建世界位置，再变换到视图空间
+    float3 worldPos = ComputeWorldSpacePosition(uv * 2.0 - 1.0, rawDepth, UNITY_MATRIX_I_VP);
+    return mul(UNITY_MATRIX_V, float4(worldPos, 1.0)).xyz;
 }
 
 float Hash12(float2 p)
@@ -70,16 +67,27 @@ float2 GetAOTexSize()
 float4 HBAORaymarch(float2 uv)
 {
     //如果使用半分辨率的AO，深度也需要用半分辨的。不然会出现横竖线。
-    float rawDepth = SampleHIZ(uv, 1);
-    if(rawDepth > 0.999f)
+    float rawDepth = SampleSceneDepth(uv);
+//return rawDepth;
+    // sky 检测：reversed-Z 下天空深度接近远平面（0），用远平面判断更可靠
+    if (LinearEyeDepth(rawDepth, _ZBufferParams) >= _ProjectionParams.z * 0.99)
         return 1;
 
     float3 ViewPos = ReconstructViewPos(uv, rawDepth);
+    
+    //return float4(ViewPos, 1);
 
+    // _GBuffer2 是世界空间法线，转成视图空间用于背向剔除（避免坐标系混用）
     float3 Normal = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
+    float3 NormalVS = normalize(mul((float3x3)UNITY_MATRIX_V, Normal));
 
     float2 rot = RandomDir(uv);
     float randomAngle = rot.x * TWO_PI;
+
+    // 透视投影缩放：把 view 空间横向距离换算为 screen uv 偏移（用中心像素深度）
+    // UNITY_MATRIX_P 是内置投影矩阵，[0][0]=f/aspect, [1][1]=f
+    float viewDist = max(-ViewPos.z, 1e-4);
+    float2 uvPerViewUnit = float2(UNITY_MATRIX_P[0][0], UNITY_MATRIX_P[1][1]) * rcp(viewDist) * 0.5;
 
     float occlusionAccum = 0;
     float weights = 0;
@@ -100,23 +108,22 @@ float4 HBAORaymarch(float2 uv)
             float t = pow(_StepScale, s - 1);
             float sampleDistance = baseStep * t;
 
-            // convert a view-space lateral offset to uv offset approximately
-            // approximate: view-space dx -> uv offset = dx * (proj.x / -viewPos.z) * 0.5 + 0.5 ???
-            // We'll use screen-space approximation: scale by pixel size and a fudge factor
-            float2 pixelStep = sampleDistance * rcp(GetAOTexSize().xy) * 1.0; // tuning factor = 1.0
-            float2 sampleUV = uv + dir * pixelStep;
+            float2 sampleUV = uv + dir * (sampleDistance * uvPerViewUnit);
 
             if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) break;
 
-            float3 sampleView = ReconstructViewPos(sampleUV, SampleHIZ(sampleUV, 1));
+            float3 sampleView = ReconstructViewPos(sampleUV, SampleSceneDepth(sampleUV));
 
-            float diff = -sampleView.z - (-ViewPos.z);
+            // 经典 HBAO：相对表面切线平面计算高度与横向距离
+            // 平坦表面上所有采样点都在切线平面内（height≈0）→ 无 AO
+            // 只有高于切线平面的遮挡物（墙/凸起）才贡献
+            float3 delta = sampleView - ViewPos;
+            float height = dot(delta, NormalVS);             // 高于切线平面的距离
+            float3 tangentDelta = delta - NormalVS * height; // 切线平面内的横向分量
+            float dist = length(tangentDelta) + 1e-6;
+            float slope = height / dist;
 
-            float2 lateral = sampleView.xy - ViewPos.xy;
-            float dist = length(lateral) + 1e-6;
-            float slope = diff / dist;
-
-            //得到最大坡度
+            //得到最大坡度（即该方向的地平角）
             if (slope > maxSlope) maxSlope = slope;
         }
 
@@ -131,12 +138,6 @@ float4 HBAORaymarch(float2 uv)
             //θ = π/2 → 完全封顶 → occl=1
             float contribte = saturate(horizon * 2 / PI);
 
-            //计算法线Dot，剔除背面三角形的影响。如果是背面三角形
-            float2 dir2 = normalize(dir);
-            float nl = saturate(dot(Normal.xy , dir2));
-
-            contribte *= lerp(0.6, 1.0, nl);
-
             occlusionAccum += contribte;
             weights += 1.0;
         }
@@ -147,6 +148,11 @@ float4 HBAORaymarch(float2 uv)
         ao = 1.0 - _AOIntensity * saturate(occlusionAccum / weights);
     ao = saturate(ao);
 
+    // ===== 临时调试输出（R8 单通道）=====
+    // 输出 AO 像素的 uv.x，验证 UV 映射（全屏应为 0→1 平滑渐变）
+    //return float4(uv.x, uv.x, uv.x, 1);
+    // ===== 调试结束 =====
+
     return float4(ao, ao, ao, 1);
 }
 
@@ -156,8 +162,8 @@ float4 HBAORaymarchHIZ(float2 uv)
 
 }
 
-TEXTURE2D(_MainTex);
-SAMPLER(sampler_MainTex);
+TEXTURE2D(_HBAOBlurSource);
+SAMPLER(sampler_HBAOBlurSource);
 
 //用双边滤波模糊，考虑几何深度。而不是直接高斯模糊
 float4 HBAO_BlurV(float2 uv)
@@ -171,7 +177,7 @@ float4 HBAO_BlurV(float2 uv)
     for (int o = -radius; o <= radius ; o++)
     {
         float2 sampleUV = uv + float2(0, o * rcp(GetAOTexSize().y));
-        float ao = SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, sampleUV);
+        float ao = SAMPLE_TEXTURE2D_X(_HBAOBlurSource, sampler_HBAOBlurSource, sampleUV);
         float sampleDepth = SampleSceneDepth(sampleUV);
         float diff = abs(sampleDepth - centerDepth);
         float w = exp(-diff * 50) * exp(-abs(o) / BlurRadius);
@@ -192,7 +198,7 @@ float4 HBAO_BlurH(float2 uv)
     for (int o = -radius; o <= radius ; o++)
     {
         float2 sampleUV = uv + float2(o * rcp(GetAOTexSize().x), 0);
-        float ao = SAMPLE_TEXTURE2D_X(_MainTex,sampler_MainTex, sampleUV);
+        float ao = SAMPLE_TEXTURE2D_X(_HBAOBlurSource, sampler_HBAOBlurSource, sampleUV);
         float sampleDepth = SampleSceneDepth(sampleUV);
         float diff = abs(sampleDepth - centerDepth);
         float w = exp(-diff * 50) * exp(-abs(o) / BlurRadius);

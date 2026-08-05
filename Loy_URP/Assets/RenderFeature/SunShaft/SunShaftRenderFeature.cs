@@ -59,6 +59,9 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             this.renderFeature = renderFeature;
             this.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
             m_ProfilingSampler = new ProfilingSampler(m_ProfilerTag);
+
+            // 确保 _CameraDepthTexture 在 RG 模式下被生成
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
         /// <summary>计算太阳屏幕位置与材质参数；太阳被遮挡/不可见时返回 false。</summary>
@@ -142,6 +145,8 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             halfDesc.clearBuffer = true;
 
             TextureHandle temp1 = renderGraph.CreateTexture(halfDesc);
+
+            halfDesc.name = "_SunShaftTemp2"; // 中间缓冲独立命名，避免调试器里重名
             TextureHandle temp2 = renderGraph.CreateTexture(halfDesc);
 
             TextureHandle activeColor = resourcesData.activeColorTexture;

@@ -35,6 +35,7 @@ Shader "Loy/DeferredLit"
         _EmissionLable("自发光", int) = 0
         [NoScaleOffset] _EmissionMap("Emission Map", 2D) = "white" {}
         [HDR] _EmissionColor("Emission Color", Color) = (0,0,0)
+        _EmissionScale("Emission Scale", Float) = 1.0
 
 
     }
@@ -98,6 +99,60 @@ Shader "Loy/DeferredLit"
 
             ENDHLSL
 
+        }
+
+        Pass
+        {
+            Name "DepthOnly"
+            Tags
+            {
+                "LightMode" = "DepthOnly"
+            }
+
+            // 深度预通道/深度纹理（_CameraDepthTexture）依赖此通道
+            ZWrite On
+            ColorMask R
+            Cull[_Cull]
+
+            HLSLPROGRAM
+            #pragma target 4.5
+
+            #pragma multi_compile _ _ALPHATEST_ON
+            #pragma multi_compile_instancing
+
+            #pragma vertex StandardDepthOnlyVertex
+            #pragma fragment StandardDepthOnlyFragment
+
+            #include "StandardShadowPass.hlsl"
+
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "DepthNormals"
+            Tags
+            {
+                "LightMode" = "DepthNormals"
+            }
+
+            // Deferred 下 SSAO/深度-法线预通道依赖此通道（写入 GBuffer2 法线槽）
+            ZWrite On
+            Cull[_Cull]
+
+            HLSLPROGRAM
+            #pragma target 4.5
+
+            #pragma multi_compile _ _ALPHATEST_ON
+            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #pragma multi_compile_instancing
+
+            #pragma vertex StandardDepthNormalsVertex
+            #pragma fragment StandardDepthNormalsFragment
+
+            #include "StandardShadowPass.hlsl"
+
+            ENDHLSL
         }
 
 		Pass

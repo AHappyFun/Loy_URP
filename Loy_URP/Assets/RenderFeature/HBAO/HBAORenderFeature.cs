@@ -10,7 +10,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
     class HBAOPass : ScriptableRenderPass
     {
         readonly Material hbaoMaterial;
-        readonly ProfilingSampler m_ProfilingSampler;
+        readonly ProfilingSampler m_ProfilingSamplerCompute;
+        readonly ProfilingSampler m_ProfilingSamplerBlurV;
+        readonly ProfilingSampler m_ProfilingSamplerBlurH;
 
         public float AOIntensity = 1.0f;
         public float Radius = 1.0f;
@@ -28,7 +30,12 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public HBAOPass(Material mat)
         {
             hbaoMaterial = mat;
-            m_ProfilingSampler = new ProfilingSampler("Loy_HBAO");
+            m_ProfilingSamplerCompute = new ProfilingSampler("Loy_HBAO Compute");
+            m_ProfilingSamplerBlurV = new ProfilingSampler("Loy_HBAO Blur V");
+            m_ProfilingSamplerBlurH = new ProfilingSampler("Loy_HBAO Blur H");
+
+            // 确保 _CameraDepthTexture 在 RG 模式下被生成（深度拷贝 pass）
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
 #if URP_COMPATIBILITY_MODE
@@ -84,8 +91,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
         class PassData
         {
             public Material material;
-            public TextureHandle source;
+            public TextureHandle source;   // 显式传入的模糊源（hbao 或 temp）
             public TextureHandle gbuffer2;
+            public MaterialPropertyBlock block;   // 每个 pass 独立的参数块，避免跨 pass 共享状态
             public float aoIntensity;
             public float radius;
             public float bias;
@@ -95,19 +103,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
             public float aoTexRes;
         }
 
-        static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
-        static bool s_warnedHiz;
-
-        // shader 通过 SampleHIZ 读取的 mip 全局
-        static readonly int[] kHiZMipIds =
-        {
-            Shader.PropertyToID("_HiZMip0"), Shader.PropertyToID("_HiZMip1"), Shader.PropertyToID("_HiZMip2"), Shader.PropertyToID("_HiZMip3"),
-            Shader.PropertyToID("_HiZMip4"), Shader.PropertyToID("_HiZMip5"), Shader.PropertyToID("_HiZMip6"), Shader.PropertyToID("_HiZMip7")
-        };
-
         static void SetComputeParams(PassData data)
         {
-            MaterialPropertyBlock block = s_SharedPropertyBlock;
+            MaterialPropertyBlock block = data.block;
             block.Clear();
             block.SetFloat("_AOIntensity", data.aoIntensity);
             block.SetFloat("_Radius", data.radius);
@@ -137,6 +135,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
             desc.name = "_HBAOResultTex";
 
             TextureHandle hbao = renderGraph.CreateTexture(desc);
+
+            desc.name = "_HBAOTemp"; // 中间缓冲用独立名字，避免和 _HBAOResultTex 混淆
             TextureHandle temp = renderGraph.CreateTexture(desc);
 
             // 延迟 G-Buffer 法线（RG 模式不暴露 _GBuffer2 全局，直接取资源）
@@ -144,8 +144,17 @@ public class HBAORenderFeature : ScriptableRendererFeature
             if (resourcesData.gBuffer != null && resourcesData.gBuffer.Length > 2)
                 gbuffer2 = resourcesData.gBuffer[2];
 
+            // 记录阶段（主线程）直接设置材质参数，确保可靠到达 shader
+            hbaoMaterial.SetFloat("_AOIntensity", AOIntensity);
+            hbaoMaterial.SetFloat("_Radius", Radius);
+            hbaoMaterial.SetFloat("_Bias", Bias);
+            hbaoMaterial.SetInt("_NumDirs", NumDirs);
+            hbaoMaterial.SetInt("_NumSteps", NumSteps);
+            hbaoMaterial.SetFloat("_StepScale", StepScale);
+            hbaoMaterial.SetFloat("_AOTexRes", isHalfSize ? 0.5f : 1.0f);
+
             // Pass 0: 计算 AO → hbao
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Compute", out var computeData, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Compute", out var computeData, m_ProfilingSamplerCompute))
             {
                 computeData.material = hbaoMaterial;
                 computeData.aoIntensity = AOIntensity;
@@ -156,17 +165,10 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 computeData.stepScale = StepScale;
                 computeData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
                 computeData.gbuffer2 = gbuffer2;
+                computeData.block = new MaterialPropertyBlock();
 
-                if (HizRenderFeature.IsActive)
-                {
-                    for (int i = 0; i < kHiZMipIds.Length; i++)
-                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                }
-                else if (!s_warnedHiz)
-                {
-                    s_warnedHiz = true;
-                    Debug.LogWarning("HBAO 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，AO 将不可用。");
-                }
+                // shader 用 _CameraDepthTexture 直接采样深度
+                builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
                 if (gbuffer2.IsValid())
                 {
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
@@ -180,17 +182,19 @@ public class HBAORenderFeature : ScriptableRendererFeature
                     SetComputeParams(data);
                     if (data.gbuffer2.IsValid())
                         rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
-                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, s_SharedPropertyBlock);
+                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, data.block);
                 });
             }
 
-            // Pass 1: 垂直模糊 → temp
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Blur V", out var blurVData, m_ProfilingSampler))
+            // Pass 1: 垂直模糊 → temp（显式传入 hbao）
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Blur V", out var blurVData, m_ProfilingSamplerBlurV))
             {
                 blurVData.material = hbaoMaterial;
                 blurVData.source = hbao;
                 blurVData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurVData.block = new MaterialPropertyBlock();
 
+                // 显式声明读取 hbao（不靠全局，生命周期精确到本 pass）
                 builder.UseTexture(hbao, AccessFlags.Read);
                 builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
                 builder.AllowGlobalStateModification(true);
@@ -199,35 +203,35 @@ public class HBAORenderFeature : ScriptableRendererFeature
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_AOTexRes", data.aoTexRes);
-                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 1, MeshTopology.Triangles, 3, 1, block);
                 });
             }
 
-            // Pass 2: 水平模糊 → hbao，并暴露 _HBAOResultTex 全局
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Blur H", out var blurHData, m_ProfilingSampler))
+            // Pass 2: 水平模糊 → hbao（显式传入 temp），并暴露 _HBAOResultTex 给 SSGICombine
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Blur H", out var blurHData, m_ProfilingSamplerBlurH))
             {
                 blurHData.material = hbaoMaterial;
                 blurHData.source = temp;
                 blurHData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurHData.block = new MaterialPropertyBlock();
 
                 builder.UseTexture(temp, AccessFlags.Read);
                 builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
                 builder.AllowGlobalStateModification(true);
 
                 builder.SetRenderAttachment(hbao, 0, AccessFlags.Write);
-
                 builder.SetGlobalTextureAfterPass(hbao, Shader.PropertyToID("_HBAOResultTex"));
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_AOTexRes", data.aoTexRes);
-                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_MainTex"), data.source);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
                 });
             }
@@ -277,6 +281,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
         if (m_HBAOPass == null) return;
+
+        // shader 用 SampleSceneDepth 读取 _CameraDepthTexture
+        renderingData.cameraData.requiresDepthTexture = true;
 
         renderer.EnqueuePass(m_HBAOPass);
     }

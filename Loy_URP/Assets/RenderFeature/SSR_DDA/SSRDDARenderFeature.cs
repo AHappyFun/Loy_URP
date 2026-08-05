@@ -27,6 +27,9 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
         {
             ssrMaterial = mat;
             m_ProfilingSampler = new ProfilingSampler("Loy_DDA_SSR");
+
+            // 确保 _CameraDepthTexture 在 RG 模式下被生成
+            ConfigureInput(ScriptableRenderPassInput.Depth);
         }
 
 #if URP_COMPATIBILITY_MODE
@@ -98,13 +101,6 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
         }
 
         static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
-        static bool s_warnedHiz;
-
-        static readonly int[] kHiZMipIds =
-        {
-            Shader.PropertyToID("_HiZMip0"), Shader.PropertyToID("_HiZMip1"), Shader.PropertyToID("_HiZMip2"), Shader.PropertyToID("_HiZMip3"),
-            Shader.PropertyToID("_HiZMip4"), Shader.PropertyToID("_HiZMip5"), Shader.PropertyToID("_HiZMip6"), Shader.PropertyToID("_HiZMip7")
-        };
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
@@ -154,16 +150,6 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
                 {
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
                     builder.AllowGlobalStateModification(true);
-                }
-                if (HizRenderFeature.IsActive)
-                {
-                    for (int i = 0; i < kHiZMipIds.Length; i++)
-                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                }
-                else if (!s_warnedHiz)
-                {
-                    s_warnedHiz = true;
-                    Debug.LogWarning("SSR 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSR 将不可用。");
                 }
 
                 builder.SetRenderAttachment(result, 0, AccessFlags.Write);
