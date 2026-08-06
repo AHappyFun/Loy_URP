@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Body
-  m_Shader: {fileID: 4800000, guid: 4e6bd157faf9b2e42996091e9b57c002, type: 3}
+  m_Shader: {fileID: 4800000, guid: f12fcf73e2f3e14409bda496c8d87d08, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -272,6 +272,7 @@ Material:
     - _DstBlendAlpha: 0
     - _Edge: 0.145
     - _EmissionLable: 0
+    - _EmissionScale: 1
     - _EmissiveColorMode: 1
     - _EnableBlendModePreserveSpecularLighting: 1
     - _EnableFogOnTransparent: 1
@@ -363,6 +364,11 @@ Material:
     - _TexWorldScaleEmissive: 1
     - _Thickness: 1
     - _ThicknessMultiplier: 1
+    - _ToonDiffuseStep: 0.585
+    - _ToonGIStrength: 0.22
+    - _ToonLable: 0
+    - _ToonSpecIntensity: 1
+    - _ToonSpecularSize: 0.139
     - _TransmissionEnable: 1
     - _Transparent: 0
     - _TransparentBackfaceEnable: 0
@@ -403,6 +409,7 @@ Material:
     - _UVMappingMask: {r: 1, g: 0, b: 0, a: 0}
     - _UVMappingMaskEmissive: {r: 1, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!114 &640079436621465114
 MonoBehaviour:
   m_ObjectHideFlags: 11
