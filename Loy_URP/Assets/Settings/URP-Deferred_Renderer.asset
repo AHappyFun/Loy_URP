@@ -1,5 +1,22 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-5607457468507513065
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8fec01550db406b8798ab8713866384, type: 3}
+  m_Name: HizRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::HizRenderFeature
+  m_Active: 0
+  settings:
+    renderPassEvent: 220
+    hizBuildCS: {fileID: 7200000, guid: 9d492db186c04ae79711290a79e51232, type: 3}
+    mipCount: 8
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -24,8 +41,10 @@ MonoBehaviour:
     probeSamplingDebugMesh: {fileID: 0}
     probeSamplingDebugTexture: {fileID: 0}
     probeVolumeBlendStatesCS: {fileID: 0}
-  m_RendererFeatures: []
-  m_RendererFeatureMap: 
+  m_RendererFeatures:
+  - {fileID: -5607457468507513065}
+  - {fileID: 6702227998080770732}
+  m_RendererFeatureMap: 179f7f58244f2eb2ac2248b5da18035d
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -54,3 +73,26 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
+--- !u!114 &6702227998080770732
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 955d35bc18444448956540aee140d2a4, type: 3}
+  m_Name: HBAORenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::HBAORenderFeature
+  m_Active: 1
+  settings:
+    hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
+    passEvent: 220
+    AOIntensity: 0.5
+    Radius: 0.1
+    Bias: 0.02
+    NumDirs: 8
+    NumSteps: 12
+    StepScale: 1.4
+    isHalfSize: 1

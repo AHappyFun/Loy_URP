@@ -101,6 +101,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
             public int numSteps;
             public float stepScale;
             public float aoTexRes;
+            public Vector4 aoTexSize;   // 实际 AO RT 尺寸：x=宽, y=高, z=1/宽, w=1/高
         }
 
         static void SetComputeParams(PassData data)
@@ -114,6 +115,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
             block.SetInt("_NumSteps", data.numSteps);
             block.SetFloat("_StepScale", data.stepScale);
             block.SetFloat("_AOTexRes", data.aoTexRes);
+            block.SetVector("_AOTexSize", data.aoTexSize);
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -133,6 +135,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
             desc.clearBuffer = true;
             desc.clearColor = Color.white;
             desc.name = "_HBAOResultTex";
+
+            // 显式把 AO RT 的尺寸传给 shader，避免 shader 里靠 _ScaledScreenParams 猜尺寸
+            Vector4 aoTexSize = new Vector4(desc.width, desc.height, 1.0f / desc.width, 1.0f / desc.height);
 
             TextureHandle hbao = renderGraph.CreateTexture(desc);
 
@@ -164,6 +169,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 computeData.numSteps = NumSteps;
                 computeData.stepScale = StepScale;
                 computeData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
+                computeData.aoTexSize = aoTexSize;
                 computeData.gbuffer2 = gbuffer2;
                 computeData.block = new MaterialPropertyBlock();
 
@@ -192,6 +198,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 blurVData.material = hbaoMaterial;
                 blurVData.source = hbao;
                 blurVData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurVData.aoTexSize = aoTexSize;
                 blurVData.block = new MaterialPropertyBlock();
 
                 // 显式声明读取 hbao（不靠全局，生命周期精确到本 pass）
@@ -206,6 +213,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                     MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_AOTexRes", data.aoTexRes);
+                    block.SetVector("_AOTexSize", data.aoTexSize);
                     rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 1, MeshTopology.Triangles, 3, 1, block);
                 });
@@ -217,6 +225,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 blurHData.material = hbaoMaterial;
                 blurHData.source = temp;
                 blurHData.aoTexRes = isHalfSize ? 0.5f : 1.0f;
+                blurHData.aoTexSize = aoTexSize;
                 blurHData.block = new MaterialPropertyBlock();
 
                 builder.UseTexture(temp, AccessFlags.Read);
@@ -231,6 +240,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                     MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetFloat("_AOTexRes", data.aoTexRes);
+                    block.SetVector("_AOTexSize", data.aoTexSize);
                     rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOBlurSource"), data.source);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
                 });

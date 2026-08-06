@@ -16,6 +16,7 @@
             #include "HBAO.hlsl"
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
 
             Varyings vert(Attributes IN)
             {
