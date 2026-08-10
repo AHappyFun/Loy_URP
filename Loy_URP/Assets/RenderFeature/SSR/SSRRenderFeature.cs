@@ -87,6 +87,8 @@ public class SSRRenderFeature : ScriptableRendererFeature
         {
             public Material material;
             public TextureHandle gbuffer2;
+            public TextureHandle[] hiZMips;
+            public int hiZMipCount;
             public TextureHandle activeColor;   // 当前帧延迟光照结果，SSR 反射内容来源
             public int maxSteps;
             public float stepSize;
@@ -112,6 +114,21 @@ public class SSRRenderFeature : ScriptableRendererFeature
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
             if (ssrMaterial == null || cameraData.camera == null) return;
+
+            if (!frameData.Contains<HiZFrameData>())
+            {
+                if (!s_warnedHiz)
+                {
+                    s_warnedHiz = true;
+                    Debug.LogWarning("SSR requires HizRenderFeature to run before it.");
+                }
+                return;
+            }
+
+            HiZFrameData hiZData = frameData.Get<HiZFrameData>();
+            int hiZMipCount = Mathf.Min(hiZData.mipCount, kHiZMipIds.Length);
+            if (hiZData.mips == null || hiZMipCount == 0)
+                return;
 
             // 历史缓冲：持久 RTHandle，跨帧导入 RG，保证时序重投影内容连续
             RenderTextureDescriptor histDesc = cameraData.cameraTargetDescriptor;
@@ -139,6 +156,8 @@ public class SSRRenderFeature : ScriptableRendererFeature
             {
                 passData.material = ssrMaterial;
                 passData.gbuffer2 = gbuffer2;
+                passData.hiZMips = hiZData.mips;
+                passData.hiZMipCount = hiZMipCount;
                 passData.activeColor = resourcesData.activeColorTexture;
                 passData.maxSteps = maxSteps;
                 passData.stepSize = stepSize;
@@ -159,18 +178,9 @@ public class SSRRenderFeature : ScriptableRendererFeature
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
                 // 本 pass 用 SetGlobalMatrix/SetGlobalTexture 设全局（矩阵+法线+场景颜色），必须允许改全局状态
                 builder.AllowGlobalStateModification(true);
-                // 声明 HIZ 依赖，保证 Hiz 不被 RG 裁剪、且正确排在 SSR 之前。
-                // 只在 Hiz 启用时才声明；否则 UseGlobalTexture(_HiZMip*) 会因未注册抛 "null resource index"。
-                if (HizRenderFeature.IsActive)
-                {
-                    for (int i = 0; i < kHiZMipIds.Length; i++)
-                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                }
-                else if (!s_warnedHiz)
-                {
-                    s_warnedHiz = true;
-                    Debug.LogWarning("SSR 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSR 将不可用。");
-                }
+                // 显式句柄依赖：SSR 不入图时，这些读取边不存在，HiZ Build 可自动剔除。
+                for (int i = 0; i < hiZMipCount; i++)
+                    builder.UseTexture(hiZData.mips[i], AccessFlags.Read);
 
                 builder.SetRenderAttachment(result, 0, AccessFlags.Write);
                 builder.SetGlobalTextureAfterPass(result, Shader.PropertyToID("_SSRResultTex"));
@@ -190,7 +200,9 @@ public class SSRRenderFeature : ScriptableRendererFeature
                     block.SetFloat("_SSRStepSize", data.stepSize);
                     block.SetInt("_Frame", data.frame);
                     // RG 里 compute pass 的 SetGlobalInt 跨 pass 不可靠，这里显式把 HiZ mip 数传进 block
-                    block.SetInt("_HiZMipCount", HizRenderFeature.MipCount);
+                    block.SetInt("_HiZMipCount", data.hiZMipCount);
+                    for (int i = 0; i < data.hiZMipCount; ++i)
+                        rgContext.cmd.SetGlobalTexture(kHiZMipIds[i], data.hiZMips[i]);
                     if (data.gbuffer2.IsValid())
                         rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
                     rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.activeColor);
@@ -234,14 +246,6 @@ public class SSRRenderFeature : ScriptableRendererFeature
             stepSize = settings.stepSize,
         };
 
-        // 注册为 HiZ 消费者：Hiz 按 SSR 的 isActive 判断是否构建金字塔（取消勾选/移除都会停止）
-        HizRenderFeature.RegisterConsumer(this);
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        HizRenderFeature.UnregisterConsumer(this);
-        base.Dispose(disposing);
     }
 
     // Inject the pass

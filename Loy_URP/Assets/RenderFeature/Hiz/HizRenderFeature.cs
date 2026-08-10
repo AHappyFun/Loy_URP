@@ -13,6 +13,22 @@ public class HiZSettings
     public int mipCount = 8; // stop mip when smaller than this
 }
 
+/// <summary>
+/// Hi-Z resources for the current render graph frame. Consumers use these
+/// handles directly so unrelated global-texture users do not keep Hi-Z alive.
+/// </summary>
+public sealed class HiZFrameData : ContextItem
+{
+    public TextureHandle[] mips;
+    public int mipCount;
+
+    public override void Reset()
+    {
+        mips = null;
+        mipCount = 0;
+    }
+}
+
 public class HizRenderFeature : ScriptableRendererFeature
 {
     /// <summary>Hiz 是否在启用状态，供依赖 _HiZMip* 的特性（HBAO/SSGI/SSR）检查。</summary>
@@ -20,26 +36,6 @@ public class HizRenderFeature : ScriptableRendererFeature
 
     /// <summary>实际构建的 mip 数，供 SSR 等通过 MaterialPropertyBlock 显式传 _HiZMipCount（RG 里 SetGlobalInt 跨 pass 不可靠）。</summary>
     public static int MipCount { get; private set; }
-
-    /// <summary>HiZ 消费者列表。_HiZMip* 是全局纹理，RG 无法自动剔除（对后续所有 pass 可见），
-    /// 所以手动判断：任何需要 HiZ 的 feature 在 Create() 里 RegisterConsumer(this) 注册自己，
-    /// Hiz 按每个消费者的 isActive（勾选框状态，每帧可靠）判断要不要构建。
-    /// 取消勾选/移除都能正确停止，加新消费者不用改 Hiz。</summary>
-    static readonly System.Collections.Generic.List<ScriptableRendererFeature> s_Consumers = new();
-    public static void RegisterConsumer(ScriptableRendererFeature feature)
-    {
-        if (feature != null && !s_Consumers.Contains(feature))
-            s_Consumers.Add(feature);
-    }
-    public static void UnregisterConsumer(ScriptableRendererFeature feature) => s_Consumers.Remove(feature);
-
-    static bool AnyConsumerActive()
-    {
-        for (int i = 0; i < s_Consumers.Count; ++i)
-            if (s_Consumers[i] != null && s_Consumers[i].isActive)
-                return true;
-        return false;
-    }
 
     public HiZSettings settings = new HiZSettings();
 
@@ -65,20 +61,11 @@ public class HizRenderFeature : ScriptableRendererFeature
             return;
         }
 
-        // _HiZMip* 是全局纹理，RG 无法自动剔除（对后续所有 pass 可见，RenderGraphView 里能看到 opaque/半透明引用）。
-        // 手动判断：有消费者勾选启用才构建，否则不 enqueue。
-        if (!AnyConsumerActive())
-        {
-            IsActive = false;
-            return;
-        }
-
+        // 始终把逻辑 Pass 录入 Render Graph。没有消费者读取 HiZFrameData 时，
+        // Render Graph 会自动剔除 HiZ Build 及其临时纹理。
         IsActive = true;
         MipCount = Mathf.Max(1, settings.mipCount);
         hizPass.Setup();
-
-        // HiZ 从 _CameraDepthTexture 的解析拷贝构建，需要深度纹理被生成
-        renderingData.cameraData.requiresDepthTexture = true;
 
         renderer.EnqueuePass(hizPass);
     }
@@ -248,9 +235,13 @@ public class HizRenderFeature : ScriptableRendererFeature
                 ch = Math.Max(1, ch >> 1);
             }
 
+            HiZFrameData hiZData = frameData.Create<HiZFrameData>();
+            hiZData.mips = mips;
+            hiZData.mipCount = mipCount;
+
             // 单个 compute pass：先拷贝深度到 mips[0]，再逐级构建 mip。
             // 合并成一个 pass，保证调试器里属于同一组。
-            // 消费者（HBAO/SSGI/SSR）通过 UseGlobalTexture(_HiZMip*) 声明依赖，
+            // 消费者通过 HiZFrameData 取得句柄并调用 UseTexture 声明依赖，
             // RG 会根据依赖自然保留并正确排序本 pass（无消费者时按 RG 语义裁剪，属于正常优化）。
             using (var builder = renderGraph.AddComputePass<PassData>("HiZ Build", out var passData, m_ProfilingSampler))
             {
@@ -281,10 +272,7 @@ public class HizRenderFeature : ScriptableRendererFeature
 
                 builder.UseTexture(srcDepth, AccessFlags.Read);
                 for (int i = 0; i < mipCount; ++i)
-                {
                     builder.UseTexture(mips[i], AccessFlags.ReadWrite);
-                    builder.SetGlobalTextureAfterPass(mips[i], Shader.PropertyToID(kHiZNamePrefix + i));
-                }
                 // 注意：不能 AllowGlobalStateModification(true)——它在 RG 里会调用 AllowPassCulling(false)，
                 // 让本 pass 永不剔除（即使 SSR 关掉、_HiZMip* 没消费者也照跑）。
                 // render func 里已无全局改动（SetGlobalInt 已删），不需要它。
