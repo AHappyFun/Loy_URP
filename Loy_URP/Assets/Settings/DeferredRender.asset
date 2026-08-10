@@ -207,7 +207,6 @@ MonoBehaviour:
   - {fileID: 4936139588684103378}
   - {fileID: -2836546898973219532}
   - {fileID: 4245399114209149564}
-  - {fileID: -5023459535811012837}
   - {fileID: -2246465050184658640}
   - {fileID: 5079983152399928941}
   - {fileID: -3740695033398849134}
@@ -215,7 +214,7 @@ MonoBehaviour:
   - {fileID: 5991207707886691739}
   - {fileID: -4472370401809111797}
   - {fileID: -9060044208778381354}
-  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a1b976fe82a1649ba30d1696bf0f3d2e06d4ec41fc3b97f46929131a9af6116cc56ffa2e0c5140f0d9b252be4aa0b25530b6532b0d0f2eec1d6f76d56cb414482
+  m_RendererFeatureMap: 289c6270d86f81fa27a26c0895c31438d23e4299cdb080443425f7c19f8fa2d87cc2315400b0ea3a30d1696bf0f3d2e06d4ec41fc3b97f46929131a9af6116cc56ffa2e0c5140f0d9b252be4aa0b25530b6532b0d0f2eec1d6f76d56cb414482
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -397,6 +396,7 @@ MonoBehaviour:
     NumSteps: 12
     StepScale: 1.4
     isHalfSize: 1
+    applyToGI: 1
 --- !u!114 &5509125397862468847
 MonoBehaviour:
   m_ObjectHideFlags: 0

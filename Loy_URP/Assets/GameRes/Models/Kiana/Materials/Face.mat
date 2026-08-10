@@ -377,8 +377,8 @@ Material:
     - _TexWorldScaleEmissive: 1
     - _Thickness: 1
     - _ThicknessMultiplier: 1
-    - _ToonDiffuseStep: 0.585
-    - _ToonGIStrength: 0.22
+    - _ToonDiffuseStep: 0.045
+    - _ToonGIStrength: 2
     - _ToonLable: 0
     - _ToonSpecIntensity: 1
     - _ToonSpecularSize: 0.139
