@@ -21,6 +21,26 @@ public class HizRenderFeature : ScriptableRendererFeature
     /// <summary>实际构建的 mip 数，供 SSR 等通过 MaterialPropertyBlock 显式传 _HiZMipCount（RG 里 SetGlobalInt 跨 pass 不可靠）。</summary>
     public static int MipCount { get; private set; }
 
+    /// <summary>HiZ 消费者列表。_HiZMip* 是全局纹理，RG 无法自动剔除（对后续所有 pass 可见），
+    /// 所以手动判断：任何需要 HiZ 的 feature 在 Create() 里 RegisterConsumer(this) 注册自己，
+    /// Hiz 按每个消费者的 isActive（勾选框状态，每帧可靠）判断要不要构建。
+    /// 取消勾选/移除都能正确停止，加新消费者不用改 Hiz。</summary>
+    static readonly System.Collections.Generic.List<ScriptableRendererFeature> s_Consumers = new();
+    public static void RegisterConsumer(ScriptableRendererFeature feature)
+    {
+        if (feature != null && !s_Consumers.Contains(feature))
+            s_Consumers.Add(feature);
+    }
+    public static void UnregisterConsumer(ScriptableRendererFeature feature) => s_Consumers.Remove(feature);
+
+    static bool AnyConsumerActive()
+    {
+        for (int i = 0; i < s_Consumers.Count; ++i)
+            if (s_Consumers[i] != null && s_Consumers[i].isActive)
+                return true;
+        return false;
+    }
+
     public HiZSettings settings = new HiZSettings();
 
     HiZPass hizPass;
@@ -44,6 +64,15 @@ public class HizRenderFeature : ScriptableRendererFeature
             Debug.LogWarning("HiZFeature: ComputeShader not assigned.");
             return;
         }
+
+        // _HiZMip* 是全局纹理，RG 无法自动剔除（对后续所有 pass 可见，RenderGraphView 里能看到 opaque/半透明引用）。
+        // 手动判断：有消费者勾选启用才构建，否则不 enqueue。
+        if (!AnyConsumerActive())
+        {
+            IsActive = false;
+            return;
+        }
+
         IsActive = true;
         MipCount = Mathf.Max(1, settings.mipCount);
         hizPass.Setup();
@@ -256,12 +285,14 @@ public class HizRenderFeature : ScriptableRendererFeature
                     builder.UseTexture(mips[i], AccessFlags.ReadWrite);
                     builder.SetGlobalTextureAfterPass(mips[i], Shader.PropertyToID(kHiZNamePrefix + i));
                 }
-                builder.AllowGlobalStateModification(true);
+                // 注意：不能 AllowGlobalStateModification(true)——它在 RG 里会调用 AllowPassCulling(false)，
+                // 让本 pass 永不剔除（即使 SSR 关掉、_HiZMip* 没消费者也照跑）。
+                // render func 里已无全局改动（SetGlobalInt 已删），不需要它。
 
                 builder.SetRenderFunc(static (PassData data, ComputeGraphContext ctx) =>
                 {
-                    // 设置 mip 总数，供所有 SampleHIZ 使用者读取
-                    ctx.cmd.SetGlobalInt(kHiZMipCount, data.mipCount);
+                    // 不再 SetGlobalInt(_HiZMipCount)：全局状态副作用会阻止 RG 剔除本 pass。
+                    // SSR 已通过 MaterialPropertyBlock 显式传 HizRenderFeature.MipCount，不需要这个全局。
 
                     // 拷贝深度 → mips[0]
                     ctx.cmd.SetComputeTextureParam(data.cs, data.copyKernel, kSrcDepth, data.srcDepth);

@@ -233,6 +233,15 @@ public class SSRRenderFeature : ScriptableRendererFeature
             maxSteps = settings.maxSteps,
             stepSize = settings.stepSize,
         };
+
+        // 注册为 HiZ 消费者：Hiz 按 SSR 的 isActive 判断是否构建金字塔（取消勾选/移除都会停止）
+        HizRenderFeature.RegisterConsumer(this);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        HizRenderFeature.UnregisterConsumer(this);
+        base.Dispose(disposing);
     }
 
     // Inject the pass
