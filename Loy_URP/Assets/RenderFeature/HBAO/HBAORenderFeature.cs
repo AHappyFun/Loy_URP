@@ -5,6 +5,20 @@ using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.Serialization;
 
+/// <summary>
+/// HBAO resources for the current render graph frame. Consumers use the
+/// texture handle directly instead of depending on a global texture slot.
+/// </summary>
+public sealed class HBAOFrameData : ContextItem
+{
+    public TextureHandle result;
+
+    public override void Reset()
+    {
+        result = TextureHandle.nullHandle;
+    }
+}
+
 public class HBAORenderFeature : ScriptableRendererFeature
 {
     class HBAOPass : ScriptableRenderPass
@@ -144,6 +158,9 @@ public class HBAORenderFeature : ScriptableRendererFeature
 
             TextureHandle hbao = renderGraph.CreateTexture(desc);
 
+            HBAOFrameData hbaoData = frameData.Create<HBAOFrameData>();
+            hbaoData.result = hbao;
+
             desc.name = "_HBAOTemp"; // 中间缓冲用独立名字，避免和 _HBAOResultTex 混淆
             TextureHandle temp = renderGraph.CreateTexture(desc);
 
@@ -222,7 +239,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 });
             }
 
-            // Pass 2: 水平模糊 → hbao（显式传入 temp），并暴露 _HBAOResultTex 给 SSGICombine
+            // Pass 2: 水平模糊 → hbao；结果通过 HBAOFrameData 传给后续消费者。
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Blur H", out var blurHData, m_ProfilingSamplerBlurH))
             {
                 blurHData.material = hbaoMaterial;
@@ -236,7 +253,6 @@ public class HBAORenderFeature : ScriptableRendererFeature
                 builder.AllowGlobalStateModification(true);
 
                 builder.SetRenderAttachment(hbao, 0, AccessFlags.Write);
-                builder.SetGlobalTextureAfterPass(hbao, Shader.PropertyToID("_HBAOResultTex"));
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {

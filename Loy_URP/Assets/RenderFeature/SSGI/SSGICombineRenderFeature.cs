@@ -71,6 +71,7 @@ public class SSGICombineRenderFeature : ScriptableRendererFeature
         class PassData
         {
             public Material material;
+            public TextureHandle hbao;
             public float giRange;
         }
 
@@ -81,14 +82,23 @@ public class SSGICombineRenderFeature : ScriptableRendererFeature
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
             if (m_RenderFeature._material == null) return;
 
+            if (!frameData.Contains<HBAOFrameData>())
+                return;
+
+            HBAOFrameData hbaoData = frameData.Get<HBAOFrameData>();
+            if (!hbaoData.result.IsValid())
+                return;
+
             using (var builder = renderGraph.AddRasterRenderPass<PassData>(m_ProfilerTag, out var passData, m_ProfilingSampler))
             {
                 passData.material = m_RenderFeature._material;
+                passData.hbao = hbaoData.result;
                 passData.giRange = m_RenderFeature.GIRange;
 
-                // shader 读取 _HBAOResultTex 与 _SSGIResultTex 全局
-                builder.UseGlobalTexture(Shader.PropertyToID("_HBAOResultTex"), AccessFlags.Read);
+                // HBAO 使用 frame-data 句柄；SSGI 结果暂时仍使用原有全局纹理。
+                builder.UseTexture(hbaoData.result, AccessFlags.Read);
                 builder.UseGlobalTexture(Shader.PropertyToID("_SSGIResultTex"), AccessFlags.Read);
+                builder.AllowGlobalStateModification(true);
 
                 // 加法混合到当前颜色目标（Blend SrcAlpha One 需要读回目标）
                 builder.SetRenderAttachment(resourcesData.activeColorTexture, 0, AccessFlags.ReadWrite);
@@ -98,6 +108,7 @@ public class SSGICombineRenderFeature : ScriptableRendererFeature
                     MaterialPropertyBlock block = s_SharedPropertyBlock;
                     block.Clear();
                     block.SetFloat("_GIRange", data.giRange);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOResultTex"), data.hbao);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, kShaderPass, MeshTopology.Triangles, 3, 1, block);
                 });
             }
