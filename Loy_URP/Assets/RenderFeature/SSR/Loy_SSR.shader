@@ -37,8 +37,8 @@ Shader "Loy/Feature/SSR_View"
 
                 float2 uv = IN.positionCS.xy / _ScaledScreenParams.xy;
 
-                return SSRRaymarchHIZ(uv);
-                //return SSRRaymarch(uv);
+                //return SSRRaymarchHIZ(uv);
+                return SSRRaymarch(uv);
             }
 
             ENDHLSL

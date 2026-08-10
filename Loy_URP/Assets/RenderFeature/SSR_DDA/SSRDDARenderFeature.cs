@@ -89,6 +89,7 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
         {
             public Material material;
             public TextureHandle gbuffer2;
+            public TextureHandle activeColor;   // 当前帧延迟光照结果，SSR 反射内容来源
             public int maxSteps;
             public float maxDistance;
             public float thickness;
@@ -134,6 +135,7 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
             {
                 passData.material = ssrMaterial;
                 passData.gbuffer2 = gbuffer2;
+                passData.activeColor = resourcesData.activeColorTexture;
                 passData.maxSteps = maxSteps;
                 passData.maxDistance = maxDistance;
                 passData.thickness = thickness;
@@ -145,12 +147,13 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
                 passData.viewForward = cameraData.camera.transform.forward;
 
                 builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
-                builder.UseGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), AccessFlags.Read);
+                // 同 SSRRenderFeature：240 时 _CameraOpaqueTexture 还没注册，直接读 activeColorTexture，
+                // 在 render func 里绑成 _CameraOpaqueTexture 给 shader 采样。
+                builder.UseTexture(resourcesData.activeColorTexture, AccessFlags.Read);
                 if (gbuffer2.IsValid())
-                {
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
-                    builder.AllowGlobalStateModification(true);
-                }
+                // 本 pass 用 SetGlobalMatrix/SetGlobalTexture 设全局，必须允许改全局状态
+                builder.AllowGlobalStateModification(true);
 
                 builder.SetRenderAttachment(result, 0, AccessFlags.Write);
                 builder.SetGlobalTextureAfterPass(result, Shader.PropertyToID("_SSRResultTex"));
@@ -159,10 +162,11 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
                 {
                     MaterialPropertyBlock block = s_SharedPropertyBlock;
                     block.Clear();
-                    block.SetMatrix("_CameraProjection", data.projection);
-                    block.SetMatrix("_CameraInvProjection", data.invProjection);
-                    block.SetMatrix("_CameraView", data.view);
-                    block.SetMatrix("_CameraInvView", data.invView);
+                    // 矩阵用 SetGlobalMatrix 传（同 SSRRenderFeature：block 的矩阵在 RG DrawProcedural 里不生效）
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraProjection"), data.projection);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvProjection"), data.invProjection);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraView"), data.view);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvView"), data.invView);
                     block.SetVector("_WorldSpaceViewForward", data.viewForward);
                     block.SetInt("_SSRMaxSteps", data.maxSteps);
                     block.SetFloat("_SSRMaxDistance", data.maxDistance);
@@ -170,6 +174,7 @@ public class SSRDDARenderFeature : ScriptableRendererFeature
                     block.SetInt("_Frame", data.frame);
                     if (data.gbuffer2.IsValid())
                         rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.activeColor);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
             }

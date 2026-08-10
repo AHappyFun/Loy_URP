@@ -208,8 +208,8 @@ float4 SSRRaymarch(float2 uv)
 
     maskOut *= hit;
 
-
-    half3 ssrColor = SampleSceneColor(currentScreenSpacePosition);
+    // 无命中时输出黑色（alpha=0，combine 按 alpha 忽略）
+    half3 ssrColor = hit > 0 ? SampleSceneColor(currentScreenSpacePosition) : 0.0;
 
     return half4(ssrColor, maskOut);
 

@@ -87,6 +87,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
         {
             public Material material;
             public TextureHandle gbuffer2;
+            public TextureHandle activeColor;   // 当前帧延迟光照结果，SSR 反射内容来源
             public int maxSteps;
             public float stepSize;
             public int frame;
@@ -138,6 +139,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
             {
                 passData.material = ssrMaterial;
                 passData.gbuffer2 = gbuffer2;
+                passData.activeColor = resourcesData.activeColorTexture;
                 passData.maxSteps = maxSteps;
                 passData.stepSize = stepSize;
                 passData.frame = Time.frameCount % 1024;
@@ -148,16 +150,23 @@ public class SSRRenderFeature : ScriptableRendererFeature
                 passData.viewForward = cameraData.camera.transform.forward;
 
                 builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
-                builder.UseGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), AccessFlags.Read);
+                // SSR 在 240（延迟光照之后）运行，此时 activeColorTexture 已是当前帧的延迟光照结果。
+                // 不能 UseGlobalTexture(_CameraOpaqueTexture)：那张拷贝要到不透明/天空盒之后才注册，
+                // 240 时直接 UseGlobalTexture 会抛 "null resource index"。这里改为直接读 activeColorTexture，
+                // 并在 render func 里把它绑成 _CameraOpaqueTexture 给 shader 采样。
+                builder.UseTexture(resourcesData.activeColorTexture, AccessFlags.Read);
                 if (gbuffer2.IsValid())
-                {
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
-                    builder.AllowGlobalStateModification(true);
+                // 本 pass 用 SetGlobalMatrix/SetGlobalTexture 设全局（矩阵+法线+场景颜色），必须允许改全局状态
+                builder.AllowGlobalStateModification(true);
+                // 声明 HIZ 依赖，保证 Hiz 不被 RG 裁剪、且正确排在 SSR 之前。
+                // 只在 Hiz 启用时才声明；否则 UseGlobalTexture(_HiZMip*) 会因未注册抛 "null resource index"。
+                if (HizRenderFeature.IsActive)
+                {
+                    for (int i = 0; i < kHiZMipIds.Length; i++)
+                        builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
                 }
-                // 无条件声明 HIZ 依赖，保证 Hiz 不被 RG 裁剪、且正确排在 SSR 之前
-                for (int i = 0; i < kHiZMipIds.Length; i++)
-                    builder.UseGlobalTexture(kHiZMipIds[i], AccessFlags.Read);
-                if (!HizRenderFeature.IsActive && !s_warnedHiz)
+                else if (!s_warnedHiz)
                 {
                     s_warnedHiz = true;
                     Debug.LogWarning("SSR 需要启用 HizRenderFeature（shader 使用 SampleHIZ），否则 _HiZMip* 不存在，SSR 将不可用。");
@@ -170,16 +179,21 @@ public class SSRRenderFeature : ScriptableRendererFeature
                 {
                     MaterialPropertyBlock block = s_SharedPropertyBlock;
                     block.Clear();
-                    block.SetMatrix("_CameraProjection", data.projection);
-                    block.SetMatrix("_CameraInvProjection", data.invProjection);
-                    block.SetMatrix("_CameraView", data.view);
-                    block.SetMatrix("_CameraInvView", data.invView);
+                    // 矩阵用 SetGlobalMatrix 传：RG 的 DrawProcedural 里 MaterialPropertyBlock 的矩阵不会生效
+                    //（之前 _CameraProjection 是空的 → shader 用单位阵 → 射线重建/投影全错 → 自相交 → 场景颜色）
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraProjection"), data.projection);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvProjection"), data.invProjection);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraView"), data.view);
+                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvView"), data.invView);
                     block.SetVector("_WorldSpaceViewForward", data.viewForward);
                     block.SetInt("_SSRMaxSteps", data.maxSteps);
                     block.SetFloat("_SSRStepSize", data.stepSize);
                     block.SetInt("_Frame", data.frame);
+                    // RG 里 compute pass 的 SetGlobalInt 跨 pass 不可靠，这里显式把 HiZ mip 数传进 block
+                    block.SetInt("_HiZMipCount", HizRenderFeature.MipCount);
                     if (data.gbuffer2.IsValid())
                         rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
+                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.activeColor);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
             }

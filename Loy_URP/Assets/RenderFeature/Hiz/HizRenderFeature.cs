@@ -18,6 +18,9 @@ public class HizRenderFeature : ScriptableRendererFeature
     /// <summary>Hiz 是否在启用状态，供依赖 _HiZMip* 的特性（HBAO/SSGI/SSR）检查。</summary>
     public static bool IsActive { get; private set; }
 
+    /// <summary>实际构建的 mip 数，供 SSR 等通过 MaterialPropertyBlock 显式传 _HiZMipCount（RG 里 SetGlobalInt 跨 pass 不可靠）。</summary>
+    public static int MipCount { get; private set; }
+
     public HiZSettings settings = new HiZSettings();
 
     HiZPass hizPass;
@@ -25,6 +28,8 @@ public class HizRenderFeature : ScriptableRendererFeature
     public override void Create()
     {
         IsActive = false; // 特性重建/切换时重置，由 AddRenderPasses 实际启用后再置 true
+        MipCount = 0;
+
         hizPass = new HiZPass(settings)
         {
             renderPassEvent = settings.renderPassEvent
@@ -40,7 +45,12 @@ public class HizRenderFeature : ScriptableRendererFeature
             return;
         }
         IsActive = true;
+        MipCount = Mathf.Max(1, settings.mipCount);
         hizPass.Setup();
+
+        // HiZ 从 _CameraDepthTexture 的解析拷贝构建，需要深度纹理被生成
+        renderingData.cameraData.requiresDepthTexture = true;
+
         renderer.EnqueuePass(hizPass);
     }
 
@@ -175,14 +185,21 @@ public class HizRenderFeature : ScriptableRendererFeature
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
-            if (cs == null || !resourcesData.activeDepthTexture.IsValid()) return;
+            if (cs == null) return;
+
+            // 深度源：用 _CameraDepthTexture 的解析拷贝（resourcesData.cameraDepth）。
+            // 它是已解析的 R32 普通纹理，保证能被 compute 当 SRV 读。
+            // 直接读 activeDepthTexture（深度-stencil 活缓冲）在 RG 里绑 SRV 经常读到 0 → HiZ 金字塔全空。
+            // （SSR/HBAO 用 SampleSceneDepth 读的也是 _CameraDepthTexture，深度一致）
+            TextureHandle srcDepth = resourcesData.cameraDepth.IsValid() ? resourcesData.cameraDepth : resourcesData.activeDepthTexture;
+            if (!srcDepth.IsValid()) return;
 
             mipCount = s.mipCount;
             if (mipCount < 1) mipCount = 1;
 
             // 在图中创建 RFloat 的 mip 纹理链（enableRandomWrite 供 RWTexture2D 写入）
             // 每个 mip 每帧都被 compute pass 完全写入，无需 clear，减少调试器里的 Clear 条目
-            TextureDesc mipDesc = renderGraph.GetTextureDesc(resourcesData.activeDepthTexture);
+            TextureDesc mipDesc = renderGraph.GetTextureDesc(srcDepth);
             mipDesc.format = GraphicsFormat.R32_SFloat;
             mipDesc.depthBufferBits = 0;
             mipDesc.msaaSamples = MSAASamples.None;
@@ -211,7 +228,7 @@ public class HizRenderFeature : ScriptableRendererFeature
                 passData.cs = cs;
                 passData.copyKernel = hizKernel_CopyDepth;
                 passData.buildKernel = hizKernel_BuildMip;
-                passData.srcDepth = resourcesData.activeDepthTexture;
+                passData.srcDepth = srcDepth;
                 passData.mips = mips;
                 passData.mipCount = mipCount;
                 passData.copyDispatchX = Mathf.CeilToInt(renderGraph.GetTextureDesc(mips[0]).width / 8f);
@@ -233,7 +250,7 @@ public class HizRenderFeature : ScriptableRendererFeature
                     passData.dispatchYs[i] = Mathf.CeilToInt(d.height / 8f);
                 }
 
-                builder.UseTexture(resourcesData.activeDepthTexture, AccessFlags.Read);
+                builder.UseTexture(srcDepth, AccessFlags.Read);
                 for (int i = 0; i < mipCount; ++i)
                 {
                     builder.UseTexture(mips[i], AccessFlags.ReadWrite);

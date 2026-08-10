@@ -41,19 +41,15 @@ int _Frame;
 
 float3 ReconstructViewPos(float2 uv, float rawDepth)
 {
-    float4 clip = float4(uv * 2.0 - 1.0, rawDepth, 1.0);
-
-    float4 view = mul(_CameraInvProjection, clip);
-    view /= view.w;
-    view.y *= -1;
-    return view;
+    // URP 17 用内置 UNITY_MATRIX_I_VP / UNITY_MATRIX_V（执行期由 SetCameraMatrices 设置，可靠）
+    // 返回标准视图空间（z 负、y 上），不再做 y 翻转 hack
+    float3 worldPos = ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
+    return mul(UNITY_MATRIX_V, float4(worldPos, 1.0)).xyz;
 }
 
 float3 ReconstructWorldPos(float2 uv, float rawDepth)
 {
-    float3 viewPos = ReconstructViewPos(uv, rawDepth);
-    float4 worldPos = mul(_CameraInvView, float4(viewPos, 1));
-    return worldPos.xyz;
+    return ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
 }
 
 float3 SampleSceneColor(float2 uv)
@@ -86,6 +82,7 @@ float4 SSRRaymarch(float2 uv)
     //深度重建worldPos
     float rawDepth = SampleSceneDepth(uv);
 
+
     float4 gbuffer2 = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
     float smoothness = gbuffer2.w;
 //#if UNITY_REVERSED_Z
@@ -102,17 +99,15 @@ float4 SSRRaymarch(float2 uv)
 
     float3 V = normalize(float3(worldPos.xyz) - _WorldSpaceCameraPos);
 
-    //反射方向转换到View
-    float3 R = normalize(reflect(V, N));
-    R = mul(UNITY_MATRIX_V, R);
+    // 反射方向先在【世界空间】算夹角：V 和 _WorldSpaceViewForward 都是世界的，R 也必须是世界的，
+    // 否则相机旋转后点积错 → 步长/maxDist 错 → 反射错位。
+    //（之前 R 已转 View 再点积，摄像机不旋转时世界≈视图才"碰巧"对）
+    float3 R_world = normalize(reflect(V, N));
+    float viewReflectDot = saturate(dot(V, R_world));
+    float cameraViewReflectDot = saturate(dot(_WorldSpaceViewForward, R_world));
 
-    R.z *= -1;
-    viewPos.z *= -1;
-
-    float viewReflectDot = saturate(dot(V, R));
-
-    //反射角接近视角方向，增大步长
-    float cameraViewReflectDot = saturate(dot(_WorldSpaceViewForward, R));
+    //反射方向转换到View（标准视图空间，z 负 = 指向场景深处）
+    float3 R = mul(UNITY_MATRIX_V, R_world);
 
     float thickness = _SSRStepSize * 2;
     float oneMinusViewReflectDot = sqrt(1 - viewReflectDot);
@@ -154,7 +149,7 @@ float4 SSRRaymarch(float2 uv)
     bool doRayMarch = smoothness > minSmoothness;
 
     float maxRayLength = _SSRMaxSteps * _SSRStepSize;
-    float maxDist = lerp(min(viewPos.z, maxRayLength), maxRayLength, cameraViewReflectDot);
+    float maxDist = lerp(min(-viewPos.z, maxRayLength), maxRayLength, cameraViewReflectDot);
     float numSteps_f = maxDist / _SSRStepSize;
     _SSRMaxSteps = max(numSteps_f, 0);
 
@@ -168,7 +163,7 @@ float4 SSRRaymarch(float2 uv)
         {
             rayPos += rayPer;
 
-            float4 clip = mul(_CameraProjection, float4(rayPos.x, -rayPos.y, -rayPos.z, 1));
+            float4 clip = mul(UNITY_MATRIX_P, float4(rayPos, 1));
             float2 ndc = clip.xy / clip.w;
             float2 sampleUV = ndc * 0.5 + 0.5;
             if (any(sampleUV < 0.0) || any(sampleUV > 1.0)) break;
@@ -177,7 +172,7 @@ float4 SSRRaymarch(float2 uv)
 
             if(abs(rawDepth - sceneDepth) > 0 && sceneDepth != 0)
             {
-                deltaDepth = rayPos.z - LinearEyeDepth(sceneDepth, _ZBufferParams);
+                deltaDepth = (-rayPos.z) - LinearEyeDepth(sceneDepth, _ZBufferParams);
 
                 [branch]
                 if(deltaDepth > 0 && deltaDepth < _SSRStepSize * 2)
@@ -213,7 +208,7 @@ float4 SSRRaymarch(float2 uv)
                 break;
             }
 
-            float4 clip = mul(_CameraProjection, float4(rayPos.x, -rayPos.y, -rayPos.z, 1));
+            float4 clip = mul(UNITY_MATRIX_P, float4(rayPos, 1));
             float2 ndc = clip.xy / clip.w;
 
             ndc += jitterUVOffset;// jitter in screen space to break coherent misses
@@ -222,7 +217,7 @@ float4 SSRRaymarch(float2 uv)
             currentScreenSpacePosition = sampleUV;
 
             float sceneDepth = SampleSceneDepth(sampleUV);
-            deltaDepth = rayPos.z - LinearEyeDepth(sceneDepth, _ZBufferParams);
+            deltaDepth = (-rayPos.z) - LinearEyeDepth(sceneDepth, _ZBufferParams);
 
             float minv = 1 / max((oneMinusViewReflectDot * float(i)), 0.001);
             //如果走了所有的二分之后，仍然在minv里，说明hit准确
@@ -233,9 +228,10 @@ float4 SSRRaymarch(float2 uv)
 
         }
 
-        //剔除背面三角形 (与反射方向相反的应该是正确像素，相同方向的看不到所以剔除)
-        float3 N = UnpackNormal(SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, currentScreenSpacePosition))  ;
-        float backFaceDot = dot(N, R);
+        //剔除背面三角形：命中点法线是世界的，R_world 也是世界的，同一空间点积
+        //（之前 N·R 里 R 是 View 空间，相机旋转后点积错 → 误剔/漏剔）
+        float3 N_hit = UnpackNormal(SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, currentScreenSpacePosition));
+        float backFaceDot = dot(N_hit, R_world);
         if (backFaceDot > 0) {
             hit = 0;
         }
@@ -268,9 +264,14 @@ float4 SSRRaymarchHIZ(float2 uv)
 {
     //深度重建worldPos
     float rawDepth = SampleSceneDepth(uv);
+    
 
     float4 gbuffer2 = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
+    //return gbuffer2;
+    
     float smoothness = gbuffer2.w;
+    
+    //return smoothness;
 //#if UNITY_REVERSED_Z
 //    rawDepth = 1.0 - rawDepth;
 //#else
@@ -285,17 +286,15 @@ float4 SSRRaymarchHIZ(float2 uv)
 
     float3 V = normalize(float3(worldPos.xyz) - _WorldSpaceCameraPos);
 
-    //反射方向转换到View
-    float3 R = normalize(reflect(V, N));
-    R = mul(UNITY_MATRIX_V, R);
+    // 反射方向先在【世界空间】算夹角：V 和 _WorldSpaceViewForward 都是世界的，R 也必须是世界的，
+    // 否则相机旋转后点积错 → 步长/maxDist 错 → 反射错位。
+    //（之前 R 已转 View 再点积，摄像机不旋转时世界≈视图才"碰巧"对）
+    float3 R_world = normalize(reflect(V, N));
+    float viewReflectDot = saturate(dot(V, R_world));
+    float cameraViewReflectDot = saturate(dot(_WorldSpaceViewForward, R_world));
 
-    R.z *= -1;
-    viewPos.z *= -1;
-
-    float viewReflectDot = saturate(dot(V, R));
-
-    //反射角接近视角方向，增大步长
-    float cameraViewReflectDot = saturate(dot(_WorldSpaceViewForward, R));
+    //反射方向转换到View（标准视图空间，z 负 = 指向场景深处）
+    float3 R = mul(UNITY_MATRIX_V, R_world);
 
     float thickness = _SSRStepSize * 2;
     float oneMinusViewReflectDot = sqrt(1 - viewReflectDot);
@@ -335,9 +334,11 @@ float4 SSRRaymarchHIZ(float2 uv)
     float3 rayPos = viewPos;
 
     bool doRayMarch = smoothness > minSmoothness;
+    
+    //return doRayMarch;
 
     float maxRayLength = _SSRMaxSteps * _SSRStepSize;
-    float maxDist = lerp(min(viewPos.z, maxRayLength), maxRayLength, cameraViewReflectDot);
+    float maxDist = lerp(min(-viewPos.z, maxRayLength), maxRayLength, cameraViewReflectDot);
     float numSteps_f = maxDist / _SSRStepSize;
     _SSRMaxSteps = max(numSteps_f, 0);
 
@@ -356,7 +357,7 @@ float4 SSRRaymarchHIZ(float2 uv)
             {
                 rayPos += rayPer;
 
-                float4 clip = mul(_CameraProjection, float4(rayPos.x, -rayPos.y, -rayPos.z, 1));
+                float4 clip = mul(UNITY_MATRIX_P, float4(rayPos, 1));
                 float2 ndc = clip.xy / clip.w;
                 float2 sampleUV = ndc * 0.5 + 0.5;
                 if (any(sampleUV < 0.0) || any(sampleUV > 1.0)) break;
@@ -364,7 +365,7 @@ float4 SSRRaymarchHIZ(float2 uv)
                 float sceneDepth = SampleHIZ(sampleUV, mip);
                 float sceneZ = LinearEyeDepth(sceneDepth, _ZBufferParams);
 
-                deltaDepth = rayPos.z - sceneZ;
+                deltaDepth = (-rayPos.z) - sceneZ;
                 if(deltaDepth < 0)
                 {
                     continue; //没有命中，继续步进
@@ -417,7 +418,7 @@ float4 SSRRaymarchHIZ(float2 uv)
                 break;
             }
 //
-            float4 clip = mul(_CameraProjection, float4(rayPos.x, -rayPos.y, -rayPos.z, 1));
+            float4 clip = mul(UNITY_MATRIX_P, float4(rayPos, 1));
             float2 ndc = clip.xy / clip.w;
 //
             ndc += jitterUVOffset;// jitter in screen space to break coherent misses
@@ -426,7 +427,7 @@ float4 SSRRaymarchHIZ(float2 uv)
             currentScreenSpacePosition = sampleUV;
 //
             float sceneDepth = SampleHIZ(sampleUV, 0);
-            deltaDepth = rayPos.z - LinearEyeDepth(sceneDepth, _ZBufferParams);
+            deltaDepth = (-rayPos.z) - LinearEyeDepth(sceneDepth, _ZBufferParams);
 //
             float minv = 1 / max((oneMinusViewReflectDot * float(i)), 0.001);
             //如果走了所有的二分之后，仍然在minv里，说明hit准确
@@ -437,9 +438,10 @@ float4 SSRRaymarchHIZ(float2 uv)
 //
         }
 
-        //剔除背面三角形 (与反射方向相反的应该是正确像素，相同方向的看不到所以剔除)
-        float3 N = UnpackNormal(SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, currentScreenSpacePosition))  ;
-        float backFaceDot = dot(N, R);
+        //剔除背面三角形：命中点法线是世界的，R_world 也是世界的，同一空间点积
+        //（之前 N·R 里 R 是 View 空间，相机旋转后点积错 → 误剔/漏剔）
+        float3 N_hit = UnpackNormal(SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, currentScreenSpacePosition));
+        float backFaceDot = dot(N_hit, R_world);
         if (backFaceDot > 0) {
             hit = 0;
         }
@@ -457,6 +459,15 @@ float4 SSRRaymarchHIZ(float2 uv)
     //maskOut *= progress;
     maskOut *= hit;
 
+    //return hit;
+    //return half4(currentScreenSpacePosition, 0,1);
+    
+    // ===== 临时诊断输出 =====
+    // R = hit（1=找到命中，0=没命中）
+    // G = doRayMarch（1=光滑度>0.5 进了步进，0=被光滑度门槛挡在外面）
+    // B = _HiZMipCount / 8（1=8层mip 正常，≈0=mip数没传对）
+    //return half4(hit, doRayMarch ? 1.0 : 0.0, _HiZMipCount / 8.0, 1.0);
+    // ===== 诊断结束 =====
 
     half3 ssrColor = SampleSceneColor(currentScreenSpacePosition);
 
