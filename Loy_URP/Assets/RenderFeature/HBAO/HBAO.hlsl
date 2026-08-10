@@ -182,6 +182,10 @@ float4 HBAORaymarchHIZ(float2 uv)
 TEXTURE2D(_HBAOBlurSource);
 SAMPLER(sampler_HBAOBlurSource);
 
+// 最终 AO 结果（R 通道 = ao，1=无遮蔽，0=全遮蔽），供 ApplyToGI 采样
+TEXTURE2D_X(_HBAOResultTex);
+SAMPLER(sampler_HBAOResultTex);
+
 //用双边滤波模糊，考虑几何深度。而不是直接高斯模糊
 float4 HBAO_BlurV(float2 uv)
 {

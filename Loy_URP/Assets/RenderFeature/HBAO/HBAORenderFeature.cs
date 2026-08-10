@@ -13,8 +13,10 @@ public class HBAORenderFeature : ScriptableRendererFeature
         readonly ProfilingSampler m_ProfilingSamplerCompute;
         readonly ProfilingSampler m_ProfilingSamplerBlurV;
         readonly ProfilingSampler m_ProfilingSamplerBlurH;
+        readonly ProfilingSampler m_ProfilingSamplerApply;
 
         public float AOIntensity = 1.0f;
+        public bool applyToGI = true;
         public float Radius = 1.0f;
         public float Bias = 0.02f;
         public int NumDirs = 8;
@@ -33,6 +35,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
             m_ProfilingSamplerCompute = new ProfilingSampler("Loy_HBAO Compute");
             m_ProfilingSamplerBlurV = new ProfilingSampler("Loy_HBAO Blur V");
             m_ProfilingSamplerBlurH = new ProfilingSampler("Loy_HBAO Blur H");
+            m_ProfilingSamplerApply = new ProfilingSampler("Loy_HBAO ApplyToGI");
 
             // 确保 _CameraDepthTexture 在 RG 模式下被生成（深度拷贝 pass）
             ConfigureInput(ScriptableRenderPassInput.Depth);
@@ -245,6 +248,37 @@ public class HBAORenderFeature : ScriptableRendererFeature
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            // Pass 3: 把 AO 乘到 GBuffer3（GI+自发光）上。
+            // 时机在延迟光照(230)之前：延迟光照是 Blend One One 加性叠加直接光，
+            // 所以这里先乘 AO 只压间接光，直接光不受影响。
+            if (applyToGI)
+            {
+                using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO ApplyToGI", out var applyData, m_ProfilingSamplerApply))
+                {
+                    applyData.material = hbaoMaterial;
+                    applyData.source = hbao;
+                    applyData.block = new MaterialPropertyBlock();
+
+                    builder.UseTexture(hbao, AccessFlags.Read);
+                    builder.AllowGlobalStateModification(true);
+
+                    // 关键：在 URP 延迟渲染里，GBuffer3（lighting buffer）不是一个独立纹理，
+                    // 它直接就是相机的颜色缓冲 activeColorTexture。证据链：
+                    //   DeferredLights.cs:557              GbufferAttachments[GBufferLightingIndex=3] = colorAttachment
+                    //   UniversalRendererRenderGraph.cs:1193  传给 DeferredPass 的 color = resourceData.activeColorTexture
+                    //   DeferredPass.cs:83                SetRenderAttachment(color)  ← 延迟光照也写这张
+                    //   GBufferPass.cs:92-93              GBuffer pass 写 MRT 时跳过它（它已 = 相机颜色）
+                    // 所以这里 SetRenderAttachment(activeColorTexture) = 写 GBuffer3（GBuffer pass 存入的 GI+自发光）。
+                    builder.SetRenderAttachment(resourcesData.activeColorTexture, 0, AccessFlags.Write);
+
+                    builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                    {
+                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_HBAOResultTex"), data.source);
+                        rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 3, MeshTopology.Triangles, 3, 1, data.block);
+                    });
+                }
+            }
         }
     }
 
@@ -260,6 +294,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public int NumSteps = 12;
         public float StepScale = 1.4f;
         public bool isHalfSize = true;
+        public bool applyToGI = true;   // 把 AO 乘进 GBuffer3（GI+自发光），延迟光照前生效
 
     }
 
@@ -283,7 +318,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
             NumDirs = settings.NumDirs,
             NumSteps = settings.NumSteps,
             StepScale = settings.StepScale,
-            isHalfSize = settings.isHalfSize
+            isHalfSize = settings.isHalfSize,
+            applyToGI = settings.applyToGI
         };
     }
 
