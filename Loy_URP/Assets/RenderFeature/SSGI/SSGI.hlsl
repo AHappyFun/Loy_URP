@@ -26,7 +26,7 @@ struct Varyings
 float3 ReconstructViewPos(float2 uv, float rawDepth)
 {
     // URP 17 不设置 _InvProjMatrix 全局，改用内置 UNITY_MATRIX_I_VP
-    float3 worldPos = ComputeWorldSpacePosition(uv * 2.0 - 1.0, rawDepth, UNITY_MATRIX_I_VP);
+    float3 worldPos = ComputeWorldSpacePosition(uv, rawDepth, UNITY_MATRIX_I_VP);
     return mul(UNITY_MATRIX_V, float4(worldPos, 1.0)).xyz;
 }
 
@@ -35,12 +35,20 @@ float3 SampleSceneColor(float2 uv)
     return SAMPLE_TEXTURE2D_X(_CameraOpaqueTexture, sampler_CameraOpaqueTexture, uv).rgb;
 }
 
+float Hash12(float2 p)
+{
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
 
 int _NumDirs;
 float _MaxRayDistance;
 int _NumSteps;
 float _StepScale;
 float _DepthBias;
+float _Thickness;
 float _GITexRes;
 
 float DistanceFalloff(float distance)
@@ -57,12 +65,12 @@ void BuildTBN(float3 n, out float3 t, out float3 b)
     b = cross(n, t);
 }
 
-float3 GetSSGIDirectionVS(int dirIndex, float3 normalVS)
+float3 GetSSGIDirectionVS(int dirIndex, float randomAngle, float3 normalVS)
 {
     float3 tangentVS, bitangentVS;
     BuildTBN(normalVS, tangentVS, bitangentVS);
 
-    float angle = (dirIndex / (float)_NumDirs) * TWO_PI;
+    float angle = (dirIndex / (float)_NumDirs) * TWO_PI + randomAngle;
 
     float3 dirLocal = normalize(float3(
         cos(angle),
@@ -87,23 +95,33 @@ float4 SSGIRaymarch(float2 uv)
 
     //如果使用半分辨率的AO，深度也需要用半分辨的。不然会出现横竖线。
     float rawDepth = SampleSceneDepth(uv);
-    float3 ViewPos = ReconstructViewPos(uv, rawDepth);
-    //ViewPos.z *= -1;
+    if (LinearEyeDepth(rawDepth, _ZBufferParams) >= _ProjectionParams.z * 0.99)
+        return 0;
 
-    float3 NormalVS = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv);
-    NormalVS = TransformWorldToViewNormal(NormalVS);
-    NormalVS = normalize(NormalVS);
+    float3 ViewPos = ReconstructViewPos(uv, rawDepth);
+
+    float3 normalWS;
+#if defined(_GBUFFER_NORMALS_OCT)
+    float3 packedNormal = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv).rgb;
+    float2 octNormal = Unpack888ToFloat2(packedNormal) * 2.0 - 1.0;
+    normalWS = UnpackNormalOctQuadEncode(octNormal);
+#else
+    normalWS = SAMPLE_TEXTURE2D(_GBuffer2, sampler_GBuffer2, uv).rgb;
+#endif
+    float3 NormalVS = normalize(mul((float3x3)UNITY_MATRIX_V, normalWS));
 
     float3 gi = 0;
     float weightSum = 0;
+    float randomAngle = Hash12(uv * _ScaledScreenParams.xy) * TWO_PI;
+    float baseStep = _MaxRayDistance / max(_NumSteps, 1);
 
     [loop]
     for (int d = 0;d < _NumDirs; ++d)
     {
 
-        float3 rayDirVS = GetSSGIDirectionVS(d, NormalVS);
-
-        float baseStep = _MaxRayDistance / _NumSteps;
+        float3 rayDirVS = GetSSGIDirectionVS(d, randomAngle, NormalVS);
+        float directionWeight = saturate(dot(NormalVS, rayDirVS));
+        weightSum += directionWeight;
 
         UNITY_LOOP
         for (int s = 1; s <= _NumSteps; ++s)
@@ -112,29 +130,22 @@ float4 SSGIRaymarch(float2 uv)
             float dist = s * baseStep;
             float3 samplePosVS = ViewPos + rayDirVS * dist;
 
-            float4 clip = mul(_ProjMatrix, float4(samplePosVS.x, samplePosVS.y, samplePosVS.z, 1));
-            float2 ndc = clip.xy / clip.w;
-            float2 sampleUV = ndc * 0.5 + 0.5;
+            float2 sampleUV = ComputeNormalizedDeviceCoordinates(samplePosVS, UNITY_MATRIX_P);
 
             if (sampleUV.x < 0 || sampleUV.x > 1 || sampleUV.y < 0 || sampleUV.y > 1) break;
 
             float sampleDepth = SampleSceneDepth(sampleUV);
 
-            float3 sampleUVViewPos = ReconstructViewPos(sampleUV, sampleDepth);
+            float sceneEyeDepth = LinearEyeDepth(sampleDepth, _ZBufferParams);
+            if (sceneEyeDepth >= _ProjectionParams.z * 0.99)
+                continue;
 
-            //两个负数
-            if(sampleUVViewPos.z < samplePosVS.z)
+            // View-space forward is -Z. A positive delta means the ray crossed visible geometry.
+            float depthDelta = -samplePosVS.z - sceneEyeDepth;
+            if (depthDelta >= _DepthBias)
             {
-                float3 sampleColor = SampleSceneColor(sampleUV);
-
-                float NDotL = saturate(dot(NormalVS, rayDirVS));
-
-                //越远权重越小
-                float distance = length(sampleUVViewPos - samplePosVS);
-                float weight = NDotL * DistanceFalloff(distance);
-
-                gi += sampleColor * weight;
-                weightSum += weight;
+                if (depthDelta <= max(_Thickness, _DepthBias))
+                    gi += SampleSceneColor(sampleUV) * directionWeight * DistanceFalloff(dist);
 
                 break;
             }
@@ -163,7 +174,7 @@ float4 SSGI_BlurV(float2 uv)
 {
     float4 sum = float4(0,0,0,0);
 
-    float weights[5] = {0.204164, 0.304005, 0.093913, 0.023578, 0.003300};
+    float weights[5] = {0.06136, 0.24477, 0.38774, 0.24477, 0.06136};
 
     for (int i = -2; i <= 2; i++)
     {
@@ -179,7 +190,7 @@ float4 SSGI_BlurH(float2 uv)
     float4 sum = float4(0,0,0,0);
 
     // 核大小 5，简单加权
-    float weights[5] = {0.204164, 0.304005, 0.093913, 0.023578, 0.003300};
+    float weights[5] = {0.06136, 0.24477, 0.38774, 0.24477, 0.06136};
 
     for (int i = -2; i <= 2; i++)
     {

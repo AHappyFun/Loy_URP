@@ -2,8 +2,17 @@ using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
-using UnityEngine.Rendering.RenderGraphModule.Util;
 using UnityEngine.Rendering.Universal;
+
+public sealed class SSRFrameData : ContextItem
+{
+    public TextureHandle result;
+
+    public override void Reset()
+    {
+        result = TextureHandle.nullHandle;
+    }
+}
 
 public class SSRRenderFeature : ScriptableRendererFeature
 {
@@ -18,9 +27,8 @@ public class SSRRenderFeature : ScriptableRendererFeature
 
 #if URP_COMPATIBILITY_MODE
         RTHandle ssrHandle;
-#endif
-        // 时序历史缓冲（跨帧持久）
         RTHandle ssrHistoryHandle;
+#endif
 
         public SSRPass(Material mat)
         {
@@ -52,15 +60,6 @@ public class SSRRenderFeature : ScriptableRendererFeature
             using (new ProfilingScope(cmd, m_ProfilingSampler))
             {
                 Camera cam = renderingData.cameraData.camera;
-                Matrix4x4 proj = renderingData.cameraData.GetGPUProjectionMatrix();
-                Matrix4x4 invProj = proj.inverse;
-                Matrix4x4 view = renderingData.cameraData.GetViewMatrix();
-                Matrix4x4 invView = view.inverse;
-
-                ssrMaterial.SetMatrix("_CameraProjection", proj);
-                ssrMaterial.SetMatrix("_CameraInvProjection", invProj);
-                ssrMaterial.SetMatrix("_CameraView", view);
-                ssrMaterial.SetMatrix("_CameraInvView", invView);
                 ssrMaterial.SetVector("_WorldSpaceViewForward", cam.transform.forward);
 
                 ssrMaterial.SetInt("_SSRMaxSteps", maxSteps);
@@ -90,13 +89,10 @@ public class SSRRenderFeature : ScriptableRendererFeature
             public TextureHandle[] hiZMips;
             public int hiZMipCount;
             public TextureHandle activeColor;   // 当前帧延迟光照结果，SSR 反射内容来源
+            public TextureHandle depth;
             public int maxSteps;
             public float stepSize;
             public int frame;
-            public Matrix4x4 projection;
-            public Matrix4x4 invProjection;
-            public Matrix4x4 view;
-            public Matrix4x4 invView;
             public Vector3 viewForward;
         }
 
@@ -130,13 +126,6 @@ public class SSRRenderFeature : ScriptableRendererFeature
             if (hiZData.mips == null || hiZMipCount == 0)
                 return;
 
-            // 历史缓冲：持久 RTHandle，跨帧导入 RG，保证时序重投影内容连续
-            RenderTextureDescriptor histDesc = cameraData.cameraTargetDescriptor;
-            histDesc.depthBufferBits = 0;
-            histDesc.colorFormat = RenderTextureFormat.DefaultHDR;
-            RenderingUtils.ReAllocateHandleIfNeeded(ref ssrHistoryHandle, histDesc, FilterMode.Bilinear, name: "_SSRHistoryTex");
-            TextureHandle history = renderGraph.ImportTexture(ssrHistoryHandle);
-
             // 当前帧 SSR 结果
             TextureDesc resultDesc = renderGraph.GetTextureDesc(resourcesData.activeColorTexture);
             resultDesc.depthBufferBits = 0;
@@ -145,6 +134,7 @@ public class SSRRenderFeature : ScriptableRendererFeature
             resultDesc.clearBuffer = true;
             resultDesc.name = "_SSRResultTex";
             TextureHandle result = renderGraph.CreateTexture(resultDesc);
+            frameData.GetOrCreate<SSRFrameData>().result = result;
 
             // 延迟 G-Buffer 法线（RG 模式不暴露 _GBuffer2 全局，直接取资源）
             TextureHandle gbuffer2 = default;
@@ -159,16 +149,13 @@ public class SSRRenderFeature : ScriptableRendererFeature
                 passData.hiZMips = hiZData.mips;
                 passData.hiZMipCount = hiZMipCount;
                 passData.activeColor = resourcesData.activeColorTexture;
+                passData.depth = resourcesData.cameraDepthTexture;
                 passData.maxSteps = maxSteps;
                 passData.stepSize = stepSize;
                 passData.frame = Time.frameCount % 1024;
-                passData.projection = cameraData.GetGPUProjectionMatrix();
-                passData.invProjection = passData.projection.inverse;
-                passData.view = cameraData.GetViewMatrix();
-                passData.invView = passData.view.inverse;
                 passData.viewForward = cameraData.camera.transform.forward;
 
-                builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
+                builder.UseTexture(resourcesData.cameraDepthTexture, AccessFlags.Read);
                 // SSR 在 240（延迟光照之后）运行，此时 activeColorTexture 已是当前帧的延迟光照结果。
                 // 不能 UseGlobalTexture(_CameraOpaqueTexture)：那张拷贝要到不透明/天空盒之后才注册，
                 // 240 时直接 UseGlobalTexture 会抛 "null resource index"。这里改为直接读 activeColorTexture，
@@ -176,25 +163,16 @@ public class SSRRenderFeature : ScriptableRendererFeature
                 builder.UseTexture(resourcesData.activeColorTexture, AccessFlags.Read);
                 if (gbuffer2.IsValid())
                     builder.UseTexture(gbuffer2, AccessFlags.Read);
-                // 本 pass 用 SetGlobalMatrix/SetGlobalTexture 设全局（矩阵+法线+场景颜色），必须允许改全局状态
-                builder.AllowGlobalStateModification(true);
                 // 显式句柄依赖：SSR 不入图时，这些读取边不存在，HiZ Build 可自动剔除。
                 for (int i = 0; i < hiZMipCount; i++)
                     builder.UseTexture(hiZData.mips[i], AccessFlags.Read);
 
                 builder.SetRenderAttachment(result, 0, AccessFlags.Write);
-                builder.SetGlobalTextureAfterPass(result, Shader.PropertyToID("_SSRResultTex"));
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
                     MaterialPropertyBlock block = s_SharedPropertyBlock;
                     block.Clear();
-                    // 矩阵用 SetGlobalMatrix 传：RG 的 DrawProcedural 里 MaterialPropertyBlock 的矩阵不会生效
-                    //（之前 _CameraProjection 是空的 → shader 用单位阵 → 射线重建/投影全错 → 自相交 → 场景颜色）
-                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraProjection"), data.projection);
-                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvProjection"), data.invProjection);
-                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraView"), data.view);
-                    rgContext.cmd.SetGlobalMatrix(Shader.PropertyToID("_CameraInvView"), data.invView);
                     block.SetVector("_WorldSpaceViewForward", data.viewForward);
                     block.SetInt("_SSRMaxSteps", data.maxSteps);
                     block.SetFloat("_SSRStepSize", data.stepSize);
@@ -202,18 +180,13 @@ public class SSRRenderFeature : ScriptableRendererFeature
                     // RG 里 compute pass 的 SetGlobalInt 跨 pass 不可靠，这里显式把 HiZ mip 数传进 block
                     block.SetInt("_HiZMipCount", data.hiZMipCount);
                     for (int i = 0; i < data.hiZMipCount; ++i)
-                        rgContext.cmd.SetGlobalTexture(kHiZMipIds[i], data.hiZMips[i]);
+                        block.SetTexture(kHiZMipIds[i], data.hiZMips[i]);
                     if (data.gbuffer2.IsValid())
-                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
-                    rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.activeColor);
+                        block.SetTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
+                    block.SetTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.activeColor);
+                    block.SetTexture(Shader.PropertyToID("_CameraDepthTexture"), data.depth);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
-            }
-
-            // 拷贝 result → history，并暴露 _SSRHistoryTex 全局给 Combine Pass
-            using (var builder = renderGraph.AddBlitPass(result, history, Vector2.one, Vector2.zero, returnBuilder: true, passName: "SSR Copy History"))
-            {
-                builder.SetGlobalTextureAfterPass(history, Shader.PropertyToID("_SSRHistoryTex"));
             }
         }
     }

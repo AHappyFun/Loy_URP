@@ -182,7 +182,7 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
                 // 纯拷贝
             }
 
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy Post Process Outline", out var passData, outlineProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_PostProcessOutline", out var passData, outlineProfilingSampler))
             {
                 passData.material = material;
                 passData.source = source;

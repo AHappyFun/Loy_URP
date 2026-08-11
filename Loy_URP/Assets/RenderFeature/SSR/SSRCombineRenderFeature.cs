@@ -1,121 +1,255 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
 using UnityEngine.Rendering.Universal;
-
 
 public class SSRCombineRenderFeature : ScriptableRendererFeature
 {
-    public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingSkybox ;
+    public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingSkybox;
     public Shader Shader;
-    private Material _material;
-    private SSRCombineRenderPass _renderPass;
 
+    Material m_Material;
+    SSRCombineRenderPass m_RenderPass;
 
     public override void Create()
     {
-        if(_renderPass == null)
-            _renderPass = new SSRCombineRenderPass(this);
+        if (Shader != null && m_Material == null)
+            m_Material = CoreUtils.CreateEngineMaterial(Shader);
 
-        if (Shader && _material == null)
-        {
-            _material = CoreUtils.CreateEngineMaterial(Shader);
-        }
+        if (m_RenderPass == null)
+            m_RenderPass = new SSRCombineRenderPass(this);
     }
+
     protected override void Dispose(bool disposing)
     {
+        m_RenderPass?.Dispose();
+        m_RenderPass = null;
+        CoreUtils.Destroy(m_Material);
+        m_Material = null;
         base.Dispose(disposing);
     }
+
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
-        if (_material)
-        {
-            renderer.EnqueuePass(_renderPass);
-        }
+        if (m_Material != null && m_RenderPass != null)
+            renderer.EnqueuePass(m_RenderPass);
     }
 
-    class SSRCombineRenderPass : ScriptableRenderPass
+    sealed class SSRCombineRenderPass : ScriptableRenderPass
     {
-        private const string m_ProfilerTag = "Loy_SSR Combine Pass";
-        private const int kShaderPass = 1; // Loy_SSR.shader 的 "SSR Combine" Pass
+        const string kProfilerTag = "Loy_SSR Combine Pass";
+        const int kTemporalResolvePass = 1;
+        const int kCompositePass = 2;
 
-        readonly ProfilingSampler m_ProfilingSampler;
-        private readonly SSRCombineRenderFeature m_RenderFeature;
+        static readonly int kSSRResultId = Shader.PropertyToID("_SSRResultTex");
+        static readonly int kSSRHistoryId = Shader.PropertyToID("_SSRHistoryTex");
+        static readonly int kSSRResolvedId = Shader.PropertyToID("_SSRResolvedTex");
+        static readonly int kMotionVectorsId = Shader.PropertyToID("_MotionVectorTexture");
+        static readonly int kCameraDepthId = Shader.PropertyToID("_CameraDepthTexture");
+        static readonly int kGBuffer1Id = Shader.PropertyToID("_GBuffer1");
+        static readonly int kGBuffer2Id = Shader.PropertyToID("_GBuffer2");
+        static readonly int kHistoryValidId = Shader.PropertyToID("_SSRHistoryValid");
 
-        public SSRCombineRenderPass(SSRCombineRenderFeature mRenderFeature)
+        readonly ProfilingSampler m_TemporalSampler = new ProfilingSampler("Loy_SSR Temporal Resolve");
+        readonly ProfilingSampler m_CompositeSampler = new ProfilingSampler(kProfilerTag);
+        readonly SSRCombineRenderFeature m_RenderFeature;
+        readonly Dictionary<int, CameraHistory> m_Histories = new Dictionary<int, CameraHistory>();
+
+        sealed class CameraHistory
         {
-            this.m_RenderFeature = mRenderFeature;
-            this.renderPassEvent = mRenderFeature.renderPassEvent;
-            m_ProfilingSampler = new ProfilingSampler(m_ProfilerTag);
+            public readonly RTHandle[] buffers = new RTHandle[2];
+            public int readIndex;
+            public bool valid;
+            public int lastFrameUsed = -1;
 
-            // shader 采样 _GBuffer0/1/2（延迟渲染的 G-Buffer）
-            ConfigureInput(ScriptableRenderPassInput.Depth);
+            public void Release()
+            {
+                buffers[0]?.Release();
+                buffers[1]?.Release();
+                buffers[0] = null;
+                buffers[1] = null;
+                valid = false;
+                readIndex = 0;
+                lastFrameUsed = -1;
+            }
+        }
+
+        sealed class TemporalPassData
+        {
+            public Material material;
+            public MaterialPropertyBlock block;
+            public TextureHandle current;
+            public TextureHandle history;
+            public TextureHandle motionVectors;
+            public TextureHandle gbuffer1;
+            public bool historyValid;
+        }
+
+        sealed class CompositePassData
+        {
+            public Material material;
+            public MaterialPropertyBlock block;
+            public TextureHandle resolved;
+            public TextureHandle gbuffer1;
+            public TextureHandle gbuffer2;
+            public TextureHandle depth;
+        }
+
+        public SSRCombineRenderPass(SSRCombineRenderFeature renderFeature)
+        {
+            m_RenderFeature = renderFeature;
+            renderPassEvent = renderFeature.renderPassEvent;
+            ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Motion);
+        }
+
+        public void Dispose()
+        {
+            foreach (CameraHistory history in m_Histories.Values)
+                history.Release();
+            m_Histories.Clear();
         }
 
 #if URP_COMPATIBILITY_MODE
-#pragma warning disable CS0672 // 覆盖已废弃的 Execute，仅兼容模式下使用
+#pragma warning disable CS0672
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            CommandBuffer cmd = CommandBufferPool.Get(m_ProfilerTag);
-            using (new ProfilingScope(cmd, m_ProfilingSampler))
-            {
-                cmd.DrawProcedural(Matrix4x4.identity, m_RenderFeature._material, kShaderPass, MeshTopology.Triangles, 3, 1);
-            }
+            CommandBuffer cmd = CommandBufferPool.Get(kProfilerTag);
+            cmd.DrawProcedural(Matrix4x4.identity, m_RenderFeature.m_Material, kCompositePass, MeshTopology.Triangles, 3, 1);
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
 #pragma warning restore CS0672
 #endif
 
-        class PassData
+        CameraHistory GetHistory(Camera camera)
         {
-            public Material material;
-            public TextureHandle gbuffer0;
-            public TextureHandle gbuffer1;
-            public TextureHandle gbuffer2;
+            int cameraId = camera.GetInstanceID();
+            if (!m_Histories.TryGetValue(cameraId, out CameraHistory history))
+            {
+                history = new CameraHistory();
+                m_Histories.Add(cameraId, history);
+            }
+            return history;
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
-            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
-            if (m_RenderFeature._material == null) return;
+            if (m_RenderFeature.m_Material == null || !frameData.Contains<SSRFrameData>())
+                return;
 
-            // 延迟 G-Buffer（RG 模式不暴露 _GBuffer* 全局，直接取资源）
-            TextureHandle gbuffer0 = default, gbuffer1 = default, gbuffer2 = default;
+            UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+            SSRFrameData ssrData = frameData.Get<SSRFrameData>();
+            if (!ssrData.result.IsValid() || cameraData.camera == null)
+                return;
+
+            TextureHandle gbuffer1 = default;
+            TextureHandle gbuffer2 = default;
             if (resourcesData.gBuffer != null && resourcesData.gBuffer.Length > 2)
             {
-                gbuffer0 = resourcesData.gBuffer[0];
                 gbuffer1 = resourcesData.gBuffer[1];
                 gbuffer2 = resourcesData.gBuffer[2];
             }
+            if (!gbuffer1.IsValid() || !gbuffer2.IsValid() || !resourcesData.motionVectorColor.IsValid())
+                return;
 
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>(m_ProfilerTag, out var passData, m_ProfilingSampler))
+            CameraHistory cameraHistory = GetHistory(cameraData.camera);
+            if (cameraHistory.lastFrameUsed + 1 != Time.frameCount)
+                cameraHistory.valid = false;
+            RenderTextureDescriptor historyDesc = cameraData.cameraTargetDescriptor;
+            historyDesc.depthBufferBits = 0;
+            historyDesc.msaaSamples = 1;
+            historyDesc.colorFormat = RenderTextureFormat.DefaultHDR;
+
+            bool reallocated = RenderingUtils.ReAllocateHandleIfNeeded(
+                ref cameraHistory.buffers[0], historyDesc, FilterMode.Bilinear,
+                TextureWrapMode.Clamp, name: "_SSRHistoryA");
+            reallocated |= RenderingUtils.ReAllocateHandleIfNeeded(
+                ref cameraHistory.buffers[1], historyDesc, FilterMode.Bilinear,
+                TextureWrapMode.Clamp, name: "_SSRHistoryB");
+            if (reallocated)
             {
-                passData.material = m_RenderFeature._material;
-                passData.gbuffer0 = gbuffer0;
+                cameraHistory.valid = false;
+                cameraHistory.readIndex = 0;
+            }
+
+            int writeIndex = 1 - cameraHistory.readIndex;
+            TextureHandle previousHistory = renderGraph.ImportTexture(cameraHistory.buffers[cameraHistory.readIndex]);
+            TextureHandle nextHistory = renderGraph.ImportTexture(cameraHistory.buffers[writeIndex]);
+
+            TextureDesc resolvedDesc = renderGraph.GetTextureDesc(ssrData.result);
+            resolvedDesc.format = GraphicsFormat.R16G16B16A16_SFloat;
+            resolvedDesc.clearBuffer = true;
+            resolvedDesc.name = "_SSRResolvedTex";
+            TextureHandle resolved = renderGraph.CreateTexture(resolvedDesc);
+
+            using (var builder = renderGraph.AddRasterRenderPass<TemporalPassData>(
+                       "Loy_SSR Temporal Resolve", out TemporalPassData passData, m_TemporalSampler))
+            {
+                passData.material = m_RenderFeature.m_Material;
+                passData.block = new MaterialPropertyBlock();
+                passData.current = ssrData.result;
+                passData.history = previousHistory;
+                passData.motionVectors = resourcesData.motionVectorColor;
                 passData.gbuffer1 = gbuffer1;
-                passData.gbuffer2 = gbuffer2;
+                passData.historyValid = cameraHistory.valid;
 
-                // shader 读取的全局：SSR 结果/历史 + G-Buffer
-                builder.UseGlobalTexture(Shader.PropertyToID("_SSRResultTex"), AccessFlags.Read);
-                builder.UseGlobalTexture(Shader.PropertyToID("_SSRHistoryTex"), AccessFlags.Read);
-                if (gbuffer0.IsValid()) { builder.UseTexture(gbuffer0, AccessFlags.Read); builder.UseTexture(gbuffer1, AccessFlags.Read); builder.UseTexture(gbuffer2, AccessFlags.Read); }
-                builder.AllowGlobalStateModification(true);
+                builder.UseTexture(ssrData.result, AccessFlags.Read);
+                builder.UseTexture(previousHistory, AccessFlags.Read);
+                builder.UseTexture(resourcesData.motionVectorColor, AccessFlags.Read);
+                builder.UseTexture(gbuffer1, AccessFlags.Read);
+                builder.SetRenderAttachment(resolved, 0, AccessFlags.Write);
 
-                // 混合到当前颜色目标
-                builder.SetRenderAttachment(resourcesData.activeColorTexture, 0, AccessFlags.ReadWrite);
-
-                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
+                builder.SetRenderFunc(static (TemporalPassData data, RasterGraphContext context) =>
                 {
-                    if (data.gbuffer0.IsValid())
-                    {
-                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer0"), data.gbuffer0);
-                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer1"), data.gbuffer1);
-                        rgContext.cmd.SetGlobalTexture(Shader.PropertyToID("_GBuffer2"), data.gbuffer2);
-                    }
-                    rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, kShaderPass, MeshTopology.Triangles, 3, 1);
+                    MaterialPropertyBlock block = data.block;
+                    block.Clear();
+                    block.SetTexture(kSSRResultId, data.current);
+                    block.SetTexture(kSSRHistoryId, data.history);
+                    block.SetTexture(kMotionVectorsId, data.motionVectors);
+                    block.SetTexture(kGBuffer1Id, data.gbuffer1);
+                    block.SetFloat(kHistoryValidId, data.historyValid ? 1.0f : 0.0f);
+                    context.cmd.DrawProcedural(Matrix4x4.identity, data.material, kTemporalResolvePass,
+                        MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            using (var builder = renderGraph.AddRasterRenderPass<CompositePassData>(
+                       kProfilerTag, out CompositePassData passData, m_CompositeSampler))
+            {
+                passData.material = m_RenderFeature.m_Material;
+                passData.block = new MaterialPropertyBlock();
+                passData.resolved = resolved;
+                passData.gbuffer1 = gbuffer1;
+                passData.gbuffer2 = gbuffer2;
+                passData.depth = resourcesData.cameraDepthTexture;
+
+                builder.UseTexture(resolved, AccessFlags.Read);
+                builder.UseTexture(gbuffer1, AccessFlags.Read);
+                builder.UseTexture(gbuffer2, AccessFlags.Read);
+                builder.UseTexture(resourcesData.cameraDepthTexture, AccessFlags.Read);
+                builder.SetRenderAttachment(resourcesData.activeColorTexture, 0, AccessFlags.ReadWrite);
+
+                builder.SetRenderFunc(static (CompositePassData data, RasterGraphContext context) =>
+                {
+                    MaterialPropertyBlock block = data.block;
+                    block.Clear();
+                    block.SetTexture(kSSRResolvedId, data.resolved);
+                    block.SetTexture(kGBuffer1Id, data.gbuffer1);
+                    block.SetTexture(kGBuffer2Id, data.gbuffer2);
+                    block.SetTexture(kCameraDepthId, data.depth);
+                    context.cmd.DrawProcedural(Matrix4x4.identity, data.material, kCompositePass,
+                        MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            renderGraph.AddBlitPass(resolved, nextHistory, Vector2.one, Vector2.zero, passName: "SSR Update History");
+            cameraHistory.readIndex = writeIndex;
+            cameraHistory.valid = true;
+            cameraHistory.lastFrameUsed = Time.frameCount;
         }
     }
 }

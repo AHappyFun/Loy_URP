@@ -22,11 +22,6 @@ TEXTURE2D_X_HALF(_GBuffer2);
 SAMPLER(sampler_GBuffer2);
 
 
-float4x4 _CameraView;
-float4x4 _CameraInvView;
-float4x4 _CameraProjection;
-float4x4 _CameraInvProjection;
-
 float3 _WorldSpaceViewForward;
 
 int _SSRMaxSteps;

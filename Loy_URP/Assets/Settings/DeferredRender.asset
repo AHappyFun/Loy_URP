@@ -26,56 +26,6 @@ MonoBehaviour:
     fadeStart: 35
     fadeEnd: 100
     affectSceneView: 0
---- !u!114 &-7408970019898526395
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f68b0402f785911448c603263cd037dc, type: 3}
-  m_Name: VolumeCloudRenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 250
-  shader: {fileID: 4800000, guid: f76bd094d0f20254f9b3beba6cbffa20, type: 3}
-  m_VolumeCloudConfig: {fileID: 0}
---- !u!114 &-6908723186557972823
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
-  m_Name: SSAORenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 250
-  shader: {fileID: 4800000, guid: d46e7bbcb7764fa78c85a736400aa93d, type: 3}
---- !u!114 &-5023459535811012837
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4b0a034b11de432dab89ced59c205298, type: 3}
-  m_Name: SSRDDARenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  settings:
-    ssrMaterial: {fileID: 2100000, guid: 1ca1ab8c00ce36f4abba2484af9ea03d, type: 2}
-    passEvent: 240
-    maxDistance: 200
-    maxSteps: 1000
-    thickness: 0.1
 --- !u!114 &-4472370401809111797
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -243,37 +193,6 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
---- !u!114 &433215976145309826
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 419301a55e14e9a42ac5043d44b19c4d, type: 3}
-  m_Name: ContactShadowFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  m_RenderPassEvent: 200
-  m_ContactShadows: {fileID: 0}
-  ContactShadowComputeShader: {fileID: 7200000, guid: 3e6900e06dc185a4380af4dacb4db0a4, type: 3}
---- !u!114 &443383763139617696
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
-  m_Name: SSAORenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 250
-  shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
 --- !u!114 &940993687253614422
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -290,22 +209,6 @@ MonoBehaviour:
   renderPassEvent: 350
   Shader: {fileID: 4800000, guid: 91932eec7f76406da20706bacc5fe9dc, type: 3}
   GIRange: 0.15
---- !u!114 &3250433244120867298
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 419301a55e14e9a42ac5043d44b19c4d, type: 3}
-  m_Name: ContactShadowFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  m_RenderPassEvent: 200
-  m_ContactShadows: {fileID: 0}
-  ContactShadowComputeShader: {fileID: 7200000, guid: 3e6900e06dc185a4380af4dacb4db0a4, type: 3}
 --- !u!114 &4041069810517058087
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -397,22 +300,6 @@ MonoBehaviour:
     StepScale: 1.4
     isHalfSize: 1
     applyToGI: 1
---- !u!114 &5509125397862468847
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b10bbbe4629c90a4d97495f08e21feb8, type: 3}
-  m_Name: SSRRenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 250
-  m_ssrConfig: {fileID: 0}
-  SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
 --- !u!114 &5991207707886691739
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -429,34 +316,3 @@ MonoBehaviour:
   Settings:
     vcMaterial: {fileID: 2100000, guid: 37d18cba5b861fd4da7329f6502c0025, type: 2}
     passEvent: 240
---- !u!114 &6134060063955588469
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b10bbbe4629c90a4d97495f08e21feb8, type: 3}
-  m_Name: SSRRenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 450
-  m_ssrConfig: {fileID: 0}
-  SSRComputeShader: {fileID: 7200000, guid: 5ac984e6966505a4cbccf5db8d734be1, type: 3}
---- !u!114 &7347688058357261118
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8cb2ea41c5d74cf6b22e7e3e8cd3e0b8, type: 3}
-  m_Name: SSAORenderFeature
-  m_EditorClassIdentifier: 
-  m_Active: 0
-  renderPassEvent: 250
-  shader: {fileID: 4800000, guid: ac16580e098c9734396bfa6c07bd07ab, type: 3}
