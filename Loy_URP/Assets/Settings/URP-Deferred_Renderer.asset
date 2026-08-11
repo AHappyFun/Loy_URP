@@ -1,5 +1,42 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-8886208210172211487
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0820d19b03e87ee45b745aa0df31190e, type: 3}
+  m_Name: Custom Post Processing
+  m_EditorClassIdentifier: Assembly-CSharp::CustomPostProcessingRenderFeature
+  m_Active: 1
+  settings:
+    injectionPoint: 550
+    affectSceneView: 1
+    outline:
+      enabled: 0
+      outlineColor: {r: 0, g: 0, b: 0, a: 1}
+      opacity: 0.85
+      thickness: 1.25
+      depthSensitivity: 1.25
+      normalSensitivity: 1.6
+      colorSensitivity: 0.15
+      edgeThreshold: 0.12
+      edgeSoftness: 0.08
+      fadeStart: 35
+      fadeEnd: 100
+    streak:
+      enabled: 1
+      threshold: 0.36
+      stretch: 0.75
+      intensity: 0.48
+      tint: {r: 0.50111216, g: 0.4669811, b: 1, a: 1}
+      maxPyramidLevels: 16
+  outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
+  streakShader: {fileID: 4800000, guid: ff6d36f8ae54f3c459c5fa287c182a40, type: 3}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -34,8 +71,8 @@ MonoBehaviour:
   - {fileID: 7660457836123274701}
   - {fileID: 7656126331739273248}
   - {fileID: 6041220770971095916}
-  - {fileID: 923456789012345678}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad6534ef380920ec7d00c
+  - {fileID: -8886208210172211487}
+  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad84
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -86,33 +123,6 @@ MonoBehaviour:
     isHalfSize: 1
     DepthBias: 0.05
     Thickness: 0.25
---- !u!114 &923456789012345678
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d82f48a1de01465ca9edc75a642e80dc, type: 3}
-  m_Name: OutlineRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::OutlineRenderFeature
-  m_Active: 1
-  settings:
-    passEvent: 550
-    outlineColor: {r: 0, g: 0, b: 0, a: 1}
-    opacity: 0.85
-    thickness: 1.25
-    depthSensitivity: 1.25
-    normalSensitivity: 1.6
-    colorSensitivity: 0.15
-    edgeThreshold: 0.12
-    edgeSoftness: 0.08
-    fadeStart: 35
-    fadeEnd: 100
-    affectSceneView: 1
-  outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
 --- !u!114 &4041069810517058087
 MonoBehaviour:
   m_ObjectHideFlags: 0

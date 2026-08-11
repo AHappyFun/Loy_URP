@@ -28,6 +28,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
         readonly ProfilingSampler m_ProfilingSamplerBlurV;
         readonly ProfilingSampler m_ProfilingSamplerBlurH;
         readonly ProfilingSampler m_ProfilingSamplerApply;
+        readonly ProfilingSampler m_ProfilingSamplerGroup;
 
         public float AOIntensity = 1.0f;
         public bool applyToGI = true;
@@ -46,6 +47,7 @@ public class HBAORenderFeature : ScriptableRendererFeature
         public HBAOPass(Material mat)
         {
             hbaoMaterial = mat;
+            m_ProfilingSamplerGroup = new ProfilingSampler("Loy_HBAO");
             m_ProfilingSamplerCompute = new ProfilingSampler("Loy_HBAO Compute");
             m_ProfilingSamplerBlurV = new ProfilingSampler("Loy_HBAO Blur V");
             m_ProfilingSamplerBlurH = new ProfilingSampler("Loy_HBAO Blur H");
@@ -178,6 +180,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
             hbaoMaterial.SetFloat("_StepScale", StepScale);
             hbaoMaterial.SetFloat("_AOTexRes", isHalfSize ? 0.5f : 1.0f);
 
+            renderGraph.BeginProfilingSampler(m_ProfilingSamplerGroup);
+
             // Pass 0: 计算 AO → hbao
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_HBAO Compute", out var computeData, m_ProfilingSamplerCompute))
             {
@@ -295,6 +299,8 @@ public class HBAORenderFeature : ScriptableRendererFeature
                     });
                 }
             }
+
+            renderGraph.EndProfilingSampler(m_ProfilingSamplerGroup);
         }
     }
 

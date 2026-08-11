@@ -1,4 +1,4 @@
-Shader "Loy/Feature/Outline"
+Shader "Loy/Feature/PostProcess/Outline"
 {
     Properties
     {
