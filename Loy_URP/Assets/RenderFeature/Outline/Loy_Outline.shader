@@ -10,7 +10,7 @@ Shader "Loy/Feature/Outline"
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
-    TEXTURE2D(_MainTex);
+    TEXTURE2D_X(_MainTex);
     SAMPLER(sampler_MainTex);
     float4 _MainTex_TexelSize;
 
@@ -29,21 +29,24 @@ Shader "Loy/Feature/Outline"
 
     struct Attributes
     {
-        float4 positionOS : POSITION;
-        float2 uv : TEXCOORD0;
+        uint vertexID : SV_VertexID;
+        UNITY_VERTEX_INPUT_INSTANCE_ID
     };
 
     struct Varyings
     {
         float4 positionCS : SV_POSITION;
         float2 uv : TEXCOORD0;
+        UNITY_VERTEX_OUTPUT_STEREO
     };
 
     Varyings Vert(Attributes input)
     {
         Varyings output;
-        output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
-        output.uv = input.uv;
+        UNITY_SETUP_INSTANCE_ID(input);
+        UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
+        output.positionCS = GetFullScreenTriangleVertexPosition(input.vertexID);
+        output.uv = GetFullScreenTriangleTexCoord(input.vertexID);
         return output;
     }
 
@@ -59,12 +62,13 @@ Shader "Loy/Feature/Outline"
 
     half4 FragOutline(Varyings input) : SV_Target
     {
+        UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
         float2 uv = input.uv;
         float2 pixel = _MainTex_TexelSize.xy * OUTLINE_THICKNESS;
 
         float depthC = EyeDepth(uv);
         half3 normalC = SampleSceneNormals(uv);
-        half lumaC = Luma(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv).rgb);
+        half lumaC = Luma(SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, uv).rgb);
 
         // Eight directions produce a smooth outline and avoid the directional bias of a 4-tap cross.
         const float2 directions[8] =
@@ -84,7 +88,7 @@ Shader "Loy/Feature/Outline"
             float2 sampleUV = saturate(uv + directions[i] * pixel);
             float sampleDepth = EyeDepth(sampleUV);
             half3 sampleNormal = SampleSceneNormals(sampleUV);
-            half sampleLuma = Luma(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, sampleUV).rgb);
+            half sampleLuma = Luma(SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, sampleUV).rgb);
 
             // Relative depth keeps the threshold visually consistent as objects move away.
             depthEdge = max(depthEdge, abs(sampleDepth - depthC) / max(depthC, 0.25));
@@ -101,7 +105,7 @@ Shader "Loy/Feature/Outline"
         float distanceFade = 1.0 - smoothstep(_FadeParams.x, _FadeParams.y, depthC);
         edge *= distanceFade * OUTLINE_OPACITY;
 
-        half4 source = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv);
+        half4 source = SAMPLE_TEXTURE2D_X(_MainTex, sampler_MainTex, uv);
         source.rgb = lerp(source.rgb, _OutlineColor.rgb, saturate(edge * _OutlineColor.a));
         return source;
     }

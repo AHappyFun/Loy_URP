@@ -226,9 +226,6 @@ public class SSRRenderFeature : ScriptableRendererFeature
     {
         if (m_SSRPass == null) return;
 
-        // shader 用 SampleSceneColor 读取 _CameraOpaqueTexture
-        renderingData.cameraData.requiresOpaqueTexture = true;
-
         renderer.EnqueuePass(m_SSRPass);
     }
 }

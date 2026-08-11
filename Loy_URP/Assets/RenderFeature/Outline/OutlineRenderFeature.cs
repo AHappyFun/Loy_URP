@@ -2,7 +2,6 @@ using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
-using UnityEngine.Rendering.RenderGraphModule.Util;
 using UnityEngine.Rendering.Universal;
 
 [DisallowMultipleRendererFeature]
@@ -34,12 +33,13 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
     }
 
     [SerializeField] private Settings settings = new Settings();
+    [SerializeField] private Shader outlineShader;
     private Material material;
     private OutlinePass pass;
 
     public override void Create()
     {
-        Shader shader = Shader.Find("Loy/Feature/Outline");
+        Shader shader = outlineShader != null ? outlineShader : Shader.Find("Loy/Feature/Outline");
         if (shader == null)
         {
             Debug.LogWarning("OutlineRenderFeature: shader 'Loy/Feature/Outline' was not found.");
@@ -72,12 +72,14 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
         renderer.EnqueuePass(pass);
     }
 
+#if URP_COMPATIBILITY_MODE
+#pragma warning disable CS0672
     public override void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData renderingData)
     {
-#if URP_COMPATIBILITY_MODE
         pass?.Setup(renderer.cameraColorTargetHandle);
-#endif
     }
+#pragma warning restore CS0672
+#endif
 
     protected override void Dispose(bool disposing)
     {
@@ -86,12 +88,16 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
 
     private sealed class OutlinePass : ScriptableRenderPass
     {
+        private const int GBufferNormalSmoothnessIndex = 2;
+
         private static readonly int OutlineColorId = Shader.PropertyToID("_OutlineColor");
         private static readonly int OutlineParamsId = Shader.PropertyToID("_OutlineParams");
         private static readonly int EdgeParamsId = Shader.PropertyToID("_EdgeParams");
         private static readonly int FadeParamsId = Shader.PropertyToID("_FadeParams");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int MainTexTexelSizeId = Shader.PropertyToID("_MainTex_TexelSize");
+        private static readonly int CameraDepthTextureId = Shader.PropertyToID("_CameraDepthTexture");
+        private static readonly int CameraNormalsTextureId = Shader.PropertyToID("_CameraNormalsTexture");
 
         private readonly Material material;
         private readonly Settings settings;
@@ -106,7 +112,12 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
         {
             this.material = material;
             this.settings = settings;
+#if URP_COMPATIBILITY_MODE
             ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
+#else
+            ConfigureInput(ScriptableRenderPassInput.Depth);
+#endif
+            requiresIntermediateTexture = true;
         }
 
 #if URP_COMPATIBILITY_MODE
@@ -146,7 +157,7 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
         }
 #endif
 
-        static void ApplyMaterialParams(Material mat, Settings s)
+        private static void ApplyMaterialParams(Material mat, Settings s)
         {
             mat.SetColor(OutlineColorId, s.outlineColor);
             mat.SetVector(OutlineParamsId, new Vector4(s.thickness, s.opacity, s.edgeThreshold, s.edgeSoftness));
@@ -154,10 +165,13 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
             mat.SetVector(FadeParamsId, new Vector4(s.fadeStart, Mathf.Max(s.fadeStart + 0.01f, s.fadeEnd), 0f, 0f));
         }
 
-        class PassData
+        private sealed class PassData
         {
             public Material material;
+            public MaterialPropertyBlock block;
             public TextureHandle source;
+            public TextureHandle depth;
+            public TextureHandle normals;
             public Vector4 outlineColor;
             public Vector4 outlineParams;
             public Vector4 edgeParams;
@@ -165,27 +179,41 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
             public Vector4 sourceTexelSize;
         }
 
-        static readonly MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
-
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
             UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
-            if (material == null) return;
+            if (material == null)
+                return;
 
-            // 先把活动颜色拷贝到稳定源，供描边读取（避免同一帧读写同一纹理）
-            TextureDesc sourceDesc = renderGraph.GetTextureDesc(resourcesData.activeColorTexture);
-            sourceDesc.name = "_OutlineSource";
-            TextureHandle source = renderGraph.CreateTexture(sourceDesc);
+            // The pass samples neighbouring color pixels, so source and destination must differ.
+            // requiresIntermediateTexture keeps activeColor off the backbuffer at this injection point.
+            Debug.Assert(!resourcesData.isActiveTargetBackBuffer);
+            if (resourcesData.isActiveTargetBackBuffer)
+                return;
 
-            using (var builder = renderGraph.AddBlitPass(resourcesData.activeColorTexture, source, Vector2.one, Vector2.zero, returnBuilder: true, passName: "Outline Copy Source"))
-            {
-                // 纯拷贝
-            }
+            TextureHandle[] gBuffer = resourcesData.gBuffer;
+            if (gBuffer == null ||
+                gBuffer.Length <= GBufferNormalSmoothnessIndex ||
+                !gBuffer[GBufferNormalSmoothnessIndex].IsValid())
+                return;
+
+            TextureHandle source = resourcesData.activeColorTexture;
+            TextureHandle normals = gBuffer[GBufferNormalSmoothnessIndex];
+            TextureDesc sourceDesc = renderGraph.GetTextureDesc(source);
+            TextureDesc destinationDesc = sourceDesc;
+            destinationDesc.depthBufferBits = 0;
+            destinationDesc.msaaSamples = MSAASamples.None;
+            destinationDesc.clearBuffer = false;
+            destinationDesc.name = "_OutlineColor";
+            TextureHandle destination = renderGraph.CreateTexture(destinationDesc);
 
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_PostProcessOutline", out var passData, outlineProfilingSampler))
             {
                 passData.material = material;
+                passData.block = new MaterialPropertyBlock();
                 passData.source = source;
+                passData.depth = resourcesData.cameraDepthTexture;
+                passData.normals = normals;
                 passData.outlineColor = settings.outlineColor;
                 passData.outlineParams = new Vector4(settings.thickness, settings.opacity, settings.edgeThreshold, settings.edgeSoftness);
                 passData.edgeParams = new Vector4(settings.depthSensitivity, settings.normalSensitivity, settings.colorSensitivity, 0f);
@@ -193,27 +221,28 @@ public sealed class OutlineRenderFeature : ScriptableRendererFeature
                 passData.sourceTexelSize = new Vector4(1f / sourceDesc.width, 1f / sourceDesc.height, sourceDesc.width, sourceDesc.height);
 
                 builder.UseTexture(source, AccessFlags.Read);
-                builder.UseGlobalTexture(Shader.PropertyToID("_CameraDepthTexture"), AccessFlags.Read);
-                builder.UseGlobalTexture(Shader.PropertyToID("_CameraNormalsTexture"), AccessFlags.Read);
-                builder.AllowGlobalStateModification(true);
-
-                // 直接写回活动颜色
-                builder.SetRenderAttachment(resourcesData.activeColorTexture, 0, AccessFlags.Write);
+                builder.UseTexture(passData.depth, AccessFlags.Read);
+                builder.UseTexture(passData.normals, AccessFlags.Read);
+                builder.SetRenderAttachment(destination, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
-                    MaterialPropertyBlock block = s_SharedPropertyBlock;
+                    MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetColor(OutlineColorId, data.outlineColor);
                     block.SetVector(OutlineParamsId, data.outlineParams);
                     block.SetVector(EdgeParamsId, data.edgeParams);
                     block.SetVector(FadeParamsId, data.fadeParams);
                     block.SetVector(MainTexTexelSizeId, data.sourceTexelSize);
-
-                    rgContext.cmd.SetGlobalTexture(MainTexId, data.source);
+                    block.SetTexture(MainTexId, data.source);
+                    block.SetTexture(CameraDepthTextureId, data.depth);
+                    block.SetTexture(CameraNormalsTextureId, data.normals);
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            // Make the ping-pong output the input of every later URP/custom pass.
+            resourcesData.cameraColor = destination;
         }
     }
 }
