@@ -45,7 +45,7 @@ LightingSettings:
   m_ForceUpdates: 0
   m_PVRCulling: 0
   m_PVRSampling: 1
-  m_PVRDirectSampleCount: 8
+  m_PVRDirectSampleCount: 4
   m_PVRSampleCount: 1024
   m_PVREnvironmentSampleCount: 512
   m_PVREnvironmentReferencePointCount: 2048
