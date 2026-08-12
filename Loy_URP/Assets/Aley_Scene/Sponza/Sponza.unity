@@ -37,7 +37,7 @@ RenderSettings:
   m_ReflectionBounces: 1
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
-  m_Sun: {fileID: 0}
+  m_Sun: {fileID: 1322270054}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -7075,7 +7075,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -1.025
+      value: -0.908
       objectReference: {fileID: 0}
     - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
       propertyPath: m_LocalPosition.y
@@ -7083,7 +7083,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 1.348
+      value: 1.122
       objectReference: {fileID: 0}
     - target: {fileID: 4343606445858990, guid: 53aa3aedf6681da469047941de12ff9d, type: 3}
       propertyPath: m_LocalRotation.w

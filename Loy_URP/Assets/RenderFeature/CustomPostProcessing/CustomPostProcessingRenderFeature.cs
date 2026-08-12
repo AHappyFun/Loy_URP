@@ -24,7 +24,8 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
     public sealed class Settings
     {
         public RenderPassEvent injectionPoint = RenderPassEvent.BeforeRenderingPostProcessing;
-        public bool affectSceneView = true;
+        [Tooltip("Scene View uses the URP asset's Default Renderer, not a renderer selected on a game camera.")]
+        public bool affectSceneView = false;
         public List<EffectType> effectOrder = new List<EffectType>
         {
             EffectType.Outline,
@@ -136,9 +137,11 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
             return;
 
         CameraData cameraData = renderingData.cameraData;
+        bool isSceneView = cameraData.isSceneViewCamera ||
+                           cameraData.cameraType == CameraType.SceneView;
         if (cameraData.cameraType == CameraType.Preview ||
             cameraData.cameraType == CameraType.Reflection ||
-            (!settings.affectSceneView && cameraData.isSceneViewCamera) ||
+            (!settings.affectSceneView && isSceneView) ||
             !pass.HasActiveEffects())
             return;
 

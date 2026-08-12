@@ -1,0 +1,29 @@
+{
+    "name": "VolumetricCloudsURP",
+    "rootNamespace": "",
+    "references": [
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.Mathematics"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.jiaozi158.unity-physically-based-sky-urp",
+            "expression": "1.0.0",
+            "define": "URP_PBSKY"
+        },
+        {
+            "name": "cn.unity.physical-light-unit",
+            "expression": "0.0.1",
+            "define": "URP_PHYSICAL_LIGHT"
+        }
+    ],
+    "noEngineReferences": false
+}

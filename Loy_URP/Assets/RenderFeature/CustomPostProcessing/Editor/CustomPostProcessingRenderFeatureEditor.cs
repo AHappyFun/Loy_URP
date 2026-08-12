@@ -108,5 +108,6 @@ internal sealed class CustomPostProcessingRenderFeatureEditor : Editor
         serializedObject.ApplyModifiedProperties();
         EditorUtility.SetDirty(target);
         ((CustomPostProcessingRenderFeature)target).Create();
+        SceneView.RepaintAll();
     }
 }

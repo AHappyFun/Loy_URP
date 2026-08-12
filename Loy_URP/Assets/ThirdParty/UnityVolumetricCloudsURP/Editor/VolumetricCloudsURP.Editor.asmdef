@@ -1,0 +1,28 @@
+{
+    "name": "VolumetricCloudsURP.Editor",
+    "rootNamespace": "",
+    "references": [
+        "VolumetricCloudsURP",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Core.Editor",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.Universal.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.jiaozi158.unity-physically-based-sky-urp",
+            "expression": "1.0.0",
+            "define": "URP_PBSKY"
+        }
+    ],
+    "noEngineReferences": false
+}
