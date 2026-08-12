@@ -16,6 +16,7 @@ MonoBehaviour:
   settings:
     injectionPoint: 550
     affectSceneView: 1
+    effectOrder: 000000000100000002000000
     outline:
       enabled: 1
       outlineColor: {r: 0, g: 0, b: 0, a: 1}
@@ -35,8 +36,16 @@ MonoBehaviour:
       intensity: 0.48
       tint: {r: 0.52484846, g: 0.4669811, b: 1, a: 1}
       maxPyramidLevels: 16
+    glitch:
+      enabled: 1
+      block: 0.311
+      drift: 0.592
+      jitter: 0.839
+      jump: 0.448
+      shake: 0.281
   outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
   streakShader: {fileID: 4800000, guid: ff6d36f8ae54f3c459c5fa287c182a40, type: 3}
+  glitchShader: {fileID: 4800000, guid: de9b0af49909ab344b3b4c41096f81e1, type: 3}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -13,14 +13,28 @@ using UnityEngine.Rendering.Universal;
 [DisallowMultipleRendererFeature]
 public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeature
 {
+    public enum EffectType
+    {
+        Outline,
+        Streak,
+        Glitch
+    }
+
     [Serializable]
     public sealed class Settings
     {
         public RenderPassEvent injectionPoint = RenderPassEvent.BeforeRenderingPostProcessing;
         public bool affectSceneView = true;
+        public List<EffectType> effectOrder = new List<EffectType>
+        {
+            EffectType.Outline,
+            EffectType.Streak,
+            EffectType.Glitch
+        };
 
         public OutlineSettings outline = new OutlineSettings();
         public StreakSettings streak = new StreakSettings();
+        public GlitchSettings glitch = new GlitchSettings();
     }
 
     [Serializable]
@@ -56,9 +70,21 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
         [Range(2, 16)] public int maxPyramidLevels = 16;
     }
 
+    [Serializable]
+    public sealed class GlitchSettings
+    {
+        public bool enabled = false;
+        [Range(0f, 1f)] public float block = 0f;
+        [Range(0f, 1f)] public float drift = 0f;
+        [Range(0f, 1f)] public float jitter = 0f;
+        [Range(0f, 1f)] public float jump = 0f;
+        [Range(0f, 1f)] public float shake = 0f;
+    }
+
     [SerializeField] private Settings settings = new Settings();
     [SerializeField] private Shader outlineShader;
     [SerializeField] private Shader streakShader;
+    [SerializeField] private Shader glitchShader;
 
     private CustomPostProcessingPass pass;
     private readonly List<ICustomPostProcessRenderer> effectRenderers = new List<ICustomPostProcessRenderer>();
@@ -67,18 +93,36 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
     {
         DisposeEffectRenderers();
 
-        // Register new custom post effects here. Their order is the execution order.
-        Shader outline = outlineShader != null ? outlineShader : Shader.Find("Loy/Feature/Outline");
-        if (outline != null)
-            effectRenderers.Add(new OutlineRenderer(outline, settings.outline));
-        else
-            Debug.LogWarning("CustomPostProcessingRenderFeature: Outline shader was not found.");
+        Shader outline = outlineShader != null ? outlineShader : Shader.Find("Loy/Feature/PostProcess/Outline");
+        Shader streak = streakShader != null ? streakShader : Shader.Find("Loy/Feature/PostProcess/Streak");
+        Shader glitch = glitchShader != null ? glitchShader : Shader.Find("Loy/Feature/PostProcess/Glitch");
 
-        Shader streak = streakShader != null ? streakShader : Shader.Find("Hidden/Loy/PostProcessing/Streak");
-        if (streak != null)
-            effectRenderers.Add(new StreakRenderer(streak, settings.streak));
-        else
-            Debug.LogWarning("CustomPostProcessingRenderFeature: Streak shader was not found.");
+        foreach (EffectType effect in GetExecutionOrder())
+        {
+            switch (effect)
+            {
+                case EffectType.Outline:
+                    if (outline != null)
+                        effectRenderers.Add(new OutlineRenderer(outline, settings.outline));
+                    else
+                        Debug.LogWarning("CustomPostProcessingRenderFeature: Outline shader was not found.");
+                    break;
+
+                case EffectType.Streak:
+                    if (streak != null)
+                        effectRenderers.Add(new StreakRenderer(streak, settings.streak));
+                    else
+                        Debug.LogWarning("CustomPostProcessingRenderFeature: Streak shader was not found.");
+                    break;
+
+                case EffectType.Glitch:
+                    if (glitch != null)
+                        effectRenderers.Add(new GlitchRenderer(glitch, settings.glitch));
+                    else
+                        Debug.LogWarning("CustomPostProcessingRenderFeature: Glitch shader was not found.");
+                    break;
+            }
+        }
 
         pass = new CustomPostProcessingPass(effectRenderers)
         {
@@ -113,6 +157,26 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
         foreach (ICustomPostProcessRenderer renderer in effectRenderers)
             renderer.Dispose();
         effectRenderers.Clear();
+    }
+
+    private IEnumerable<EffectType> GetExecutionOrder()
+    {
+        var registered = new HashSet<EffectType>();
+        if (settings.effectOrder != null)
+        {
+            foreach (EffectType effect in settings.effectOrder)
+            {
+                if (Enum.IsDefined(typeof(EffectType), effect) && registered.Add(effect))
+                    yield return effect;
+            }
+        }
+
+        // Keep newly added or missing effects available after asset schema upgrades.
+        foreach (EffectType effect in Enum.GetValues(typeof(EffectType)))
+        {
+            if (registered.Add(effect))
+                yield return effect;
+        }
     }
 
     private interface ICustomPostProcessRenderer : IDisposable
@@ -490,6 +554,151 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
             public float stretch;
             public float intensity;
             public Color tint;
+        }
+    }
+
+    private sealed class GlitchRenderer : ICustomPostProcessRenderer
+    {
+        private static readonly int InputTextureId = Shader.PropertyToID("_InputTexture");
+        private static readonly int InputSizeId = Shader.PropertyToID("_InputSize");
+        private static readonly int SeedId = Shader.PropertyToID("_Seed");
+        private static readonly int BlockStrengthId = Shader.PropertyToID("_BlockStrength");
+        private static readonly int BlockStrideId = Shader.PropertyToID("_BlockStride");
+        private static readonly int BlockSeed1Id = Shader.PropertyToID("_BlockSeed1");
+        private static readonly int BlockSeed2Id = Shader.PropertyToID("_BlockSeed2");
+        private static readonly int DriftId = Shader.PropertyToID("_Drift");
+        private static readonly int JitterId = Shader.PropertyToID("_Jitter");
+        private static readonly int JumpId = Shader.PropertyToID("_Jump");
+        private static readonly int ShakeId = Shader.PropertyToID("_Shake");
+
+        private readonly Material material;
+        private readonly GlitchSettings settings;
+        private readonly ProfilingSampler profilingSampler =
+            new ProfilingSampler("Loy Custom Post Process - Glitch");
+        private readonly System.Random random = new System.Random();
+
+        private float previousTime;
+        private float jumpTime;
+        private float blockTime;
+        private int blockSeed1 = 71;
+        private int blockSeed2 = 113;
+        private int blockStride = 1;
+
+        public GlitchRenderer(Shader shader, GlitchSettings settings)
+        {
+            material = CoreUtils.CreateEngineMaterial(shader);
+            this.settings = settings;
+        }
+
+        public bool IsActive() => material != null && settings.enabled &&
+            (settings.block > 0f || settings.drift > 0f || settings.jitter > 0f ||
+             settings.jump > 0f || settings.shake > 0f);
+
+        public TextureHandle Record(RenderGraph renderGraph, ContextContainer frameData, TextureHandle source)
+        {
+            if (!IsActive())
+                return source;
+
+            float time = Time.time;
+            float delta = previousTime > 0f ? Mathf.Max(0f, time - previousTime) : 0f;
+            previousTime = time;
+            jumpTime += delta * settings.jump * 11.3f;
+
+            blockTime += delta * 60f;
+            if (blockTime > 1f)
+            {
+                if (random.NextDouble() < 0.09) blockSeed1 += 251;
+                if (random.NextDouble() < 0.29) blockSeed2 += 373;
+                if (random.NextDouble() < 0.25) blockStride = random.Next(1, 32);
+                blockTime = 0f;
+            }
+
+            float block = settings.block;
+            float jitter = settings.jitter;
+            Vector4 driftParams = new Vector4(
+                Mathf.Repeat(time * 606.11f, Mathf.PI * 2f), settings.drift * 0.04f, 0f, 0f);
+            Vector4 jitterParams = new Vector4(
+                Mathf.Max(0f, 1.001f - jitter * 1.2f), 0.002f + jitter * jitter * jitter * 0.05f, 0f, 0f);
+            Vector4 jumpParams = new Vector4(jumpTime, settings.jump, 0f, 0f);
+
+            bool basicEnabled = settings.drift > 0f || jitter > 0f ||
+                                settings.jump > 0f || settings.shake > 0f;
+            int shaderPass = (basicEnabled ? 1 : 0) + (block > 0f ? 2 : 0);
+
+            TextureDesc sourceDesc = renderGraph.GetTextureDesc(source);
+            TextureDesc outputDesc = sourceDesc;
+            outputDesc.depthBufferBits = 0;
+            outputDesc.msaaSamples = MSAASamples.None;
+            outputDesc.clearBuffer = false;
+            outputDesc.name = "_LoyGlitchColor";
+            TextureHandle output = renderGraph.CreateTexture(outputDesc);
+
+            using (var builder = renderGraph.AddRasterRenderPass<GlitchPassData>(
+                       "Loy Custom Post Process - Glitch", out GlitchPassData passData, profilingSampler))
+            {
+                passData.material = material;
+                passData.block = new MaterialPropertyBlock();
+                passData.source = source;
+                passData.shaderPass = shaderPass;
+                passData.inputSize = new Vector4(
+                    Mathf.Max(1, sourceDesc.width), Mathf.Max(1, sourceDesc.height),
+                    1f / Mathf.Max(1, sourceDesc.width), 1f / Mathf.Max(1, sourceDesc.height));
+                passData.seed = unchecked((int)(time * 10000f));
+                passData.blockStrength = block * block * block;
+                passData.blockStride = blockStride;
+                passData.blockSeed1 = blockSeed1;
+                passData.blockSeed2 = blockSeed2;
+                passData.drift = driftParams;
+                passData.jitter = jitterParams;
+                passData.jump = jumpParams;
+                passData.shake = settings.shake * 0.2f;
+
+                builder.UseTexture(source, AccessFlags.Read);
+                builder.SetRenderAttachment(output, 0, AccessFlags.Write);
+                builder.SetRenderFunc(static (GlitchPassData data, RasterGraphContext context) =>
+                {
+                    MaterialPropertyBlock block = data.block;
+                    block.Clear();
+                    block.SetTexture(InputTextureId, data.source);
+                    block.SetVector(InputSizeId, data.inputSize);
+                    block.SetInt(SeedId, data.seed);
+                    block.SetFloat(BlockStrengthId, data.blockStrength);
+                    block.SetInt(BlockStrideId, data.blockStride);
+                    block.SetInt(BlockSeed1Id, data.blockSeed1);
+                    block.SetInt(BlockSeed2Id, data.blockSeed2);
+                    block.SetVector(DriftId, data.drift);
+                    block.SetVector(JitterId, data.jitter);
+                    block.SetVector(JumpId, data.jump);
+                    block.SetFloat(ShakeId, data.shake);
+                    context.cmd.DrawProcedural(Matrix4x4.identity, data.material, data.shaderPass,
+                        MeshTopology.Triangles, 3, 1, block);
+                });
+            }
+
+            return output;
+        }
+
+        public void Dispose()
+        {
+            CoreUtils.Destroy(material);
+        }
+
+        private sealed class GlitchPassData
+        {
+            public Material material;
+            public MaterialPropertyBlock block;
+            public TextureHandle source;
+            public int shaderPass;
+            public Vector4 inputSize;
+            public int seed;
+            public float blockStrength;
+            public int blockStride;
+            public int blockSeed1;
+            public int blockSeed2;
+            public Vector4 drift;
+            public Vector4 jitter;
+            public Vector4 jump;
+            public float shake;
         }
     }
 }

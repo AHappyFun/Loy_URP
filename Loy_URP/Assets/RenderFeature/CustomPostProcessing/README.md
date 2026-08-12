@@ -1,8 +1,8 @@
 # Custom post-processing
 
 `CustomPostProcessingRenderFeature` is the single URP renderer feature for project-specific post effects.
-It executes active effect renderers in registration order and forwards each output to the next effect.
-The current order is Outline, then Streak.
+It executes active effect renderers in the draggable `Effect Order` and forwards each output to the next effect.
+Drag Outline, Streak and Glitch in the feature inspector to change their execution order.
 
 ## Outline
 
@@ -16,6 +16,12 @@ Streak is a URP RenderGraph adaptation of keijiro/Kino's horizontally stretched 
 1. Keep only `CustomPostProcessingRenderFeature` on the active Universal Renderer Data.
 2. Configure Streak directly on that feature and keep `Enabled` checked.
 3. Set `Intensity` above zero. HDR highlights above `Threshold` generate the streaks.
+
+## Glitch
+
+Glitch is a single-pass URP RenderGraph adaptation of keijiro/Kino's combined video glitch effect.
+Enable it on the renderer feature, then mix the five original controls: `Block`, `Drift`, `Jitter`,
+`Jump` and `Shake`. It is disabled by default.
 
 This custom stack does not use Unity's Volume system and does not depend on the camera's
 **Post Processing** checkbox.
