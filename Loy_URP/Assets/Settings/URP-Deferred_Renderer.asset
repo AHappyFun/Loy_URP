@@ -17,9 +17,9 @@ MonoBehaviour:
     injectionPoint: 550
     affectSceneView: 1
     outline:
-      enabled: 0
+      enabled: 1
       outlineColor: {r: 0, g: 0, b: 0, a: 1}
-      opacity: 0.85
+      opacity: 0.479
       thickness: 1.25
       depthSensitivity: 1.25
       normalSensitivity: 1.6
@@ -33,7 +33,7 @@ MonoBehaviour:
       threshold: 0.36
       stretch: 0.75
       intensity: 0.48
-      tint: {r: 0.50111216, g: 0.4669811, b: 1, a: 1}
+      tint: {r: 0.52484846, g: 0.4669811, b: 1, a: 1}
       maxPyramidLevels: 16
   outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
   streakShader: {fileID: 4800000, guid: ff6d36f8ae54f3c459c5fa287c182a40, type: 3}

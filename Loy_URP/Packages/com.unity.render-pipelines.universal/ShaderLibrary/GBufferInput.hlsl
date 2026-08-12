@@ -16,6 +16,7 @@
 FRAMEBUFFER_INPUT_X_HALF(GBUFFER_IDX_RGB_BASECOLOR_A_FLAGS);
 FRAMEBUFFER_INPUT_X_HALF(GBUFFER_IDX_RGB_SPECULAR_R_METALLIC_A_OCCLUSION);
 FRAMEBUFFER_INPUT_X_HALF(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS);
+FRAMEBUFFER_INPUT_X_HALF(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA);
 FRAMEBUFFER_INPUT_X_FLOAT(GBUFFER_IDX_R_DEPTH);
 
 // Dynamic index GBuffer: Shadow mask
@@ -39,6 +40,7 @@ FRAMEBUFFER_INPUT_X_UINT(GBUFFER_IDX_R_RENDERING_LAYERS);
 TEXTURE2D_X_HALF(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_BASECOLOR_A_FLAGS));
 TEXTURE2D_X_HALF(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_SPECULAR_R_METALLIC_A_OCCLUSION));
 TEXTURE2D_X_HALF(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS));
+TEXTURE2D_X_HALF(GBUFFER_TEX2D_NAME(GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA)));
 
 // We never bind GBUFFER_TEX2D_NAME(GBUFFER_IDX_R_DEPTH), instead we expect the depth to be bound to the _CameraDepthTexture slot.
 TEXTURE2D_X_FLOAT(_CameraDepthTexture);
@@ -60,7 +62,7 @@ TYPED_TEXTURE2D_X(uint4, GBUFFER_TEX2D_NAME(GBUFFER_IDX_AFTER(GBUFFER_IDX_R_REND
 // If shadow mask is not used, shadowMask defaults to (1, 1, 1, 1).
 // If rendering layers is not used, renderingLayers defaults to 0xffff.
 // Note that unCoord2 is in pixel coordinates, not screen UVs.
-void LoadGBuffers(uint2 unCoord2, out half4 gBuffer0, out half4 gBuffer1, out half4 gBuffer2, out float depth,
+void LoadGBuffers(uint2 unCoord2, out half4 gBuffer0, out half4 gBuffer1, out half4 gBuffer2, out half4 customData, out float depth,
                   out uint renderingLayers, out half4 shadowMask)
 {
     renderingLayers = 0xFFFFFFFF;
@@ -72,6 +74,7 @@ void LoadGBuffers(uint2 unCoord2, out half4 gBuffer0, out half4 gBuffer1, out ha
     gBuffer0 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER_IDX_RGB_BASECOLOR_A_FLAGS, unCoord2);
     gBuffer1 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER_IDX_RGB_SPECULAR_R_METALLIC_A_OCCLUSION, unCoord2);
     gBuffer2 = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS, unCoord2);
+    customData = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA, unCoord2);
 
     #if defined(GBUFFER_FEATURE_SHADOWMASK)
     shadowMask = LOAD_FRAMEBUFFER_X_INPUT(GBUFFER_IDX_RGBA_SHADOWMASK, unCoord2);
@@ -87,6 +90,7 @@ void LoadGBuffers(uint2 unCoord2, out half4 gBuffer0, out half4 gBuffer1, out ha
     gBuffer0 = LOAD_TEXTURE2D_X(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_BASECOLOR_A_FLAGS), unCoord2);
     gBuffer1 = LOAD_TEXTURE2D_X(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_SPECULAR_R_METALLIC_A_OCCLUSION), unCoord2);
     gBuffer2 = LOAD_TEXTURE2D_X(GBUFFER_TEX2D_NAME(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS), unCoord2);
+    customData = LOAD_TEXTURE2D_X(GBUFFER_TEX2D_NAME(GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA)), unCoord2);
 
     #if defined(GBUFFER_FEATURE_SHADOWMASK)
     shadowMask = LOAD_TEXTURE2D_X(GBUFFER_TEX2D_NAME(GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_SHADOWMASK)), unCoord2);
@@ -106,11 +110,12 @@ GBufferData UnpackGBuffers(uint2 unCoord2)
     half4 gBuffer0;
     half4 gBuffer1;
     half4 gBuffer2;
+    half4 customData;
     float depth;
     uint renderingLayers;
     half4 shadowMask;
 
-    LoadGBuffers(unCoord2, gBuffer0, gBuffer1, gBuffer2, depth, renderingLayers, shadowMask);
+    LoadGBuffers(unCoord2, gBuffer0, gBuffer1, gBuffer2, customData, depth, renderingLayers, shadowMask);
 
     GBufferData gBufferData;
     ZERO_INITIALIZE(GBufferData, gBufferData);
@@ -121,6 +126,7 @@ GBufferData UnpackGBuffers(uint2 unCoord2)
     gBufferData.occlusion = gBuffer1.a;
     gBufferData.normalWS = normalize(UnpackGBufferNormal(gBuffer2.rgb));
     gBufferData.smoothness = gBuffer2.a;
+    gBufferData.customData = customData;
     gBufferData.depth = depth;
     gBufferData.shadowMask = shadowMask;
     gBufferData.meshRenderingLayers = renderingLayers;

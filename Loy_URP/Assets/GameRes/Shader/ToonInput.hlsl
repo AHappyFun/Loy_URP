@@ -8,13 +8,17 @@ CBUFFER_START(UnityPerMaterial)
     float4 _BaseMap_ST;
     half4 _BaseColor;
 
-    // 卡通参数（写入 GBuffer1.gb / GBuffer2.a，由延迟光照阶段的 ToonDeferred.hlsl 消费）
-    half _ToonDiffuseStep;      // 漫反射色阶阈值 0~1
-    half _ToonSpecIntensity;    // 卡通高光强度
-    half _ToonSpecularSize;     // 卡通高光大小
-    half _ToonGIStrength;       // 间接光(GI)强度，用于保持色阶对比
-
+    half _Metallic;
+    half _Smoothness;
     half _Occlusion;
+
+    // 写入独立 Toon CustomData GBuffer，不再占用 PBR metallic/smoothness 槽位。
+    half _ToonDiffuseStep;
+    half _ToonDiffuseSoftness;
+    half _ToonSpecThreshold;
+    half _ToonSpecSoftness;
+    half _ToonGIStrength;
+
     half4 _EmissionColor;
     half _EmissionScale;
 
@@ -22,6 +26,8 @@ CBUFFER_END
 
 TEXTURE2D(_BaseMap);
 SAMPLER(sampler_BaseMap);
+TEXTURE2D(_MaskMap);
+SAMPLER(sampler_MaskMap);
 TEXTURE2D(_EmissionMap);
 SAMPLER(sampler_EmissionMap);
 TEXTURE2D(_BumpMap);

@@ -306,7 +306,7 @@ Material:
     - _MaskLable: 0
     - _MaterialID: 1
     - _MaterialSettingLable: 0
-    - _Metallic: 0
+    - _Metallic: 0.65
     - _Mode: 0
     - _NormalMapLable: 0
     - _NormalMapSpace: 0
@@ -340,7 +340,7 @@ Material:
     - _Shadow: 0.47
     - _ShiverDirectionality: 0.5
     - _ShiverDrag: 0.2
-    - _Smoothness: 0.411
+    - _Smoothness: 0.55
     - _SmoothnessRemapMax: 1
     - _SmoothnessRemapMin: 0
     - _SmoothnessTextureChannel: 0
@@ -364,10 +364,13 @@ Material:
     - _TexWorldScaleEmissive: 1
     - _Thickness: 1
     - _ThicknessMultiplier: 1
-    - _ToonDiffuseStep: 0.045
-    - _ToonGIStrength: 2
+    - _ToonDiffuseSoftness: 0.03
+    - _ToonDiffuseStep: 0.4
+    - _ToonGIStrength: 0.9
     - _ToonLable: 0
     - _ToonSpecIntensity: 1
+    - _ToonSpecSoftness: 0.03
+    - _ToonSpecThreshold: 0.25
     - _ToonSpecularSize: 0.139
     - _TransmissionEnable: 1
     - _Transparent: 0

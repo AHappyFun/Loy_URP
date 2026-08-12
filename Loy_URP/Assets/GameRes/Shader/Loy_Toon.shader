@@ -19,15 +19,21 @@ Shader "Loy/Toon"
 		[Toggle(_ALPHAPREMULTIPLY_ON)] _PremulAlpha("Pre Mul Alpha", float) = 0
 
         _MainTexLable("主贴图", int) = 0
-    	[MainTexture] _BaseMap("Base Map", 2D) = "white" {}
+        [MainTexture] _BaseMap("Base Map", 2D) = "white" {}
         [MainColor] _BaseColor("Base Color", Color) = (1,1,1,1)
+
+        _PBRLable("PBR", int) = 0
+        [NoScaleOffset] _MaskMap("Mask Map (R Metallic, G AO, A Smoothness)", 2D) = "white" {}
+        _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
+        _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.5
+        _Occlusion("Occlusion", Range(0.0, 1.0)) = 1.0
 
         _ToonLable("卡通", int) = 0
         _ToonDiffuseStep("漫反射色阶阈值", Range(0.0, 1.0)) = 0.5
-        _ToonSpecIntensity("卡通高光强度", Range(0.0, 1.0)) = 1.0
-        _ToonSpecularSize("卡通高光大小", Range(0.0, 1.0)) = 0.6
-        _ToonGIStrength("间接光强度", Range(0.0, 2.0)) = 0.5
-        _Occlusion("Occlusion", Range(0.0, 1.0)) = 1.0
+        _ToonDiffuseSoftness("漫反射色阶软度", Range(0.001, 0.25)) = 0.03
+        _ToonSpecThreshold("PBR 高光阈值", Range(0.0, 1.0)) = 0.45
+        _ToonSpecSoftness("PBR 高光软度", Range(0.001, 0.25)) = 0.05
+        _ToonGIStrength("间接光强度", Range(0.0, 2.0)) = 0.8
 
     	_NormalMapLable("NormalMap", int) = 0
     	[Toggle(_NORMAL_MAP)]_NormalMapToggle("是否使用法线贴图?", float) = 1

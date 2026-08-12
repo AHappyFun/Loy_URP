@@ -23,6 +23,7 @@ struct FragmentOutput
     half4 GBuffer1 : SV_Target1;
     half4 GBuffer2 : SV_Target2;
     half4 GBuffer3 : SV_Target3; // Camera color attachment
+    half4 ToonCustomData : SV_Target4;
 
     #if defined(GBUFFER_FEATURE_DEPTH)
     DECL_OPT_GBUFFER_TARGET(float, GBuffer4, GBUFFER_IDX_R_DEPTH);

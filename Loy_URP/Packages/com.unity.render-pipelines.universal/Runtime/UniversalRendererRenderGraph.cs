@@ -2042,7 +2042,7 @@ namespace UnityEngine.Rendering.Universal
     {
         static private ProfilingSampler s_SetGlobalTextureProfilingSampler = new ProfilingSampler("Set Global Texture");
 
-        internal const int GBufferSize = 7;
+        internal const int GBufferSize = 8;
         internal const int DBufferSize = 3;
         internal const int LightTextureSize = 4;
 

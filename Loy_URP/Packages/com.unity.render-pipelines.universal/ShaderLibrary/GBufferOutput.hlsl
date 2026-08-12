@@ -17,6 +17,7 @@ struct GBufferFragOutput
     half4 gBuffer1 : SV_Target1;
     half4 gBuffer2 : SV_Target2;
     half4 color    : SV_Target3; // Camera color attachment, used for GI during GBuffer laydown
+    half4 customData : SV_Target4; // Shading-model-specific data; zero for standard URP materials
 
     #if defined(GBUFFER_FEATURE_DEPTH)
     DECL_OPT_GBUFFER_TARGET(float, depth, GBUFFER_IDX_R_DEPTH);
@@ -56,6 +57,7 @@ GBufferFragOutput PackGBuffersSurfaceData(SurfaceData surfaceData, InputData inp
     output.gBuffer1 = half4(surfaceData.specular.rgb, surfaceData.occlusion);                   // specular        specular        specular        occlusion
     output.gBuffer2 = half4(packedNormalWS, surfaceData.smoothness);                            // encoded-normal  encoded-normal  encoded-normal  smoothness
     output.color    = half4(globalIllumination, 1);                                             // GI              GI              GI              unused          (lighting buffer)
+    output.customData = half4(0, 0, 0, 0);
 
     #if defined(GBUFFER_FEATURE_DEPTH)
     output.depth = inputData.positionCS.z;
@@ -110,6 +112,7 @@ GBufferFragOutput PackGBuffersBRDFData(BRDFData brdfData, InputData inputData, h
     output.gBuffer1 = half4(packedSpecular, occlusion);                                     // metallic/specular specular        specular        occlusion
     output.gBuffer2 = half4(packedNormalWS, smoothness);                                    // encoded-normal    encoded-normal  encoded-normal  smoothness
     output.color = half4(globalIllumination, 1);                                            // GI                GI              GI              unused          (lighting buffer)
+    output.customData = half4(0, 0, 0, 0);
 
     #if defined(GBUFFER_FEATURE_DEPTH)
     output.depth = inputData.positionCS.z;

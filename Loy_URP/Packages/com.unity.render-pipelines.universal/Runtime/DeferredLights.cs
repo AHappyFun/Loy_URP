@@ -81,7 +81,8 @@ namespace UnityEngine.Rendering.Universal.Internal
             "_GBuffer3",
             "_GBuffer4",
             "_GBuffer5",
-            "_GBuffer6"
+            "_GBuffer6",
+            "_GBuffer7"
         };
 
         internal static readonly int[] k_GBufferShaderPropertyIDs = new int[]
@@ -93,6 +94,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             Shader.PropertyToID(k_GBufferNames[4]),
             Shader.PropertyToID(k_GBufferNames[5]),
             Shader.PropertyToID(k_GBufferNames[6]),
+            Shader.PropertyToID(k_GBufferNames[7]),
         };
 
         static readonly string[] k_StencilDeferredPassNames = new string[]
@@ -147,14 +149,15 @@ namespace UnityEngine.Rendering.Universal.Internal
         internal int GBufferSpecularMetallicIndex { get { return 1; } }
         internal int GBufferNormalSmoothnessIndex { get { return 2; } }
         internal int GBufferLightingIndex { get { return 3; } }
-        internal int GbufferDepthIndex { get { return UseFramebufferFetch ? GBufferLightingIndex + 1 : -1; } }
-        internal int GBufferRenderingLayers { get { return UseRenderingLayers ? GBufferLightingIndex + (UseFramebufferFetch ? 1 : 0) + 1 : -1; } }
+        internal int GBufferToonCustomDataIndex { get { return 4; } }
+        internal int GbufferDepthIndex { get { return UseFramebufferFetch ? GBufferToonCustomDataIndex + 1 : -1; } }
+        internal int GBufferRenderingLayers { get { return UseRenderingLayers ? GBufferToonCustomDataIndex + (UseFramebufferFetch ? 1 : 0) + 1 : -1; } }
         // Shadow Mask can change at runtime. Because of this it needs to come after the non-changing buffers.
-        internal int GBufferShadowMask { get { return UseShadowMask ? GBufferLightingIndex + (UseFramebufferFetch ? 1 : 0) + (UseRenderingLayers ? 1 : 0) + 1 : -1; } }
+        internal int GBufferShadowMask { get { return UseShadowMask ? GBufferToonCustomDataIndex + (UseFramebufferFetch ? 1 : 0) + (UseRenderingLayers ? 1 : 0) + 1 : -1; } }
         // Color buffer count (not including dephStencil).
-        internal int GBufferSliceCount { get { return 4 + (UseFramebufferFetch ? 1 : 0) + (UseShadowMask ? 1 : 0) + (UseRenderingLayers ? 1 : 0); } }
+        internal int GBufferSliceCount { get { return 5 + (UseFramebufferFetch ? 1 : 0) + (UseShadowMask ? 1 : 0) + (UseRenderingLayers ? 1 : 0); } }
 
-        internal int GBufferInputAttachmentCount { get { return 4 + (UseShadowMask ? 1 : 0); } }
+        internal int GBufferInputAttachmentCount { get { return 5 + (UseShadowMask ? 1 : 0); } }
 
         internal GraphicsFormat GetGBufferFormat(int index)
         {
@@ -166,6 +169,8 @@ namespace UnityEngine.Rendering.Universal.Internal
                 return AccurateGbufferNormals ? GraphicsFormat.R8G8B8A8_UNorm : DepthNormalOnlyPass.GetGraphicsFormat(); // normal normal normal packedSmoothness
             else if (index == GBufferLightingIndex) // Emissive+baked: Most likely B10G11R11_UFloatPack32 or R16G16B16A16_SFloat
                 return GraphicsFormat.None;
+            else if (index == GBufferToonCustomDataIndex)
+                return GraphicsFormat.R8G8B8A8_UNorm;
             else if (index == GbufferDepthIndex) // Render-pass on mobiles: reading back real depth-buffer is either inefficient (Arm Vulkan) or impossible (Metal).
                 return GraphicsFormat.R32_SFloat;
             else if (index == GBufferShadowMask) // Optional: shadow mask is outputted in mixed lighting subtractive mode for non-static meshes only
@@ -513,20 +518,21 @@ namespace UnityEngine.Rendering.Universal.Internal
             this.DeferredInputAttachments[0] = this.GbufferAttachments[0];
             this.DeferredInputAttachments[1] = this.GbufferAttachments[1];
             this.DeferredInputAttachments[2] = this.GbufferAttachments[2];
-            this.DeferredInputAttachments[3] = this.GbufferAttachments[4];
+            this.DeferredInputAttachments[3] = this.GbufferAttachments[GBufferToonCustomDataIndex];
+            this.DeferredInputAttachments[4] = this.GbufferAttachments[GbufferDepthIndex];
 
             if (UseShadowMask && UseRenderingLayers)
             {
-                this.DeferredInputAttachments[4] = this.GbufferAttachments[GBufferShadowMask];
-                this.DeferredInputAttachments[5] = this.GbufferAttachments[GBufferRenderingLayers];
+                this.DeferredInputAttachments[5] = this.GbufferAttachments[GBufferShadowMask];
+                this.DeferredInputAttachments[6] = this.GbufferAttachments[GBufferRenderingLayers];
             }
             else if (UseShadowMask)
             {
-                this.DeferredInputAttachments[4] = this.GbufferAttachments[GBufferShadowMask];
+                this.DeferredInputAttachments[5] = this.GbufferAttachments[GBufferShadowMask];
             }
             else if (UseRenderingLayers)
             {
-                this.DeferredInputAttachments[4] = this.GbufferAttachments[GBufferRenderingLayers];
+                this.DeferredInputAttachments[5] = this.GbufferAttachments[GBufferRenderingLayers];
             }
         }
 
@@ -557,7 +563,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             this.GbufferAttachments[this.GBufferLightingIndex] = colorAttachment;
             this.DepthAttachment = depthAttachment;
 
-            var inputCount = 4 + (UseShadowMask ?  1 : 0) + (UseRenderingLayers ?  1 : 0);
+            var inputCount = 5 + (UseShadowMask ?  1 : 0) + (UseRenderingLayers ?  1 : 0);
             if (this.DeferredInputAttachments == null && this.UseFramebufferFetch && this.GbufferAttachments.Length >= 3 ||
                 (this.DeferredInputAttachments != null && inputCount != this.DeferredInputAttachments.Length))
             {

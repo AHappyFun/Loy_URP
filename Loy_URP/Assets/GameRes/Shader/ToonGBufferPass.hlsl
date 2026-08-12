@@ -44,10 +44,10 @@ struct ToonSurfaceData
     half3 emission;
     half  occlusion;
     half  alpha;
-    half  toonDiffuseStep;      // 漫反射色阶阈值
-    half  toonSpecIntensity;    // 卡通高光强度
-    half  toonSpecularSize;     // 卡通高光大小
-    half  toonGIStrength;       // 间接光强度
+    half  metallic;
+    half  smoothness;
+    half4 toonCustomData;
+    half  toonGIStrength;
 };
 
 Varyings ToonGBufferPassVert(Attributes input)
@@ -96,12 +96,19 @@ inline void InitToonSurfaceData(float2 uv, out ToonSurfaceData outSurface)
  #endif
     outSurface.albedo = albedoAlpha.rgb * _BaseColor.rgb;
 
-    //卡通参数
-    outSurface.toonDiffuseStep   = _ToonDiffuseStep;
-    outSurface.toonSpecIntensity = _ToonSpecIntensity;
-    outSurface.toonSpecularSize  = _ToonSpecularSize;
-    outSurface.toonGIStrength    = _ToonGIStrength;
-    outSurface.occlusion = _Occlusion;
+    // 标准 Metallic PBR 数据。MaskMap: R=Metallic, G=AO, A=Smoothness。
+    half4 mask = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv);
+    outSurface.metallic = saturate(mask.r * _Metallic);
+    outSurface.smoothness = saturate(mask.a * _Smoothness);
+    outSurface.occlusion = saturate(mask.g * _Occlusion);
+
+    // UE 风格的 shading-model-specific CustomData。
+    outSurface.toonCustomData = half4(
+        _ToonDiffuseStep,
+        _ToonDiffuseSoftness,
+        _ToonSpecThreshold,
+        _ToonSpecSoftness);
+    outSurface.toonGIStrength = _ToonGIStrength;
 
     //自发光
     outSurface.emission = SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, uv).rgb * _EmissionColor.rgb * _EmissionScale;
@@ -178,10 +185,10 @@ inline void InitToonInputData(Varyings input, half3 normalTS, out InputData inpu
 
 GBufferFragOutput GetToonGBuffer(Varyings input, ToonSurfaceData surfaceData, InputData inputData)
 {
-    // 卡通材质：金属度 0，光滑度只在 GI 计算里占位
+    // 保留完整的 Metallic PBR BRDF；卡通参数单独写入 CustomData。
     half alpha = surfaceData.alpha;
     BRDFData brdfData;
-    InitializeBRDFData(surfaceData.albedo, 0, half3(0, 0, 0), surfaceData.toonSpecularSize, alpha, brdfData);
+    InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, half3(0, 0, 0), surfaceData.smoothness, alpha, brdfData);
 
     Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, inputData.shadowMask);
     MixRealtimeAndBakedGI(mainLight, inputData.normalWS, inputData.bakedGI, inputData.shadowMask);
@@ -192,28 +199,13 @@ GBufferFragOutput GetToonGBuffer(Varyings input, ToonSurfaceData surfaceData, In
     // 卡通通常需要压低间接光保持色阶对比
     GIColor *= surfaceData.toonGIStrength;
 
-    // URP 17 标准 GBuffer 打包（卡通版）：
-    //  GBuffer0 = albedo + materialFlags(kMaterialFlagToon)
-    //  GBuffer1 = reflectivity(0) + 漫反射色阶阈值 + 高光强度 + occlusion
-    //  GBuffer2 = Oct 编码法线 + 卡通高光大小
-    //  GBuffer3 = GI(*强度) + emission
-    GBufferFragOutput output;
-    uint materialFlags = kMaterialFlagToon;
+    GBufferFragOutput output = PackGBuffersBRDFData(
+        brdfData, inputData, surfaceData.smoothness,
+        GIColor + surfaceData.emission, surfaceData.occlusion);
 
-    output.gBuffer0 = half4(surfaceData.albedo, PackGBufferMaterialFlags(materialFlags));
-    output.gBuffer1 = half4(0.0, surfaceData.toonDiffuseStep, surfaceData.toonSpecIntensity, surfaceData.occlusion);
-    output.gBuffer2 = half4(PackGBufferNormal(inputData.normalWS), surfaceData.toonSpecularSize);
-    output.color = half4(GIColor + surfaceData.emission, 1.0);
-
-#if defined(GBUFFER_FEATURE_DEPTH)
-    output.depth = inputData.positionCS.z;
-#endif
-#if defined(GBUFFER_FEATURE_SHADOWMASK)
-    output.shadowMask = inputData.shadowMask;
-#endif
-#if defined(GBUFFER_FEATURE_RENDERING_LAYERS)
-    output.meshRenderingLayers = EncodeMeshRenderingLayer();
-#endif
+    uint materialFlags = UnpackGBufferMaterialFlags(output.gBuffer0.a) | kMaterialFlagToon;
+    output.gBuffer0.a = PackGBufferMaterialFlags(materialFlags);
+    output.customData = surfaceData.toonCustomData;
 
     return output;
 }

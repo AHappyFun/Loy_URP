@@ -340,7 +340,7 @@ Material:
     - _Shadow: 0.47
     - _ShiverDirectionality: 0.5
     - _ShiverDrag: 0.2
-    - _Smoothness: 0.411
+    - _Smoothness: 0.5
     - _SmoothnessRemapMax: 1
     - _SmoothnessRemapMin: 0
     - _SmoothnessTextureChannel: 0
@@ -364,10 +364,13 @@ Material:
     - _TexWorldScaleEmissive: 1
     - _Thickness: 1
     - _ThicknessMultiplier: 1
-    - _ToonDiffuseStep: 0.045
-    - _ToonGIStrength: 2
+    - _ToonDiffuseSoftness: 0.04
+    - _ToonDiffuseStep: 0.35
+    - _ToonGIStrength: 0.8
     - _ToonLable: 0
     - _ToonSpecIntensity: 1
+    - _ToonSpecSoftness: 0.04
+    - _ToonSpecThreshold: 0.35
     - _ToonSpecularSize: 0.139
     - _TransmissionEnable: 1
     - _Transparent: 0

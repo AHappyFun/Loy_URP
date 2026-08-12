@@ -41,6 +41,10 @@
 #define GBUFFER_IDX_RGB_BASECOLOR_A_FLAGS               0
 #define GBUFFER_IDX_RGB_SPECULAR_R_METALLIC_A_OCCLUSION 1
 #define GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS            2
+// Camera color occupies render target 3. Toon custom data is the next GBuffer
+// slice and input attachment. Keeping it separate preserves the standard PBR
+// metallic/specular/smoothness contract for every shading model.
+#define GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA GBUFFER_IDX_AFTER(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS)
 
 // Helper macro to get GBuffer index + 1
 #define GBUFFER_IDX_AFTER(x) GBUFFER_IDX_AFTER_ ## x
@@ -59,7 +63,7 @@
 // Possible features: [GBUFFER_FEATURE_DEPTH, GBUFFER_FEATURE_RENDERING_LAYERS, GBUFFER_FEATURE_SHADOWMASK]
 #if defined(GBUFFER_FEATURE_DEPTH)
     // [1, 0, 0]
-    #define GBUFFER_IDX_R_DEPTH GBUFFER_IDX_AFTER(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS)
+    #define GBUFFER_IDX_R_DEPTH GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA)
     #if defined(GBUFFER_FEATURE_RENDERING_LAYERS)
         // [1, 1, 0]
         #define GBUFFER_IDX_R_RENDERING_LAYERS GBUFFER_IDX_AFTER(GBUFFER_IDX_R_DEPTH)
@@ -73,14 +77,14 @@
     #endif
 #elif defined(GBUFFER_FEATURE_RENDERING_LAYERS)
     // [0, 1, 0]
-    #define GBUFFER_IDX_R_RENDERING_LAYERS GBUFFER_IDX_AFTER(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS)
+    #define GBUFFER_IDX_R_RENDERING_LAYERS GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA)
     #if defined(GBUFFER_FEATURE_SHADOWMASK)
         // [0, 1, 1]
         #define GBUFFER_IDX_RGBA_SHADOWMASK GBUFFER_IDX_AFTER(GBUFFER_IDX_R_RENDERING_LAYERS)
     #endif
 #elif defined(GBUFFER_FEATURE_SHADOWMASK)
     // [0, 0, 1]
-    #define GBUFFER_IDX_RGBA_SHADOWMASK GBUFFER_IDX_AFTER(GBUFFER_IDX_RGB_NORMALS_A_SMOOTHNESS)
+    #define GBUFFER_IDX_RGBA_SHADOWMASK GBUFFER_IDX_AFTER(GBUFFER_IDX_RGBA_TOON_CUSTOM_DATA)
 #endif
 
 // Unpacked URP GBuffer data.
@@ -93,6 +97,10 @@ struct GBufferData
     half occlusion;
     float3 normalWS;
     uint materialFlags;
+    // Shading-model-specific payload. For Toon PBR:
+    // x = diffuse threshold, y = diffuse softness,
+    // z = GGX specular threshold, w = GGX specular softness.
+    half4 customData;
     float depth;
 
     // Only assigned if GBUFFER_FEATURE_SHADOWMASK is defined!

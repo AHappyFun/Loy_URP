@@ -190,10 +190,12 @@ namespace UnityEngine.Rendering.Universal
 
                 if (renderGraph.nativeRenderPassesEnabled)
                 {
-                    if (resourceData.gBuffer[4].IsValid())
-                        builder.SetInputAttachment(resourceData.gBuffer[4], 0, AccessFlags.Read);
-                    if (m_DecalLayers && resourceData.gBuffer[5].IsValid())
-                        builder.SetInputAttachment(resourceData.gBuffer[5], 1, AccessFlags.Read);
+                    int depthIndex = m_DeferredLights.GbufferDepthIndex;
+                    if (depthIndex >= 0 && resourceData.gBuffer[depthIndex].IsValid())
+                        builder.SetInputAttachment(resourceData.gBuffer[depthIndex], 0, AccessFlags.Read);
+                    int renderingLayersIndex = m_DeferredLights.GBufferRenderingLayers;
+                    if (m_DecalLayers && renderingLayersIndex >= 0 && resourceData.gBuffer[renderingLayersIndex].IsValid())
+                        builder.SetInputAttachment(resourceData.gBuffer[renderingLayersIndex], 1, AccessFlags.Read);
                 }
                 else
                 {
