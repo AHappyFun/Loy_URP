@@ -37,7 +37,7 @@ MonoBehaviour:
       tint: {r: 0.52484846, g: 0.4669811, b: 1, a: 1}
       maxPyramidLevels: 16
     glitch:
-      enabled: 1
+      enabled: 0
       block: 0.311
       drift: 0.592
       jitter: 0.839
@@ -58,7 +58,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af24e90db4bf58443aff8888b8b7e207, type: 3}
   m_Name: Volumetric Clouds URP
   m_EditorClassIdentifier: VolumetricCloudsURP::VolumetricCloudsURP
-  m_Active: 1
+  m_Active: 0
   material: {fileID: 2100000, guid: 3748131af20412e478461c6445c73923, type: 2}
   renderingDebugger: 0
   reflectionProbe: 0
