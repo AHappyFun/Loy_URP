@@ -1,0 +1,58 @@
+#pragma kernel KCull
+
+struct VegetationInstance
+{
+    float3 position;
+    float scale;
+    float rotationY;
+    uint seed;
+    float radius;
+    float pad;
+};
+
+struct VegetationVisible
+{
+    float4 positionScale; // xyz = world position, w = scale
+    float4 rotSeedPad;    // x = rotationY, y = seed (as float), z/w unused
+};
+
+StructuredBuffer<VegetationInstance> _Instances;
+AppendStructuredBuffer<VegetationVisible> _Visible;
+
+uint _InstanceCount;
+float _MaxDistance;
+float3 _CamPos;
+float4 _FrustumPlanes[6]; // xyz = normal, w = distance; plane: dot(normal, p) + w >= 0 => inside
+
+bool SphereInFrustum(float3 center, float radius)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        float d = dot(_FrustumPlanes[i].xyz, center) + _FrustumPlanes[i].w;
+        if (d < -radius)
+            return false;
+    }
+    return true;
+}
+
+[numthreads(64, 1, 1)]
+void KCull(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _InstanceCount)
+        return;
+
+    VegetationInstance inst = _Instances[i];
+
+    float dist = distance(inst.position, _CamPos);
+    if (dist > _MaxDistance)
+        return;
+
+    if (!SphereInFrustum(inst.position, inst.radius))
+        return;
+
+    VegetationVisible v;
+    v.positionScale = float4(inst.position, inst.scale);
+    v.rotSeedPad = float4(inst.rotationY, asfloat(inst.seed), 0, 0);
+    _Visible.Append(v);
+}

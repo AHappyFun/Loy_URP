@@ -106,6 +106,7 @@ MonoBehaviour:
   - {fileID: 6041220770971095916}
   - {fileID: -8886208210172211487}
   - {fileID: -5298835949692327270}
+  - {fileID: 6813025409810861493}
   m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
@@ -255,14 +256,31 @@ MonoBehaviour:
   settings:
     hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
     passEvent: 220
-    AOIntensity: 1
-    Radius: 0.05
+    AOIntensity: 2
+    Radius: 0.2
     Bias: 0.02
     NumDirs: 8
     NumSteps: 16
     StepScale: 1
     isHalfSize: 1
     applyToGI: 1
+--- !u!114 &6813025409810861493
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90992c1874a5edc40a36af59e1861b80, type: 3}
+  m_Name: VegetationRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::VegetationRenderFeature
+  m_Active: 1
+  settings:
+    data: {fileID: 11400000, guid: 2af0bf5041c3f7248bda023a547526de, type: 2}
+    cullCompute: {fileID: 7200000, guid: 18b40b45ecc1bd549a9d1b5973db0b8d, type: 3}
+    renderPassEvent: 220
 --- !u!114 &6978462706574381597
 MonoBehaviour:
   m_ObjectHideFlags: 0
