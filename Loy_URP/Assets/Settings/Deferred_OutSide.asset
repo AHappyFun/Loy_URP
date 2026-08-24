@@ -204,7 +204,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e32e72b6a3f58a24c9033e2b9275eea0, type: 3}
   m_Name: ScreenSpaceShadows
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.ScreenSpaceShadows
-  m_Active: 0
+  m_Active: 1
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
 --- !u!114 &4751200078909277272
 MonoBehaviour:
@@ -218,7 +218,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d8fec01550db406b8798ab8713866384, type: 3}
   m_Name: HizRenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::HizRenderFeature
-  m_Active: 0
+  m_Active: 1
   settings:
     renderPassEvent: 220
     hizBuildCS: {fileID: 7200000, guid: 9d492db186c04ae79711290a79e51232, type: 3}
@@ -251,7 +251,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 955d35bc18444448956540aee140d2a4, type: 3}
   m_Name: HBAORenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::HBAORenderFeature
-  m_Active: 0
+  m_Active: 1
   settings:
     hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
     passEvent: 220
@@ -275,7 +275,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 67ac33fd3070478291c12539dbb9fe51, type: 3}
   m_Name: SSRRenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::SSRRenderFeature
-  m_Active: 0
+  m_Active: 1
   settings:
     ssrMaterial: {fileID: 2100000, guid: a0b69173d7461ff418dbf3af528142a3, type: 2}
     passEvent: 240
@@ -309,6 +309,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d641f507507a46a7be4b0f463f12f80f, type: 3}
   m_Name: SSRCombineRenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::SSRCombineRenderFeature
-  m_Active: 0
+  m_Active: 1
   renderPassEvent: 350
   Shader: {fileID: 4800000, guid: 3f2b951b16784896a70c79306fdf6d62, type: 3}
