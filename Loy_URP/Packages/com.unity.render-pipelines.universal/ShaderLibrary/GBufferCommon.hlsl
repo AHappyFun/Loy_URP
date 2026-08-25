@@ -13,6 +13,7 @@
 #define kMaterialFlagSubtractiveMixedLighting 4 // The geometry uses subtractive mixed lighting
 #define kMaterialFlagSpecularSetup            8 // Lit material use specular setup instead of metallic setup
 #define kMaterialFlagToon                     16 // 卡通材质：延迟光照阶段走 ramp 色阶（见 ToonDeferred.hlsl）
+#define kMaterialFlagGrass                    32 // 草地材质：延迟光照阶段走透光+宽阔高光（见 GrassDeferred.hlsl）
 
 // GBuffer feature macros. Deduced from active keywords:
 

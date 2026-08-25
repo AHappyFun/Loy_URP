@@ -87,18 +87,20 @@ Shader "Loy/TerrainDeferredLit"
         #endif
     CBUFFER_END
 
-    // 贴图与采样器
-    TEXTURE2D(_Control);    SAMPLER(sampler_Control);
-    TEXTURE2D(_Splat0);     SAMPLER(sampler_Splat0);
-    TEXTURE2D(_Splat1);     SAMPLER(sampler_Splat1);
-    TEXTURE2D(_Splat2);     SAMPLER(sampler_Splat2);
-    TEXTURE2D(_Splat3);     SAMPLER(sampler_Splat3);
-    TEXTURE2D(_Normal0);    SAMPLER(sampler_Normal0);
-    TEXTURE2D(_Normal1);    SAMPLER(sampler_Normal1);
-    TEXTURE2D(_Normal2);    SAMPLER(sampler_Normal2);
-    TEXTURE2D(_Normal3);    SAMPLER(sampler_Normal3);
+    // 贴图。采样统一用全局共享的 sampler_TrilinearRepeat：13 个独立 SAMPLER 会
+    // 叠加 Forward pass 内部的阴影/cookie sampler，超过 ps_4_0 的 16 个 sampler
+    // 寄存器上限，导致 Forward pass 编译失败。共享 sampler 不受 keyword 裁剪影响。
+    TEXTURE2D(_Control);
+    TEXTURE2D(_Splat0);
+    TEXTURE2D(_Splat1);
+    TEXTURE2D(_Splat2);
+    TEXTURE2D(_Splat3);
+    TEXTURE2D(_Normal0);
+    TEXTURE2D(_Normal1);
+    TEXTURE2D(_Normal2);
+    TEXTURE2D(_Normal3);
 
-    // Roughness / AO 复用各层 Albedo 的 sampler（_Splat0-3 始终被采样，sampler 不会被裁掉）
+    // Roughness / AO 复用各层 Albedo 的采样（_Splat0-3 始终被采样）
     TEXTURE2D(_Roughness0);
     TEXTURE2D(_Roughness1);
     TEXTURE2D(_Roughness2);
@@ -108,12 +110,10 @@ Shader "Loy/TerrainDeferredLit"
     TEXTURE2D(_AO2);
     TEXTURE2D(_AO3);
 
-    // Displacement 用独立 sampler：_Normal0-3 在关闭法线贴图时会被编译器裁掉，
-    // 复用它的 sampler 会导致该分支下 sampler 找不到配对贴图而报错。
-    TEXTURE2D(_Displacement0); SAMPLER(sampler_Displacement0);
-    TEXTURE2D(_Displacement1); SAMPLER(sampler_Displacement1);
-    TEXTURE2D(_Displacement2); SAMPLER(sampler_Displacement2);
-    TEXTURE2D(_Displacement3); SAMPLER(sampler_Displacement3);
+    TEXTURE2D(_Displacement0);
+    TEXTURE2D(_Displacement1);
+    TEXTURE2D(_Displacement2);
+    TEXTURE2D(_Displacement3);
 
     #ifdef _ALPHATEST_ON
     TEXTURE2D(_TerrainHolesTexture); SAMPLER(sampler_TerrainHolesTexture);
@@ -122,7 +122,6 @@ Shader "Loy/TerrainDeferredLit"
     #ifdef UNITY_INSTANCING_ENABLED
     TEXTURE2D(_TerrainHeightmapTexture);
     TEXTURE2D(_TerrainNormalmapTexture);
-    SAMPLER(sampler_TerrainNormalmapTexture);
     #endif
 
     UNITY_INSTANCING_BUFFER_START(Terrain)
@@ -214,10 +213,10 @@ Shader "Loy/TerrainDeferredLit"
     {
     #if defined(_NORMALMAP)
         half3 nrm = half3(0, 0, 0);
-        nrm += splatControl.r * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal0, sampler_Normal0, uvSplat01.xy), _NormalScale0);
-        nrm += splatControl.g * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal1, sampler_Normal1, uvSplat01.zw), _NormalScale1);
-        nrm += splatControl.b * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal2, sampler_Normal2, uvSplat23.xy), _NormalScale2);
-        nrm += splatControl.a * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal3, sampler_Normal3, uvSplat23.zw), _NormalScale3);
+        nrm += splatControl.r * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal0, sampler_TrilinearRepeat, uvSplat01.xy), _NormalScale0);
+        nrm += splatControl.g * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal1, sampler_TrilinearRepeat, uvSplat01.zw), _NormalScale1);
+        nrm += splatControl.b * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal2, sampler_TrilinearRepeat, uvSplat23.xy), _NormalScale2);
+        nrm += splatControl.a * UnpackNormalScale(SAMPLE_TEXTURE2D(_Normal3, sampler_TrilinearRepeat, uvSplat23.zw), _NormalScale3);
 
         // 避免归一化时 NaN
         #if !HALF_IS_FLOAT
@@ -234,10 +233,10 @@ Shader "Loy/TerrainDeferredLit"
     void ComputeHeightBlend(float4 uvSplat01, float4 uvSplat23, inout half4 splatControl)
     {
         half4 height = half4(
-            SAMPLE_TEXTURE2D(_Displacement0, sampler_Displacement0, uvSplat01.xy).r,
-            SAMPLE_TEXTURE2D(_Displacement1, sampler_Displacement1, uvSplat01.zw).r,
-            SAMPLE_TEXTURE2D(_Displacement2, sampler_Displacement2, uvSplat23.xy).r,
-            SAMPLE_TEXTURE2D(_Displacement3, sampler_Displacement3, uvSplat23.zw).r);
+            SAMPLE_TEXTURE2D(_Displacement0, sampler_TrilinearRepeat, uvSplat01.xy).r,
+            SAMPLE_TEXTURE2D(_Displacement1, sampler_TrilinearRepeat, uvSplat01.zw).r,
+            SAMPLE_TEXTURE2D(_Displacement2, sampler_TrilinearRepeat, uvSplat23.xy).r,
+            SAMPLE_TEXTURE2D(_Displacement3, sampler_TrilinearRepeat, uvSplat23.zw).r);
 
         half4 splatHeight = height * splatControl;
         half maxHeight = max(splatHeight.r, max(splatHeight.g, max(splatHeight.b, splatHeight.a)));
@@ -255,10 +254,10 @@ Shader "Loy/TerrainDeferredLit"
                      out half3 mixedDiffuse, inout half3 mixedNormal)
     {
         half3 diffAlbedo[4];
-        diffAlbedo[0] = SAMPLE_TEXTURE2D(_Splat0, sampler_Splat0, uvSplat01.xy).rgb;
-        diffAlbedo[1] = SAMPLE_TEXTURE2D(_Splat1, sampler_Splat1, uvSplat01.zw).rgb;
-        diffAlbedo[2] = SAMPLE_TEXTURE2D(_Splat2, sampler_Splat2, uvSplat23.xy).rgb;
-        diffAlbedo[3] = SAMPLE_TEXTURE2D(_Splat3, sampler_Splat3, uvSplat23.zw).rgb;
+        diffAlbedo[0] = SAMPLE_TEXTURE2D(_Splat0, sampler_TrilinearRepeat, uvSplat01.xy).rgb;
+        diffAlbedo[1] = SAMPLE_TEXTURE2D(_Splat1, sampler_TrilinearRepeat, uvSplat01.zw).rgb;
+        diffAlbedo[2] = SAMPLE_TEXTURE2D(_Splat2, sampler_TrilinearRepeat, uvSplat23.xy).rgb;
+        diffAlbedo[3] = SAMPLE_TEXTURE2D(_Splat3, sampler_TrilinearRepeat, uvSplat23.zw).rgb;
 
         mixedDiffuse = 0.0h;
         mixedDiffuse += diffAlbedo[0] * splatControl.rrr;
@@ -273,7 +272,7 @@ Shader "Loy/TerrainDeferredLit"
     void TerrainSurface(Varyings IN, out half3 albedo, out half3 normalTS, out half metallic, out half smoothness, out half occlusion)
     {
         float2 splatUV = (IN.uvMainAndLM.xy * (_Control_TexelSize.zw - 1.0f) + 0.5f) * _Control_TexelSize.xy;
-        half4 splatControl = SAMPLE_TEXTURE2D(_Control, sampler_Control, splatUV);
+        half4 splatControl = SAMPLE_TEXTURE2D(_Control, sampler_TrilinearRepeat, splatUV);
 
         // 高度混合会把 splatControl 归一化，替代原来的简单除法
         ComputeHeightBlend(IN.uvSplat01, IN.uvSplat23, splatControl);
@@ -286,17 +285,17 @@ Shader "Loy/TerrainDeferredLit"
         metallic = dot(splatControl, half4(_Metallic0, _Metallic1, _Metallic2, _Metallic3));
 
         half4 roughness = half4(
-            SAMPLE_TEXTURE2D(_Roughness0, sampler_Splat0, IN.uvSplat01.xy).r,
-            SAMPLE_TEXTURE2D(_Roughness1, sampler_Splat1, IN.uvSplat01.zw).r,
-            SAMPLE_TEXTURE2D(_Roughness2, sampler_Splat2, IN.uvSplat23.xy).r,
-            SAMPLE_TEXTURE2D(_Roughness3, sampler_Splat3, IN.uvSplat23.zw).r);
+            SAMPLE_TEXTURE2D(_Roughness0, sampler_TrilinearRepeat, IN.uvSplat01.xy).r,
+            SAMPLE_TEXTURE2D(_Roughness1, sampler_TrilinearRepeat, IN.uvSplat01.zw).r,
+            SAMPLE_TEXTURE2D(_Roughness2, sampler_TrilinearRepeat, IN.uvSplat23.xy).r,
+            SAMPLE_TEXTURE2D(_Roughness3, sampler_TrilinearRepeat, IN.uvSplat23.zw).r);
         smoothness = dot(splatControl, 1.0h - roughness);
 
         half4 ao = half4(
-            SAMPLE_TEXTURE2D(_AO0, sampler_Splat0, IN.uvSplat01.xy).r,
-            SAMPLE_TEXTURE2D(_AO1, sampler_Splat1, IN.uvSplat01.zw).r,
-            SAMPLE_TEXTURE2D(_AO2, sampler_Splat2, IN.uvSplat23.xy).r,
-            SAMPLE_TEXTURE2D(_AO3, sampler_Splat3, IN.uvSplat23.zw).r);
+            SAMPLE_TEXTURE2D(_AO0, sampler_TrilinearRepeat, IN.uvSplat01.xy).r,
+            SAMPLE_TEXTURE2D(_AO1, sampler_TrilinearRepeat, IN.uvSplat01.zw).r,
+            SAMPLE_TEXTURE2D(_AO2, sampler_TrilinearRepeat, IN.uvSplat23.xy).r,
+            SAMPLE_TEXTURE2D(_AO3, sampler_TrilinearRepeat, IN.uvSplat23.zw).r);
         occlusion = dot(splatControl, ao);
     }
 
@@ -602,7 +601,7 @@ Shader "Loy/TerrainDeferredLit"
         #endif
 
         float2 splatUV = (IN.uvMainAndLM.xy * (_Control_TexelSize.zw - 1.0f) + 0.5f) * _Control_TexelSize.xy;
-        half4 splatControl = SAMPLE_TEXTURE2D(_Control, sampler_Control, splatUV);
+        half4 splatControl = SAMPLE_TEXTURE2D(_Control, sampler_TrilinearRepeat, splatUV);
         ComputeHeightBlend(IN.uvSplat01, IN.uvSplat23, splatControl);
 
         half3 normalTS = half3(0.0h, 0.0h, 1.0h);

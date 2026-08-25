@@ -34,4 +34,13 @@ public class VegetationData : ScriptableObject
         if (groupIndex >= 0 && groupIndex < groups.Count)
             groups[groupIndex].version++;
     }
+
+    // Inspector 里任何修改（实例 scale/位置、prototype 参数等）都会触发，
+    // 递增 version 让渲染侧重建对应 GPU buffer。
+    void OnValidate()
+    {
+        foreach (var g in groups)
+            if (g != null)
+                g.version++;
+    }
 }

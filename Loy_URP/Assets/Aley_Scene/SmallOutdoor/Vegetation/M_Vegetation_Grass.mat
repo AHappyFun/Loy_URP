@@ -24,13 +24,19 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 2800000, guid: 5db00c3d396e36344baa4bbbc896f39f, type: 3}
+        m_Texture: {fileID: 2800000, guid: 673a60cad45abbc48877ffd8ca2fea2a, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _AmbientStrength: 1.5
     - _Cutoff: 0.324
-    - _WindFrequency: 0.15
+    - _GlobalScale: 1
+    - _SheenPower: 4
+    - _SheenStrength: 0.5
+    - _Smoothness: 0.1
+    - _Translucency: 0.6
+    - _WindFrequency: 0.56
     - _WindSpeed: 4.53
     - _WindStrength: 1.3
     m_Colors:

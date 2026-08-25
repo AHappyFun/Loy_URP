@@ -19,6 +19,10 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
     static readonly int kTintMax = Shader.PropertyToID("_TintMax");
     static readonly int kWindStrength = Shader.PropertyToID("_WindStrength");
     static readonly int kWindSpeed = Shader.PropertyToID("_WindSpeed");
+    static readonly int kWindFrequency = Shader.PropertyToID("_WindFrequency");
+    static readonly int kWindDirection = Shader.PropertyToID("_WindDirection");
+    static readonly int kGlobalScale = Shader.PropertyToID("_GlobalScale");
+    static readonly int kAmbientStrength = Shader.PropertyToID("_AmbientStrength");
 
     readonly VegetationSettings settings;
     readonly ProfilingSampler m_ProfilingSampler;
@@ -184,6 +188,10 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
             mpb.SetColor(kTintMax, group.prototype.tintMax);
             mpb.SetFloat(kWindStrength, group.prototype.windStrength);
             mpb.SetFloat(kWindSpeed, group.prototype.windSpeed);
+            mpb.SetFloat(kWindFrequency, group.prototype.windFrequency);
+            mpb.SetVector(kWindDirection, new Vector4(group.prototype.windDirection.x, 0f, group.prototype.windDirection.y, 0f));
+            mpb.SetFloat(kGlobalScale, group.prototype.globalScale);
+            mpb.SetFloat(kAmbientStrength, group.prototype.ambientStrength);
 
             int shaderPass = group.prototype.material.FindPass(passName);
             if (shaderPass < 0)

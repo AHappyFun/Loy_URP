@@ -7,6 +7,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "ToonDeferred.hlsl"
+#include "GrassDeferred.hlsl"
 
 struct Attributes
 {
@@ -322,6 +323,9 @@ half4 DeferredShading(Varyings input) : SV_Target
         // 卡通材质：走 ramp 色阶 + ndh 阈值高光（flag 由 GBuffer0.a 传入）
         if (gBufferData.materialFlags & kMaterialFlagToon)
             color = ToonDeferredLighting(brdfData, gBufferData, unityLight, inputData.normalWS, inputData.viewDirectionWS);
+        // 草地材质：走透光 + 宽阔高光（flag 由 GBuffer0.a 传入）
+        else if (gBufferData.materialFlags & kMaterialFlagGrass)
+            color = GrassDeferredLighting(brdfData, gBufferData, unityLight, inputData.normalWS, inputData.viewDirectionWS);
         else
             color = LightingPhysicallyBased(brdfData, unityLight, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff);
     #elif defined(_SIMPLELIT)

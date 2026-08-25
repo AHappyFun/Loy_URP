@@ -8,6 +8,7 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
 #include "ToonDeferred.hlsl"
+#include "GrassDeferred.hlsl"
 
 struct Attributes
 {
@@ -81,6 +82,9 @@ half3 DeferredLightContribution(Light light, InputData inputData, GBufferData gB
         // 卡通材质：走 ramp 色阶 + ndh 阈值高光（flag 由 GBuffer0.a 传入）
         if (gBufferData.materialFlags & kMaterialFlagToon)
             return ToonDeferredLighting(brdfData, gBufferData, light, inputData.normalWS, inputData.viewDirectionWS);
+        // 草地材质：走透光 + 宽阔高光（flag 由 GBuffer0.a 传入）
+        else if (gBufferData.materialFlags & kMaterialFlagGrass)
+            return GrassDeferredLighting(brdfData, gBufferData, light, inputData.normalWS, inputData.viewDirectionWS);
         else
             return half3(LightingPhysicallyBased(brdfData, light, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff));
     }

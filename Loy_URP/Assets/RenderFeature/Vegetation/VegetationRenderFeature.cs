@@ -29,6 +29,11 @@ public class VegetationRenderFeature : ScriptableRendererFeature
         if (settings.data == null || settings.cullCompute == null)
             return;
 
+        // 只在 Game 视图和 Scene 视图渲染，跳过 Preview / Reflection 等窗口
+        CameraType camType = renderingData.cameraData.cameraType;
+        if (camType != CameraType.Game && camType != CameraType.SceneView)
+            return;
+
         renderer.EnqueuePass(pass);
     }
 
