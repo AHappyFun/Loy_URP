@@ -84,7 +84,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaterSurfaceRenderFeature
   m_Active: 1
   settings:
-    passEvent: 450
+    passEvent: 451
     layerMask: -1
 --- !u!114 &11400000
 MonoBehaviour:
@@ -240,7 +240,7 @@ MonoBehaviour:
   m_Active: 1
   settings:
     reflectionMaterial: {fileID: 2100000, guid: 8cdb0f984665ed242a0ef35b718bb9e2, type: 2}
-    passEvent: 400
+    passEvent: 450
     waterPlaneY: -0.37
     reflectionDistance: 50
 --- !u!114 &4751200078909277272

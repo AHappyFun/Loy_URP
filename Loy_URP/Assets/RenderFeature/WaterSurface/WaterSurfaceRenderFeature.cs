@@ -12,7 +12,10 @@ public class WaterSurfaceRenderFeature : ScriptableRendererFeature
     [System.Serializable]
     public class Settings
     {
-        public RenderPassEvent passEvent = RenderPassEvent.BeforeRenderingTransparents;
+        // 比 BeforeRenderingTransparents 晚 1 格：保证 SSPR(450) 先把反射纹理画好再绘制水面。
+        // 若与 SSPR 同事件，稳定排序按 feature 入队顺序记录，水面 feature 排在反射之前，
+        // 取不到 ContextItem 里的反射纹理会被跳过。
+        public RenderPassEvent passEvent = RenderPassEvent.BeforeRenderingTransparents + 1;
         public int layerMask = -1; // 默认全层，靠 LightMode 筛选
     }
 
