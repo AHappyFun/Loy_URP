@@ -46,11 +46,13 @@ Material:
     - _Metallic: 0
     - _ReflectionStrength: 0.507
     - _RefractionStrength: 0.018
+    - _ShoreFadeDistance: 1.2
     - _Smoothness: 1
     - _SpecularStrength: 2
-    - _WaveAmplitude: 0.07
-    - _WaveScale: 2.9
-    - _WaveSpeed: 1.64
+    - _WaveAmplitude: 0.06
+    - _WaveHeightScale: 1
+    - _WaveScale: 2.5
+    - _WaveSpeed: 1.07
     - _ZWrite: 0
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}

@@ -24,6 +24,9 @@ Shader "Loy/WaterTransparent"
         _WaveScale("Wave Scale", Range(0.1, 30)) = 5
         _WaveAmplitude("Wave Amplitude", Range(0, 2)) = 0.25
         _WaveSpeed("Wave Speed", Range(0, 8)) = 1.2
+        _WaveHeightScale("Wave Height Scale (Vertex)", Range(0, 2)) = 1.0
+        [Space]
+        _ShoreFadeDistance("Shore Fade Distance", Range(0, 5)) = 1.2
 
         [Header(Foam)]
         _FoamColor("Foam Color", Color) = (0.9, 0.95, 1, 1)
@@ -90,6 +93,8 @@ Shader "Loy/WaterTransparent"
                 half _WaveScale;
                 half _WaveAmplitude;
                 half _WaveSpeed;
+                half _WaveHeightScale;
+                half _ShoreFadeDistance;
                 half _FoamDistance;
                 half _FoamNoiseScale;
                 half _FoamNoiseStrength;
@@ -106,6 +111,7 @@ Shader "Loy/WaterTransparent"
                 float3 normalOS : NORMAL;
                 float4 tangentOS : TANGENT;
                 float2 uv : TEXCOORD0;
+                float2 uv1 : TEXCOORD1;   // x = 到岸距离（米），供岸线波浪减幅
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -118,9 +124,45 @@ Shader "Loy/WaterTransparent"
                 half3 bitangentWS : TEXCOORD3;
                 float2 uv : TEXCOORD4;
                 half fogFactor : TEXCOORD5;
+                float2 uv1 : TEXCOORD6;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
+
+            // 程序化水面高度场：一组方向/频率不同的正弦波叠加。
+            // 同时供顶点位移（h）和片段法线（dhdx/dhdz）使用，保证几何位移与光照法线一致。
+            struct WaterWaveData
+            {
+                half h;      // 高度（p 空间，未乘 _WaveAmplitude/_WaveHeightScale）
+                half dhdx;   // 高度对 x 偏导（p 空间）
+                half dhdz;   // 高度对 z 偏导（p 空间）
+            };
+
+            WaterWaveData WaterWave(float2 p, half t)
+            {
+                WaterWaveData w = (WaterWaveData)0;
+                // 主波（沿 X 传播）
+                float w1 = p.x * 1.0 + t * 1.0;
+                w.h    += 0.55 * sin(w1);
+                w.dhdx += 0.55 * cos(w1);
+                // 次波（沿 Z 传播，反向）
+                float w2 = p.y * 1.0 - t * 1.3;
+                w.h    += 0.30 * sin(w2);
+                w.dhdz += 0.30 * cos(w2);
+                // 斜向波
+                float w3 = 0.7 * p.x + 0.7 * p.y + t * 0.7;
+                w.h    += 0.22 * sin(w3);
+                w.dhdx += 0.22 * 0.7 * cos(w3);
+                w.dhdz += 0.22 * 0.7 * cos(w3);
+                // 交叉细波
+                float w4 = 1.6 * p.x - 0.8 * p.y + t * 0.5;
+                w.h    += 0.12 * sin(w4);
+                w.dhdx += 0.12 * 1.6 * cos(w4);
+                float w5 = -0.8 * p.x + 1.6 * p.y - t * 0.5;
+                w.h    += 0.12 * sin(w5);
+                w.dhdz += 0.12 * 1.6 * cos(w5);
+                return w;
+            }
 
             Varyings WaterVert(Attributes input)
             {
@@ -130,35 +172,23 @@ Shader "Loy/WaterTransparent"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(input.positionOS.xyz);
                 VertexNormalInputs normalInputs = GetVertexNormalInputs(input.normalOS, input.tangentOS);
-                output.positionCS = positionInputs.positionCS;
-                output.positionWS = positionInputs.positionWS;
+                output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
+                output.uv1 = input.uv1;
                 output.normalWS = normalInputs.normalWS;
                 output.tangentWS = normalInputs.tangentWS;
                 output.bitangentWS = normalInputs.bitangentWS;
-                output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
-                output.fogFactor = ComputeFogFactor(positionInputs.positionCS.z);
-                return output;
-            }
 
-            // 程序化水面法线波动：对一组方向/频率不同的正弦高度场求梯度，
-            // 得到世界空间（水平面）的法线。无需法线贴图即可产生连续可动画的波纹。
-            half3 WaterWaveNormal(float3 positionWS, half time)
-            {
-                float2 p = positionWS.xz * _WaveScale;
-                float dhdx = 0.0;
-                float dhdz = 0.0;
-                // 主波（沿 X / 沿 Z 两个方向）
-                dhdx += 1.00 * cos(p.x + time * 1.00);
-                dhdz += 0.35 * cos(p.y - time * 1.30);
-                // 斜向次波
-                float q = 0.70 * p.x + 0.70 * p.y + time * 0.70;
-                dhdx += 0.70 * cos(q);
-                dhdz += 0.70 * cos(q);
-                // 细波
-                dhdx += 0.50 * cos(1.60 * p.x - 0.80 * p.y + time * 0.50);
-                dhdz += 0.50 * cos(-0.80 * p.x + 1.60 * p.y - time * 0.50);
-                half3 n = normalize(half3(-dhdx * _WaveAmplitude, 1.0, -dhdz * _WaveAmplitude));
-                return n;
+                // ---- 顶点波浪位移（世界空间高度场，与片段法线同源）----
+                // 岸线减幅：UV1.x = 到岸距离，岸边波浪归零，避免水面爬上石头/漏光。
+                WaterWaveData wv = WaterWave(positionInputs.positionWS.xz * _WaveScale, _Time.y * _WaveSpeed);
+                half shore = smoothstep(0.0, _ShoreFadeDistance, input.uv1.x);
+                float3 displacedWS = positionInputs.positionWS;
+                displacedWS.y += wv.h * _WaveAmplitude * _WaveHeightScale * shore;
+
+                output.positionWS = displacedWS;
+                output.positionCS = TransformWorldToHClip(displacedWS);
+                output.fogFactor = ComputeFogFactor(output.positionCS.z);
+                return output;
             }
 
             half4 WaterFrag(Varyings input) : SV_Target
@@ -174,13 +204,16 @@ Shader "Loy/WaterTransparent"
                 float waterEyeDepth = input.positionCS.w;
                 float waterDepth = sceneEyeDepth - waterEyeDepth;
 
-                // ---- 法线：程序化波纹为主，法线贴图细节作为扰动叠加 ----
+                // ---- 法线：与顶点位移同源的解析梯度 + 法线贴图细节扰动 ----
                 half3 geomNormalWS = input.normalWS;
-                half3 waveNormalWS = WaterWaveNormal(input.positionWS, _Time.y);
+                WaterWaveData wf = WaterWave(input.positionWS.xz * _WaveScale, _Time.y * _WaveSpeed);
+                half shore = smoothstep(0.0, _ShoreFadeDistance, input.uv1.x);
+                half amp = _WaveAmplitude * _WaveHeightScale * shore;
+                half3 waveNormalWS = normalize(half3(-wf.dhdx * amp * _WaveScale, 1.0, -wf.dhdz * amp * _WaveScale));
                 half3 normalTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, input.uv), _BumpScale);
                 half3 detailWS = NormalizeNormalPerPixel(TransformTangentToWorld(normalTS,
                     half3x3(input.tangentWS, input.bitangentWS, geomNormalWS)));
-                half3 normalWS = NormalizeNormalPerPixel(waveNormalWS + (detailWS - geomNormalWS));
+                half3 normalWS = NormalizeNormalPerPixel(waveNormalWS + (detailWS - geomNormalWS) * lerp(0.15, 1.0, shore));
 
                 half3 viewDirWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
 
