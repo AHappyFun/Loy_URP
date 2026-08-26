@@ -86,6 +86,35 @@ MonoBehaviour:
   settings:
     passEvent: 451
     layerMask: -1
+--- !u!114 &-3445382669649501569
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ea44fd23cf1b13944b4c3b7665f1847e, type: 3}
+  m_Name: VolumetricLightRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::VolumetricLightRenderFeature
+  m_Active: 1
+  settings:
+    volumetricMaterial: {fileID: 2100000, guid: 3823ea5072be3994a8e137ad1a334a1c, type: 2}
+    passEvent: 500
+    resolutionScale: 0.5
+    steps: 32
+    maxDistance: 50
+    fogDensity: 0.08
+    fogHeightStart: 0
+    fogHeightFalloff: 0.04
+    noiseScale: 0.1
+    noiseIntensity: 0.35
+    noiseScroll: {x: 0.01, y: 0.01, z: 0.02}
+    phaseG: 0.35
+    shadowStrength: 0.9
+    intensity: 0.8
+    tint: {r: 1, g: 1, b: 1, a: 1}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -125,7 +154,8 @@ MonoBehaviour:
   - {fileID: 6813025409810861493}
   - {fileID: 4647691139580510090}
   - {fileID: -4323354191741335186}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5effffb90e9ebb779d0000000000000000
+  - {fileID: -3445382669649501569}
+  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5effffb90e9ebb779d00000000000000007f224164b78a2fd0
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
