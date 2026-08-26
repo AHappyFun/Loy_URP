@@ -34,12 +34,28 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _BumpScale: 0.35
+    - _Absorption: 0.9
+    - _BumpScale: 0.17
     - _Cull: 2
+    - _DepthDistance: 4
+    - _FoamDistance: 0.37
+    - _FoamNoiseScale: 0
+    - _FoamNoiseStrength: 0
+    - _FresnelMin: 0.02
+    - _FresnelPower: 5
     - _Metallic: 0
+    - _ReflectionStrength: 0.21
+    - _RefractionStrength: 0.018
     - _Smoothness: 1
+    - _SpecularStrength: 2
+    - _WaveAmplitude: 0.07
+    - _WaveScale: 2.9
+    - _WaveSpeed: 1.64
     - _ZWrite: 0
     m_Colors:
-    - _BaseColor: {r: 0.04, g: 0.37999994, b: 0.62, a: 0.7294118}
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _DeepColor: {r: 0.005, g: 0.13, b: 0.32, a: 1}
+    - _FoamColor: {r: 0.9, g: 0.95, b: 1, a: 1}
+    - _ShallowColor: {r: 0.2, g: 0.55, b: 0.8, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
