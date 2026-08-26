@@ -4,10 +4,11 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Rendering.Universal;
 
-// 体积光（丁达尔效应）：半分辨率屏幕空间体光线步进 + 高斯模糊 + 加性合成。
+// 体积雾（含丁达尔光散射）：半分辨率屏幕空间体光线步进 + 高斯模糊 + 完整体积雾合成。
 // 沿视线在雾里采 3D Worley 噪声做密度，主光阴影图集做光束遮挡，阴影区不散射 → 光束只出现在光照到达的雾里。
+// Composite 做消光（scene * (1-opacity)）+ 阳光散射 + 环境雾色，完整体积雾效果。
 // RenderGraph 写法，全部纹理依赖用显式 UseTexture 句柄（不依赖全局槽生命周期）。
-public class VolumetricLightRenderFeature : ScriptableRendererFeature
+public class VolumetricFogRenderFeature : ScriptableRendererFeature
 {
     [System.Serializable]
     public class Settings
@@ -28,16 +29,17 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
         [Range(0f, 1f)] public float shadowStrength = 0.85f;        // 阴影对光束的衰减强度
         public float intensity = 1.2f;                              // 整体强度
         public Color tint = Color.white;                            // 光色（乘主光颜色）
+        [ColorUsage(false, true)] public Color fogColor = new Color(0.35f, 0.38f, 0.42f, 1f); // 环境雾色（阴影区雾的基础色）
     }
 
     public Settings settings = new Settings();
 
-    class VolumetricLightPass : ScriptableRenderPass
+    class VolumetricFogPass : ScriptableRenderPass
     {
-        readonly ProfilingSampler m_SamplerRayMarch = new ProfilingSampler("Loy_VolumetricLight RayMarch");
-        readonly ProfilingSampler m_SamplerBlurV = new ProfilingSampler("Loy_VolumetricLight BlurV");
-        readonly ProfilingSampler m_SamplerBlurH = new ProfilingSampler("Loy_VolumetricLight BlurH");
-        readonly ProfilingSampler m_SamplerComposite = new ProfilingSampler("Loy_VolumetricLight Composite");
+        readonly ProfilingSampler m_SamplerRayMarch = new ProfilingSampler("Loy_VolumetricFog RayMarch");
+        readonly ProfilingSampler m_SamplerBlurV = new ProfilingSampler("Loy_VolumetricFog BlurV");
+        readonly ProfilingSampler m_SamplerBlurH = new ProfilingSampler("Loy_VolumetricFog BlurH");
+        readonly ProfilingSampler m_SamplerComposite = new ProfilingSampler("Loy_VolumetricFog Composite");
 
         readonly Material material;
 
@@ -54,8 +56,9 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
         public float shadowStrength = 0.85f;
         public float intensity = 1.2f;
         public Color tint = Color.white;
+        public Color fogColor = new Color(0.35f, 0.38f, 0.42f, 1f);
 
-        public VolumetricLightPass(Material mat)
+        public VolumetricFogPass(Material mat)
         {
             material = mat;
         }
@@ -67,7 +70,9 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
             public TextureHandle depth;
             public TextureHandle shadowMap;      // 主光阴影图集（可能无效）
             public TextureHandle blurSource;     // 模糊源
-            public TextureHandle volumetricTex;  // 合成时采样的体积光纹理
+            public TextureHandle volumetricTex;  // 合成时采样的体积雾纹理
+            public TextureHandle cameraColor;    // 原地反馈：composite 读取当前场景颜色做消光
+            public Color fogColor;               // 环境雾色
             public Vector2 blurDir;              // 预乘 texel size 的方向
             // raymarch 参数
             public float fogDensity, fogHeightStart, fogHeightFalloff;
@@ -88,7 +93,7 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
             if (cameraData.camera.cameraType == CameraType.Preview) return;
             if (!resources.cameraDepthTexture.IsValid()) return;
 
-            // 半分辨率体积光缓冲（R16G16B16A16，避免低分辨率下色带）
+            // 半分辨率体积雾缓冲（R16G16B16A16，避免低分辨率下色带）
             TextureDesc desc = renderGraph.GetTextureDesc(resources.activeColorTexture);
             desc.width = Mathf.Max(1, Mathf.RoundToInt(desc.width * resolutionScale));
             desc.height = Mathf.Max(1, Mathf.RoundToInt(desc.height * resolutionScale));
@@ -106,8 +111,8 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
 
             TextureHandle mainShadow = resources.mainShadowsTexture; // 显式引用主光阴影图集
 
-            // Pass 0：体积光 raymarch
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricLight RayMarch", out var rmData, m_SamplerRayMarch))
+            // Pass 0：体积雾 raymarch
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricFog RayMarch", out var rmData, m_SamplerRayMarch))
             {
                 rmData.material = material;
                 rmData.block = new MaterialPropertyBlock();
@@ -156,7 +161,7 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 1：垂直模糊 volRT → temp
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricLight BlurV", out var blurVData, m_SamplerBlurV))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricFog BlurV", out var blurVData, m_SamplerBlurV))
             {
                 blurVData.material = material;
                 blurVData.block = new MaterialPropertyBlock();
@@ -177,7 +182,7 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 2：水平模糊 temp → volRT
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricLight BlurH", out var blurHData, m_SamplerBlurH))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricFog BlurH", out var blurHData, m_SamplerBlurH))
             {
                 blurHData.material = material;
                 blurHData.block = new MaterialPropertyBlock();
@@ -197,38 +202,58 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
                 });
             }
 
-            // Pass 3：加性合成回场景颜色（需要读回目标才能混合）
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricLight Composite", out var compData, m_SamplerComposite))
+            // Pass 3：完整体积雾合成（消光 + 散射）。RG 不允许同资源读写（feedback），
+            // 所以按 CustomPostProcessing 的模式 ping-pong：读 activeColor + volRT，写新纹理，
+            // 并把 resourcesData.cameraColor 指向结果，让后续后处理读到雾化后的画面。
+            // 用独立格式创建结果缓冲：避免与 _CameraTargetAttachment 描述符一致被 RG 复用别名，
+            // 导致同 pass 里既 UseTexture(读场景) 又 SetRenderAttachment(写结果) 冲突
+            TextureDesc foggedDesc = renderGraph.GetTextureDesc(resources.activeColorTexture);
+            foggedDesc.depthBufferBits = 0;
+            foggedDesc.msaaSamples = MSAASamples.None;
+            foggedDesc.clearBuffer = false;
+            foggedDesc.format = GraphicsFormat.R16G16B16A16_SFloat;
+            foggedDesc.name = "_VolumetricFoggedColor";
+            TextureHandle foggedColor = renderGraph.CreateTexture(foggedDesc);
+
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricFog Composite", out var compData, m_SamplerComposite))
             {
                 compData.material = material;
                 compData.block = new MaterialPropertyBlock();
                 compData.volumetricTex = volRT;
+                compData.cameraColor = resources.activeColorTexture;
+                compData.fogColor = fogColor;
 
                 builder.UseTexture(volRT, AccessFlags.Read);
-                builder.SetRenderAttachment(resources.activeColorTexture, 0, AccessFlags.ReadWrite);
+                builder.UseTexture(resources.activeColorTexture, AccessFlags.Read);
+                builder.SetRenderAttachment(foggedColor, 0, AccessFlags.Write);
 
                 builder.SetRenderFunc(static (PassData data, RasterGraphContext ctx) =>
                 {
                     MaterialPropertyBlock block = data.block;
                     block.Clear();
                     block.SetTexture(Shader.PropertyToID("_VolumetricLightTex"), data.volumetricTex);
+                    block.SetTexture(Shader.PropertyToID("_CameraColorTexture"), data.cameraColor);
+                    block.SetColor(Shader.PropertyToID("_FogColor"), data.fogColor);
                     ctx.cmd.DrawProcedural(Matrix4x4.identity, data.material, 3, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            // 后续 pass（后处理/最终 blit）消费雾化后的画面
+            resources.cameraColor = foggedColor;
         }
     }
 
-    VolumetricLightPass m_Pass;
+    VolumetricFogPass m_Pass;
 
     public override void Create()
     {
         if (settings.volumetricMaterial == null)
         {
-            Debug.LogWarning("VolumetricLightFeature: volumetricMaterial is null.");
+            Debug.LogWarning("VolumetricFogFeature: volumetricMaterial is null.");
             return;
         }
 
-        m_Pass = new VolumetricLightPass(settings.volumetricMaterial)
+        m_Pass = new VolumetricFogPass(settings.volumetricMaterial)
         {
             renderPassEvent = settings.passEvent,
             resolutionScale = settings.resolutionScale,
@@ -244,6 +269,7 @@ public class VolumetricLightRenderFeature : ScriptableRendererFeature
             shadowStrength = settings.shadowStrength,
             intensity = settings.intensity,
             tint = settings.tint,
+            fogColor = settings.fogColor,
         };
     }
 

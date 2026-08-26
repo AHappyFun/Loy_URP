@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Loy_VolumetricLight
+  m_Name: Loy_VolumetricFog
   m_Shader: {fileID: 4800000, guid: 4be8a4183b335b643b9cb4129e4232c3, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0

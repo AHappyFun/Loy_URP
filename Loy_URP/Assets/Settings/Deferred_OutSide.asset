@@ -96,25 +96,26 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ea44fd23cf1b13944b4c3b7665f1847e, type: 3}
-  m_Name: VolumetricLightRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::VolumetricLightRenderFeature
+  m_Name: VolumetricFogRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::VolumetricFogRenderFeature
   m_Active: 1
   settings:
     volumetricMaterial: {fileID: 2100000, guid: 3823ea5072be3994a8e137ad1a334a1c, type: 2}
     passEvent: 500
     resolutionScale: 0.5
     steps: 32
-    maxDistance: 50
-    fogDensity: 0.08
+    maxDistance: 42.93
+    fogDensity: 0.02
     fogHeightStart: 0
     fogHeightFalloff: 0.04
     noiseScale: 0.1
     noiseIntensity: 0.35
     noiseScroll: {x: 0.01, y: 0.01, z: 0.02}
     phaseG: 0.35
-    shadowStrength: 0.9
-    intensity: 0.8
+    shadowStrength: 0.44
+    intensity: 1.5
     tint: {r: 1, g: 1, b: 1, a: 1}
+    fogColor: {r: 0.5283019, g: 0.5283019, b: 0.5283019, a: 1}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

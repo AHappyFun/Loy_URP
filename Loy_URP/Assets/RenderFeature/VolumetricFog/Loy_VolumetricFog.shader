@@ -1,4 +1,4 @@
-Shader "Loy/Feature/VolumetricLight"
+Shader "Loy/Feature/VolumetricFog"
 {
     Properties
     {
@@ -15,7 +15,7 @@ Shader "Loy/Feature/VolumetricLight"
         TEXTURE3D(_NoiseTex);
         SAMPLER(sampler_NoiseTex);
 
-        // ---- 体积光 raymarch 参数（记录阶段由 C# 侧设置）----
+        // ---- 体积雾 raymarch 参数（记录阶段由 C# 侧设置）----
         float  _FogDensity;
         float  _FogHeightStart;
         float  _FogHeightFalloff;
@@ -29,10 +29,12 @@ Shader "Loy/Feature/VolumetricLight"
         float  _MaxDistance;
         int    _Steps;
         float3 _Tint;
+        float3 _FogColor;      // 环境雾色（阴影区/雾自身的基础色）
 
         // ---- blur / composite 参数 ----
         TEXTURE2D(_BlurSource);
         TEXTURE2D(_VolumetricLightTex);
+        TEXTURE2D(_CameraColorTexture);   // composite 原地反馈：读当前场景颜色做消光混合
         float2 _BlurDir;        // 预乘了 texel size 的方向：V=(0, 1/h), H=(1/w, 0)
 
         struct Attributes
@@ -79,7 +81,7 @@ Shader "Loy/Feature/VolumetricLight"
             return shadow;
         }
 
-        // Pass 0：半分辨率体积光 raymarch
+        // Pass 0：半分辨率体积雾 raymarch
         half4 RayMarch(Varyings i) : SV_Target
         {
             float2 uv = i.uv;
@@ -144,30 +146,36 @@ Shader "Loy/Feature/VolumetricLight"
             return half4(col, 1.0 - T);
         }
 
-        // Pass 1 / 2：可分离高斯模糊（9 tap）
+        // Pass 1 / 2：可分离高斯模糊（9 tap）。RGBA 全通道模糊，A 通道是不透明度，供雾混合使用
         half4 Blur(Varyings i) : SV_Target
         {
             float2 uv = i.uv;
-            half3 col = SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv).rgb * 0.227027;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 1.0 * _BlurDir).rgb * 0.1945946;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 1.0 * _BlurDir).rgb * 0.1945946;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 2.0 * _BlurDir).rgb * 0.1216216;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 2.0 * _BlurDir).rgb * 0.1216216;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 3.0 * _BlurDir).rgb * 0.0540540;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 3.0 * _BlurDir).rgb * 0.0540540;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 4.0 * _BlurDir).rgb * 0.0162160;
-            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 4.0 * _BlurDir).rgb * 0.0162160;
-            return half4(col, 1.0);
+            half4 col = SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv) * 0.227027;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 1.0 * _BlurDir) * 0.1945946;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 1.0 * _BlurDir) * 0.1945946;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 2.0 * _BlurDir) * 0.1216216;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 2.0 * _BlurDir) * 0.1216216;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 3.0 * _BlurDir) * 0.0540540;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 3.0 * _BlurDir) * 0.0540540;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv + 4.0 * _BlurDir) * 0.0162160;
+            col += SAMPLE_TEXTURE2D(_BlurSource, sampler_LinearClamp, uv - 4.0 * _BlurDir) * 0.0162160;
+            return col;
         }
 
         half4 BlurV(Varyings i) : SV_Target { return Blur(i); }
         half4 BlurH(Varyings i) : SV_Target { return Blur(i); }
 
-        // Pass 3：加性合成回场景
+        // Pass 3：完整体积雾合成（消光 + 散射）
+        // result = scene * (1 - opacity) + 阳光散射光 + 环境雾色 * opacity
+        // opacity = 1 - T：雾不透明度；近处物体几乎不受影响，远处淡出到雾色
         half4 Composite(Varyings i) : SV_Target
         {
-            half3 vol = SAMPLE_TEXTURE2D(_VolumetricLightTex, sampler_LinearClamp, i.uv).rgb;
-            return half4(vol, 1.0);
+            float2 uv = i.uv;
+            half3 sceneColor = SAMPLE_TEXTURE2D(_CameraColorTexture, sampler_LinearClamp, uv).rgb;
+            half4 vol = SAMPLE_TEXTURE2D(_VolumetricLightTex, sampler_LinearClamp, uv);
+            half opacity = saturate(vol.a);
+            half3 result = sceneColor * (1.0 - opacity) + vol.rgb + _FogColor * opacity;
+            return half4(result, 1.0);
         }
 
     ENDHLSL
@@ -200,7 +208,7 @@ Shader "Loy/Feature/VolumetricLight"
         }
         Pass
         {
-            Blend One One
+            // 非加性：shader 里做完整雾混合（消光 + 散射），直接覆盖输出
             HLSLPROGRAM
                 #pragma vertex vert
                 #pragma fragment Composite
