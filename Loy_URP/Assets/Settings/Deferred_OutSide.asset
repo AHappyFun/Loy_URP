@@ -46,39 +46,6 @@ MonoBehaviour:
   outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
   streakShader: {fileID: 4800000, guid: ff6d36f8ae54f3c459c5fa287c182a40, type: 3}
   glitchShader: {fileID: 4800000, guid: de9b0af49909ab344b3b4c41096f81e1, type: 3}
---- !u!114 &-7100000000000000002
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c3d106ff90a86c646bf6331f4779efef, type: 3}
-  m_Name: WaterSurfaceRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::WaterSurfaceRenderFeature
-  m_Active: 1
-  settings:
-    passEvent: 450
-    layerMask: -1
---- !u!114 &-7100000000000000001
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 014c8626d4587c148891c6dce557cd55, type: 3}
-  m_Name: WaterReflectionRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::WaterReflectionRenderFeature
-  m_Active: 1
-  settings:
-    reflectionMaterial: {fileID: 2100000, guid: 8cdb0f984665ed242a0ef35b718bb9e2, type: 2}
-    passEvent: 400
-    waterPlaneY: -0.14
 --- !u!114 &-5298835949692327270
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -103,6 +70,22 @@ MonoBehaviour:
   resetOnStart: 1
   outputDepth: 0
   depthTexture: 0
+--- !u!114 &-4323354191741335186
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c3d106ff90a86c646bf6331f477ef9ef, type: 3}
+  m_Name: WaterSurfaceRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::WaterSurfaceRenderFeature
+  m_Active: 1
+  settings:
+    passEvent: 450
+    layerMask: -1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -140,8 +123,8 @@ MonoBehaviour:
   - {fileID: -8886208210172211487}
   - {fileID: -5298835949692327270}
   - {fileID: 6813025409810861493}
-  - {fileID: -7100000000000000001}
-  - {fileID: -7100000000000000002}
+  - {fileID: 4647691139580510090}
+  - {fileID: -4323354191741335186}
   m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5effffb90e9ebb779d0000000000000000
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
@@ -242,6 +225,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.ScreenSpaceShadows
   m_Active: 1
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
+--- !u!114 &4647691139580510090
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 014c8626d4587c148891c6dce557cd55, type: 3}
+  m_Name: WaterReflectionRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::WaterReflectionRenderFeature
+  m_Active: 1
+  settings:
+    reflectionMaterial: {fileID: 2100000, guid: 8cdb0f984665ed242a0ef35b718bb9e2, type: 2}
+    passEvent: 400
+    waterPlaneY: -0.37
+    reflectionDistance: 50
 --- !u!114 &4751200078909277272
 MonoBehaviour:
   m_ObjectHideFlags: 0

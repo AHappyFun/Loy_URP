@@ -29,22 +29,22 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: cc5aa47637d851e49a927871985da088, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _Absorption: 0.9
-    - _BumpScale: 0.17
+    - _BumpScale: 0
     - _Cull: 2
     - _DepthDistance: 4
-    - _FoamDistance: 0.37
+    - _FoamDistance: 0.94
     - _FoamNoiseScale: 0
-    - _FoamNoiseStrength: 0
+    - _FoamNoiseStrength: 0.265
     - _FresnelMin: 0.02
     - _FresnelPower: 5
     - _Metallic: 0
-    - _ReflectionStrength: 0.21
+    - _ReflectionStrength: 0.507
     - _RefractionStrength: 0.018
     - _Smoothness: 1
     - _SpecularStrength: 2
@@ -55,7 +55,7 @@ Material:
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _DeepColor: {r: 0.005, g: 0.13, b: 0.32, a: 1}
-    - _FoamColor: {r: 0.9, g: 0.95, b: 1, a: 1}
+    - _FoamColor: {r: 0.9, g: 0.95, b: 1, a: 0.13333334}
     - _ShallowColor: {r: 0.2, g: 0.55, b: 0.8, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

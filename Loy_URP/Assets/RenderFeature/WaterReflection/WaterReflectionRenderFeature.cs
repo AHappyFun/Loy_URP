@@ -23,6 +23,7 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
         public Material reflectionMaterial = null;
         public RenderPassEvent passEvent = RenderPassEvent.AfterRenderingSkybox;
         public float waterPlaneY = 0.0f;
+        public float reflectionDistance = 50.0f;
     }
 
     public Settings settings = new Settings();
@@ -33,11 +34,14 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
         readonly float planeY;
         readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler("Loy_Water_SSPR");
 
-        public WaterReflectionPass(Material mat, float planeY)
+        public WaterReflectionPass(Material mat, float planeY, float reflectionDistance)
         {
             material = mat;
             this.planeY = planeY;
+            this.reflectionDistance = reflectionDistance;
         }
+
+        readonly float reflectionDistance;
 
         class PassData
         {
@@ -46,6 +50,7 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
             public TextureHandle sceneColor;
             public TextureHandle depth;
             public float planeY;
+            public float reflectionDistance;
         }
 
         public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -78,6 +83,7 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
                 passData.sceneColor = sceneColor;
                 passData.depth = resources.cameraDepthTexture;
                 passData.planeY = planeY;
+                passData.reflectionDistance = reflectionDistance;
 
                 builder.UseTexture(sceneColor, AccessFlags.Read);
                 builder.UseTexture(resources.cameraDepthTexture, AccessFlags.Read);
@@ -90,6 +96,7 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
                     block.SetTexture(Shader.PropertyToID("_CameraOpaqueTexture"), data.sceneColor);
                     block.SetTexture(Shader.PropertyToID("_CameraDepthTexture"), data.depth);
                     block.SetFloat(Shader.PropertyToID("_WaterPlaneY"), data.planeY);
+                    block.SetFloat(Shader.PropertyToID("_ReflectionDistance"), data.reflectionDistance);
                     ctx.cmd.DrawProcedural(Matrix4x4.identity, data.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
             }
@@ -106,7 +113,7 @@ public class WaterReflectionRenderFeature : ScriptableRendererFeature
             return;
         }
 
-        m_Pass = new WaterReflectionPass(settings.reflectionMaterial, settings.waterPlaneY)
+        m_Pass = new WaterReflectionPass(settings.reflectionMaterial, settings.waterPlaneY, settings.reflectionDistance)
         {
             renderPassEvent = settings.passEvent,
         };

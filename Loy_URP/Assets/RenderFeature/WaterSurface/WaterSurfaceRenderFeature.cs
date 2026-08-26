@@ -56,6 +56,9 @@ public class WaterSurfaceRenderFeature : ScriptableRendererFeature
                 builder.UseTexture(reflData.reflection, AccessFlags.Read);   // 显式依赖反射纹理
 
                 builder.SetRenderAttachment(resources.activeColorTexture, 0, AccessFlags.ReadWrite);
+                // 透明水 ZTest 需要深度缓冲（只读，不写）
+                if (resources.activeDepthTexture.IsValid())
+                    builder.SetRenderAttachmentDepth(resources.activeDepthTexture, AccessFlags.Read);
 
                 DrawingSettings drawingSettings = RenderingUtils.CreateDrawingSettings(
                     m_ShaderTagIds, renderingData, cameraData, lightData, SortingCriteria.CommonTransparent);
