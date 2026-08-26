@@ -24,6 +24,12 @@ struct Varyings
     UNITY_VERTEX_OUTPUT_STEREO
 };
 
+// ShadowCaster 阶段由 SetupShadowCasterConstantBuffer 逐灯设置的光方向（面→光）。
+// 不能用 _MainLightPosition：那是延迟/前向光照阶段才设置的全局，shadow caster 跑在它之前，
+// 读到的是陈旧值，法线偏移方向错乱 → 阴影平坠(peter-panning)。
+float3 _LightDirection;
+float3 _LightPosition;
+
 
 
 //------ShadowCaster--------
@@ -38,7 +44,9 @@ Varyings StandardShadowPassVertex(Attributes input)
 
     float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
     float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
-    output.positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, _MainLightPosition.xyz));
+    float4 positionCS = TransformWorldToHClip(ApplyShadowBias(positionWS, normalWS, _LightDirection));
+    positionCS = ApplyShadowClamping(positionCS);
+    output.positionCS = positionCS;
     output.uv = TRANSFORM_TEX(input.texcoord, _BaseMap);
 
     return output;
