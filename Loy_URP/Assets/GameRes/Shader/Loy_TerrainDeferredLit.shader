@@ -335,8 +335,13 @@ Shader "Loy/TerrainDeferredLit"
 
     void InitializeBakedGIData(Varyings IN, inout InputData inputData)
     {
-        half3 SH = IN.vertexSH;
-        inputData.bakedGI = SAMPLE_GI(IN.uvMainAndLM.zw, SH, inputData.normalWS);
+        // 纯 IBL：环境光 = 实时 SH + _GlossyEnvironmentColor 兜底（与草 shader 一致）。
+        // 不再采样 lightmap：地形 lightmapIndex 被引擎钉在 0，且无有效 lightmap 时引擎会绑默认白贴图，
+        // SampleLightmap 返回白色 → ambientIntensity=0 时地形阴影仍发亮（已实测定位到这一项）。
+        // 若以后要烘焙 lightmap，需在此重新加上 SampleLightmap(IN.uvMainAndLM.zw, inputData.normalWS)，
+        // 并注意别和下面的 shGI 重复叠加环境光。
+        half3 shGI = max(SampleSH(inputData.normalWS), _GlossyEnvironmentColor.rgb);
+        inputData.bakedGI = shGI;
         inputData.shadowMask = SAMPLE_SHADOWMASK(IN.uvMainAndLM.zw);
     }
 
