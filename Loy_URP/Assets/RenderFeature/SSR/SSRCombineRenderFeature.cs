@@ -53,6 +53,7 @@ public class SSRCombineRenderFeature : ScriptableRendererFeature
         static readonly int kGBuffer2Id = Shader.PropertyToID("_GBuffer2");
         static readonly int kHistoryValidId = Shader.PropertyToID("_SSRHistoryValid");
 
+        readonly ProfilingSampler m_GroupSampler = new ProfilingSampler("Loy_SSR Combine");
         readonly ProfilingSampler m_TemporalSampler = new ProfilingSampler("Loy_SSR Temporal Resolve");
         readonly ProfilingSampler m_CompositeSampler = new ProfilingSampler(kProfilerTag);
         readonly SSRCombineRenderFeature m_RenderFeature;
@@ -186,6 +187,9 @@ public class SSRCombineRenderFeature : ScriptableRendererFeature
             resolvedDesc.name = "_SSRResolvedTex";
             TextureHandle resolved = renderGraph.CreateTexture(resolvedDesc);
 
+            // 外层分组：Frame Debugger 里 "Loy_SSR Combine" 下嵌套各阶段
+            renderGraph.BeginProfilingSampler(m_GroupSampler);
+
             using (var builder = renderGraph.AddRasterRenderPass<TemporalPassData>(
                        "Loy_SSR Temporal Resolve", out TemporalPassData passData, m_TemporalSampler))
             {
@@ -250,6 +254,8 @@ public class SSRCombineRenderFeature : ScriptableRendererFeature
             cameraHistory.readIndex = writeIndex;
             cameraHistory.valid = true;
             cameraHistory.lastFrameUsed = Time.frameCount;
+
+            renderGraph.EndProfilingSampler(m_GroupSampler);
         }
     }
 }

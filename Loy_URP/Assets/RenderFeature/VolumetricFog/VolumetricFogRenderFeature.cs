@@ -36,6 +36,7 @@ public class VolumetricFogRenderFeature : ScriptableRendererFeature
 
     class VolumetricFogPass : ScriptableRenderPass
     {
+        readonly ProfilingSampler m_SamplerGroup = new ProfilingSampler("Loy_VolumetricFog");
         readonly ProfilingSampler m_SamplerRayMarch = new ProfilingSampler("Loy_VolumetricFog RayMarch");
         readonly ProfilingSampler m_SamplerBlurV = new ProfilingSampler("Loy_VolumetricFog BlurV");
         readonly ProfilingSampler m_SamplerBlurH = new ProfilingSampler("Loy_VolumetricFog BlurH");
@@ -110,6 +111,9 @@ public class VolumetricFogRenderFeature : ScriptableRendererFeature
             Vector2 texel = new Vector2(1f / desc.width, 1f / desc.height);
 
             TextureHandle mainShadow = resources.mainShadowsTexture; // 显式引用主光阴影图集
+
+            // 外层分组：Frame Debugger 里 "Loy_VolumetricFog" 下嵌套各阶段
+            renderGraph.BeginProfilingSampler(m_SamplerGroup);
 
             // Pass 0：体积雾 raymarch
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_VolumetricFog RayMarch", out var rmData, m_SamplerRayMarch))
@@ -237,6 +241,8 @@ public class VolumetricFogRenderFeature : ScriptableRendererFeature
                     ctx.cmd.DrawProcedural(Matrix4x4.identity, data.material, 3, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            renderGraph.EndProfilingSampler(m_SamplerGroup);
 
             // 后续 pass（后处理/最终 blit）消费雾化后的画面
             resources.cameraColor = foggedColor;

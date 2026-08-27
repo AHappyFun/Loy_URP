@@ -191,6 +191,7 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
     private sealed class CustomPostProcessingPass : ScriptableRenderPass
     {
         private readonly IReadOnlyList<ICustomPostProcessRenderer> renderers;
+        readonly ProfilingSampler m_GroupSampler = new ProfilingSampler("Loy_CustomPostProcessing");
 
         public CustomPostProcessingPass(IReadOnlyList<ICustomPostProcessRenderer> renderers)
         {
@@ -219,6 +220,9 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
             TextureHandle source = resourceData.activeColorTexture;
             bool renderedAnyEffect = false;
 
+            // 外层分组：Frame Debugger 里 "Loy_CustomPostProcessing" 下嵌套各 effect
+            renderGraph.BeginProfilingSampler(m_GroupSampler);
+
             foreach (ICustomPostProcessRenderer renderer in renderers)
             {
                 if (!renderer.IsActive())
@@ -227,6 +231,8 @@ public sealed class CustomPostProcessingRenderFeature : ScriptableRendererFeatur
                 source = renderer.Record(renderGraph, frameData, source);
                 renderedAnyEffect = true;
             }
+
+            renderGraph.EndProfilingSampler(m_GroupSampler);
 
             // Later URP and custom passes consume the last effect's output.
             if (renderedAnyEffect)

@@ -1,4 +1,4 @@
-Shader "Loy/Loy_Vegetation"
+Shader "Loy/VegetationGrass"
 {
     Properties
     {

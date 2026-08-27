@@ -25,7 +25,9 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
     static readonly int kAmbientStrength = Shader.PropertyToID("_AmbientStrength");
 
     readonly VegetationSettings settings;
-    readonly ProfilingSampler m_ProfilingSampler;
+    readonly ProfilingSampler m_ProfilingSamplerGroup;
+    readonly ProfilingSampler m_ProfilingSamplerCull;
+    readonly ProfilingSampler m_ProfilingSamplerDraw;
     int cullKernel = -1;
 
     class GroupGpuState
@@ -54,7 +56,9 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
     public VegetationPass(VegetationSettings settings)
     {
         this.settings = settings;
-        m_ProfilingSampler = new ProfilingSampler(ProfilerTag);
+        m_ProfilingSamplerGroup = new ProfilingSampler(ProfilerTag);
+        m_ProfilingSamplerCull = new ProfilingSampler(ProfilerTag + " Cull");
+        m_ProfilingSamplerDraw = new ProfilingSampler(ProfilerTag + " Draw");
     }
 
     void EnsureKernel()
@@ -209,7 +213,7 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
             return;
 
         var cmd = CommandBufferPool.Get(ProfilerTag);
-        using (new ProfilingScope(cmd, m_ProfilingSampler))
+        using (new ProfilingScope(cmd, m_ProfilingSamplerGroup))
         {
             DispatchCull(CommandBufferHelpers.GetComputeCommandBuffer(cmd), renderingData.cameraData.camera);
             // Compatibility mode has no RenderGraph GBuffer handles to bind into, so
@@ -242,7 +246,10 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
         UniversalResourceData resourcesData = frameData.Get<UniversalResourceData>();
         UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
-        using (var builder = renderGraph.AddComputePass<CullPassData>(ProfilerTag + " Cull", out var cullData, m_ProfilingSampler))
+        // 外层分组：Frame Debugger 里 "Loy_Vegetation" 下嵌套 Cull / Draw
+        renderGraph.BeginProfilingSampler(m_ProfilingSamplerGroup);
+
+        using (var builder = renderGraph.AddComputePass<CullPassData>(ProfilerTag + " Cull", out var cullData, m_ProfilingSamplerCull))
         {
             cullData.pass = this;
             cullData.camera = cameraData.camera;
@@ -254,7 +261,7 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
             });
         }
 
-        using (var builder = renderGraph.AddRasterRenderPass<DrawPassData>(ProfilerTag, out var drawData, m_ProfilingSampler))
+        using (var builder = renderGraph.AddRasterRenderPass<DrawPassData>(ProfilerTag, out var drawData, m_ProfilingSamplerDraw))
         {
             drawData.pass = this;
 
@@ -288,6 +295,8 @@ public class VegetationPass : ScriptableRenderPass, IDisposable
                 data.pass.DrawIndirect(ctx.cmd, data.useGBuffer);
             });
         }
+
+        renderGraph.EndProfilingSampler(m_ProfilingSamplerGroup);
     }
 
     public void Dispose()

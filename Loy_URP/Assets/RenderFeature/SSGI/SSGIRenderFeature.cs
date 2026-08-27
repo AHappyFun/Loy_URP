@@ -146,6 +146,9 @@ public class SSGIRenderFeature : ScriptableRendererFeature
             ssgiMaterial.SetFloat("_Thickness", Thickness);
             ssgiMaterial.SetFloat("_GITexRes", isHalfSize ? 0.5f : 1.0f);
 
+            // 外层分组：Frame Debugger 里 "Loy_SSGI" 下嵌套各阶段
+            renderGraph.BeginProfilingSampler(m_ProfilingSampler);
+
             // Pass 0: 计算 SSGI → ssgi
             using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SSGI Compute", out var computeData, m_ProfilingSamplerCompute))
             {
@@ -228,6 +231,8 @@ public class SSGIRenderFeature : ScriptableRendererFeature
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 2, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            renderGraph.EndProfilingSampler(m_ProfilingSampler);
         }
     }
 

@@ -1,5 +1,28 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-8937840765294149112
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 315f8e4fa094ef54f9e2def83a29885b, type: 3}
+  m_Name: AutoExposureRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::AutoExposureRenderFeature
+  m_Active: 1
+  settings:
+    profile: {fileID: 11400000, guid: 3b2f854b0346469419613a993c348a4e, type: 2}
+    passEvent: 550
+    targetLuminance: 0.4
+    adaptationSpeed: 0.3
+    minExposureEV: -2
+    maxExposureEV: 2
+    exposureOffsetEV: 0
+    lumaRes: 16
+    lumaSamples: 8
 --- !u!114 &-8886208210172211487
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -111,11 +134,11 @@ MonoBehaviour:
     noiseScale: 0.1
     noiseIntensity: 0.35
     noiseScroll: {x: 0.01, y: 0.01, z: 0.02}
-    phaseG: 0.35
+    phaseG: 0.56
     shadowStrength: 0.44
-    intensity: 1.5
+    intensity: 2
     tint: {r: 1, g: 1, b: 1, a: 1}
-    fogColor: {r: 0.5283019, g: 0.5283019, b: 0.5283019, a: 1}
+    fogColor: {r: 0.41509432, g: 0.41509432, b: 0.41509432, a: 1}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -156,6 +179,7 @@ MonoBehaviour:
   - {fileID: 4647691139580510090}
   - {fileID: -4323354191741335186}
   - {fileID: -3445382669649501569}
+  - {fileID: -8937840765294149112}
   m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5effffb90e9ebb779d00000000000000007f224164b78a2fd0
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}

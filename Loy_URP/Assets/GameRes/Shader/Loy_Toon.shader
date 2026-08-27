@@ -1,4 +1,4 @@
-Shader "Loy/Toon"
+Shader "Loy/ToonLit"
 {
     Properties
     {

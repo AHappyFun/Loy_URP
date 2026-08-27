@@ -47,7 +47,12 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
     {
         private readonly SunShaftRenderFeature renderFeature;
         const string m_ProfilerTag = "Loy_SunShaft";
-        readonly ProfilingSampler m_ProfilingSampler;
+        readonly ProfilingSampler m_ProfilingSamplerGroup;
+        readonly ProfilingSampler m_ProfilingSamplerDownsample;
+        readonly ProfilingSampler m_ProfilingSamplerBlur1;
+        readonly ProfilingSampler m_ProfilingSamplerBlur2;
+        readonly ProfilingSampler m_ProfilingSamplerBlur3;
+        readonly ProfilingSampler m_ProfilingSamplerCombine;
         readonly Vector4[] Params = new Vector4[3];
 
 #if URP_COMPATIBILITY_MODE
@@ -58,7 +63,12 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
         {
             this.renderFeature = renderFeature;
             this.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
-            m_ProfilingSampler = new ProfilingSampler(m_ProfilerTag);
+            m_ProfilingSamplerGroup = new ProfilingSampler(m_ProfilerTag);
+            m_ProfilingSamplerDownsample = new ProfilingSampler("Loy_SunShaft Downsample");
+            m_ProfilingSamplerBlur1 = new ProfilingSampler("Loy_SunShaft Blur1");
+            m_ProfilingSamplerBlur2 = new ProfilingSampler("Loy_SunShaft Blur2");
+            m_ProfilingSamplerBlur3 = new ProfilingSampler("Loy_SunShaft Blur3");
+            m_ProfilingSamplerCombine = new ProfilingSampler("Loy_SunShaft Combine");
 
             // 确保 _CameraDepthTexture 在 RG 模式下被生成
             ConfigureInput(ScriptableRenderPassInput.Depth);
@@ -90,7 +100,7 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             if (!ComputeParams(cam)) return;
 
             CommandBuffer cmd = CommandBufferPool.Get(m_ProfilerTag);
-            using (new ProfilingScope(cmd, m_ProfilingSampler))
+            using (new ProfilingScope(cmd, m_ProfilingSamplerGroup))
             {
                 int width = (int)(cam.pixelWidth * renderingData.cameraData.renderScale);
                 int height = (int)(cam.pixelHeight * renderingData.cameraData.renderScale);
@@ -153,7 +163,10 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             Vector4[] sunShaftParams = Params;
 
             // Pass 0: 降采样 → temp1（读活动颜色 + 深度）
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Downsample", out var pass0, m_ProfilingSampler))
+            // 外层分组：Frame Debugger 里 "Loy_SunShaft" 下嵌套各阶段
+            renderGraph.BeginProfilingSampler(m_ProfilingSamplerGroup);
+
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Downsample", out var pass0, m_ProfilingSamplerDownsample))
             {
                 pass0.material = renderFeature.material;
                 pass0.source = activeColor;
@@ -175,7 +188,7 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 1: 模糊1 temp1 → temp2
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur1", out var pass1, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur1", out var pass1, m_ProfilingSamplerBlur1))
             {
                 pass1.material = renderFeature.material;
                 pass1.source = temp1;
@@ -196,7 +209,7 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 2: 模糊2 temp2 → temp1
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur2", out var pass2, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur2", out var pass2, m_ProfilingSamplerBlur2))
             {
                 pass2.material = renderFeature.material;
                 pass2.source = temp2;
@@ -217,7 +230,7 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 3: 模糊3 temp1 → temp2
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur3", out var pass3, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Blur3", out var pass3, m_ProfilingSamplerBlur3))
             {
                 pass3.material = renderFeature.material;
                 pass3.source = temp1;
@@ -238,7 +251,7 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
             }
 
             // Pass 4: 合成 temp2 → 活动颜色（加法混合，需读回目标）
-            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Combine", out var pass4, m_ProfilingSampler))
+            using (var builder = renderGraph.AddRasterRenderPass<PassData>("Loy_SunShaft Combine", out var pass4, m_ProfilingSamplerCombine))
             {
                 pass4.material = renderFeature.material;
                 pass4.source = temp2;
@@ -257,6 +270,8 @@ public class SunShaftRenderFeature : ScriptableRendererFeature
                     rgContext.cmd.DrawProcedural(Matrix4x4.identity, data.material, 4, MeshTopology.Triangles, 3, 1, block);
                 });
             }
+
+            renderGraph.EndProfilingSampler(m_ProfilingSamplerGroup);
         }
     }
 }
