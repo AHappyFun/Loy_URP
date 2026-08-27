@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 954d44b1c51cb4a46950764dde218987, type: 3}
-  m_Name: VegetationData_Test
+  m_Name: GrassData
   m_EditorClassIdentifier: Assembly-CSharp::VegetationData
   groups:
   - prototype:
@@ -20,7 +20,7 @@ MonoBehaviour:
       maxDistance: 51
       minScale: 0.5
       maxScale: 0.9
-      globalScale: 1
+      globalScale: 0.75
       windStrength: 4.58
       windSpeed: 1.72
       windFrequency: 0.09

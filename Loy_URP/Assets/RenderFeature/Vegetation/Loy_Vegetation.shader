@@ -51,6 +51,11 @@ Shader "Loy/Loy_Vegetation"
         float _AmbientStrength;
         float _Cutoff;
 
+        // 场景控制脚本（GrassRuntimeControl）设置的全局覆盖值。
+        // >0 时用它替代 _AmbientStrength，保证 Inspector 修改能实时生效
+        //（shader 全局变量不经过 MPB/材质，一定能传到 shader）。
+        float _GrassAmbientOverride;
+
         struct Attributes
         {
             float3 positionOS : POSITION;
@@ -247,7 +252,11 @@ Shader "Loy/Loy_Vegetation"
                 inputData.shadowCoord = IN.shadowCoord;
                 inputData.fogCoord = 0;
                 inputData.vertexLighting = half3(0, 0, 0);
-                inputData.bakedGI = SampleSH(inputData.normalWS) * _AmbientStrength;
+                // 环境光 = SH（方向性）+ _GlossyEnvironmentColor 兜底（URP 全局，保证非零）
+                // 乘数优先用 _GrassAmbientOverride（场景脚本实时设置），否则用材质/MPB 的 _AmbientStrength
+                half3 ambientGI = max(SampleSH(inputData.normalWS), _GlossyEnvironmentColor.rgb);
+                float ambientMul = _GrassAmbientOverride > 0.0 ? _GrassAmbientOverride : _AmbientStrength;
+                inputData.bakedGI = ambientGI * ambientMul;
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
                 inputData.shadowMask = half4(1, 1, 1, 1);
 

@@ -2313,6 +2313,59 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 422825697}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &430563117
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 430563119}
+  - component: {fileID: 430563118}
+  m_Layer: 0
+  m_Name: GrassControl
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &430563118
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 430563117}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2aa43c8267dd49449b034079b8e4750a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GrassRuntimeControl
+  data: {fileID: 11400000, guid: 2af0bf5041c3f7248bda023a547526de, type: 2}
+  ambientStrength: 2
+  tintMin: {r: 0.78, g: 0.88, b: 0.55, a: 1}
+  tintMax: {r: 1.05, g: 1.15, b: 0.82, a: 1}
+  windStrength: 4.58
+  windSpeed: 1.72
+  windFrequency: 0.09
+  windDirection: {x: 1, y: 0}
+  globalScale: 0.75
+--- !u!4 &430563119
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 430563117}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &438993964
 GameObject:
   m_ObjectHideFlags: 0
@@ -3572,7 +3625,7 @@ Light:
   serializedVersion: 12
   m_Type: 1
   m_Color: {r: 1, g: 0.9396032, b: 0.8726415, a: 1}
-  m_Intensity: 3
+  m_Intensity: 2.5
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -10642,7 +10695,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1821644729
 Transform:
   m_ObjectHideFlags: 0
@@ -11332,8 +11385,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1954156657}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.0015600165, y: 0.93213844, z: -0.00096436776, w: -0.36209744}
-  m_LocalPosition: {x: 10.360596, y: 1.3474181, z: -5.6957474}
+  m_LocalRotation: {x: 0.010102125, y: 0.8528425, z: 0.018479384, w: -0.5217434}
+  m_LocalPosition: {x: 22.461975, y: 2.3465521, z: 0.6661377}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -12660,4 +12713,5 @@ SceneRoots:
   - {fileID: 559647364}
   - {fileID: 163470070}
   - {fileID: 1002117288}
+  - {fileID: 430563119}
   - {fileID: 2141995798}
