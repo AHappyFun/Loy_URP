@@ -8,6 +8,7 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "ToonDeferred.hlsl"
 #include "GrassDeferred.hlsl"
+#include "Assets/GameRes/Shader/LoyRenderDebug.hlsl"
 
 struct Attributes
 {
@@ -293,8 +294,10 @@ half4 DeferredShading(Varyings input) : SV_Target
         return half4(color, alpha); // Cannot discard because stencil must be updated.
     #endif
 
+    half loyDebugSSAO = 1.0h;
     #if defined(_SCREEN_SPACE_OCCLUSION) && !defined(_SURFACE_TYPE_TRANSPARENT)
         AmbientOcclusionFactor aoFactor = GetScreenSpaceAmbientOcclusion(screen_uv);
+        loyDebugSSAO = aoFactor.indirectAmbientOcclusion;
         unityLight.color *= aoFactor.directAmbientOcclusion;
         #if defined(_DIRECTIONAL) && defined(_DEFERRED_FIRST_LIGHT)
         // What we want is really to apply the mininum occlusion value between the baked occlusion from surfaceDataOcclusion and real-time occlusion from SSAO.
@@ -303,6 +306,20 @@ half4 DeferredShading(Varyings input) : SV_Target
         half occlusion = aoFactor.indirectAmbientOcclusion < gBufferData.occlusion ? aoFactor.indirectAmbientOcclusion * rcp(gBufferData.occlusion) : 1.0;
         alpha = occlusion;
         #endif
+    #endif
+
+    #if defined(LOY_RENDER_DEBUG)
+    UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+    {
+        half3 debugColor = 0.0h.xxx;
+        #if defined(_DIRECTIONAL) && defined(_DEFERRED_MAIN_LIGHT)
+            UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SHADOW)
+                debugColor = unityLight.shadowAttenuation.xxx;
+            UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SSAO)
+                debugColor = loyDebugSSAO.xxx;
+        #endif
+        return half4(debugColor, 1.0h);
+    }
     #endif
 
     InputData inputData = (InputData)0;
@@ -353,6 +370,13 @@ half4 FragSSAOOnly(Varyings input) : SV_Target
     // But we already applied the baked occlusion during gbuffer pass, so we have to cancel it out here.
     // We must also avoid divide-by-0 that the reciprocal can generate.
     half occlusion = aoFactor.indirectAmbientOcclusion < surfaceDataOcclusion ? aoFactor.indirectAmbientOcclusion * rcp(surfaceDataOcclusion) : 1.0;
+    #if defined(LOY_RENDER_DEBUG)
+        UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+        {
+            half debugAO = _LoyRenderDebugMode == LOY_DEBUG_SSAO ? aoFactor.indirectAmbientOcclusion : 0.0h;
+            return half4(debugAO.xxx, 1.0h);
+        }
+    #endif
     return half4(0.0, 0.0, 0.0, occlusion);
 }
 #endif //UNIVERSAL_STENCIL_DEFERRED

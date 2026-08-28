@@ -5,6 +5,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
+#include "LoyRenderDebug.hlsl"
 
 struct Attributes
 {
@@ -206,6 +207,11 @@ GBufferFragOutput GetToonGBuffer(Varyings input, ToonSurfaceData surfaceData, In
     uint materialFlags = UnpackGBufferMaterialFlags(output.gBuffer0.a) | kMaterialFlagToon;
     output.gBuffer0.a = PackGBufferMaterialFlags(materialFlags);
     output.customData = surfaceData.toonCustomData;
+
+#if defined(LOY_RENDER_DEBUG)
+    output.color.rgb = LoyGetSurfaceDebugColor(surfaceData.albedo, surfaceData.emission, GIColor,
+        inputData.normalWS, surfaceData.smoothness, surfaceData.metallic, surfaceData.occlusion);
+#endif
 
     return output;
 }

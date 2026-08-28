@@ -68,11 +68,13 @@ Shader "Loy/WaterTransparent"
             #pragma multi_compile_fog
             #pragma multi_compile_fragment _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
+            #include "LoyRenderDebug.hlsl"
 
             // 所有材质属性必须放在 UnityPerMaterial 中，SRP Batcher 才能生效。
             // 注意：CBUFFER 内不能使用 ifdef 改变布局，否则 SRP Batcher 无法工作。
@@ -267,7 +269,21 @@ Shader "Loy/WaterTransparent"
                 color += mainLight.color * spec * _SpecularStrength * mainLight.shadowAttenuation;
 
                 // ---- 微弱环境光，避免背光处全黑 ----
-                color += SampleSH(normalWS) * 0.1;
+                half3 ambientGI = SampleSH(normalWS) * 0.1h;
+                color += ambientGI;
+
+                #if defined(LOY_RENDER_DEBUG)
+                    UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+                    {
+                        half3 debugColor = LoyGetSurfaceDebugColor(waterBody, 0.0h.xxx, ambientGI,
+                            normalWS, _Smoothness, 0.0h, 1.0h);
+                        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SHADOW)
+                            debugColor = mainLight.shadowAttenuation.xxx;
+                        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SSAO)
+                            debugColor = 1.0h.xxx; // Transparent water is not affected by deferred SSAO.
+                        return half4(debugColor, 1.0h);
+                    }
+                #endif
 
                 // ---- 雾与透明度 ----
                 color = MixFog(color, input.fogFactor);

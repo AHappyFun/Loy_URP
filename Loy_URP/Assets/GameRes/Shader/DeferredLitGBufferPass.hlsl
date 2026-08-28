@@ -5,6 +5,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
+#include "LoyRenderDebug.hlsl"
 
 struct Attributes
 {
@@ -20,16 +21,15 @@ struct Varyings
 {
     float2 uv                       : TEXCOORD0;
 
-#if LIGHTMAP_ON
-    float2 lightmapUV               : TEXCOORD1;
-#else
-    half3 vertexSH                  : TEXCOORD1;
-#endif
+    DECLARE_LIGHTMAP_OR_SH(lightmapUV, vertexSH, 1);
 
     float3 positionWS               : TEXCOORD2;
     float3 normalWS                 : TEXCOORD3;
     float4 tangentWS                : TEXCOORD4;    // xyz: tangent, w: sign
     float4 viewDirWS_fogFactor      : TEXCOORD5;
+#ifdef USE_APV_PROBE_OCCLUSION
+    float4 probeOcclusion           : TEXCOORD6;
+#endif
     float4 positionCS               : SV_POSITION;
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
@@ -63,11 +63,9 @@ Varyings LitGBufferPassVert(Attributes input)
     output.positionWS = vertexInput.positionWS;
     output.normalWS = normalInput.normalWS;
 
-#ifdef LIGHTMAP_ON
-    output.lightmapUV.xy = input.lightmapUV.xy * unity_LightmapST.xy + unity_LightmapST.zw;
-#else
-    output.vertexSH.xyz = SampleSHVertex(output.normalWS.xyz);
-#endif
+    OUTPUT_LIGHTMAP_UV(input.lightmapUV, unity_LightmapST, output.lightmapUV);
+    OUTPUT_SH4(vertexInput.positionWS, output.normalWS.xyz,
+        GetWorldSpaceNormalizeViewDir(vertexInput.positionWS), output.vertexSH, output.probeOcclusion);
 
     real sign = input.tangentOS.w * GetOddNegativeScale();
     output.tangentWS = half4(normalInput.tangentWS.xyz, sign);
@@ -146,8 +144,17 @@ inline void InitInputData(Varyings input, half3 normalTS, out InputData inputDat
 
     //BakedGI
     half3 bakedGI = half3(0,0,0);
+    inputData.shadowMask = half4(0, 0, 0, 0);
 
-    #if defined(LIGHTMAP_ON)
+    #if !defined(LIGHTMAP_ON) && (defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
+        bakedGI = SAMPLE_GI(input.vertexSH,
+            GetAbsolutePositionWS(inputData.positionWS),
+            inputData.normalWS,
+            inputData.viewDirectionWS,
+            inputData.positionCS.xy,
+            input.probeOcclusion,
+            inputData.shadowMask);
+    #elif defined(LIGHTMAP_ON)
         #ifdef UNITY_LIGHTMAP_FULL_HDR
             bool encodedLightmap = false;
         #else
@@ -170,7 +177,9 @@ inline void InitInputData(Varyings input, half3 normalTS, out InputData inputDat
     shadowMask = SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, input.lightmapUV);
     #endif
 
+    #if defined(LIGHTMAP_ON) || !(defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
     inputData.shadowMask = shadowMask;
+    #endif
 
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 }
@@ -195,7 +204,12 @@ GBufferFragOutput GetGBuffer(Varyings input, LoySurfaceData surfaceData, InputDa
     //  GBuffer1 = reflectivity(金属流) + occlusion
     //  GBuffer2 = Oct 编码法线 + smoothness
     //  GBuffer3 = GI + emission（补上了之前丢失的自发光）
-    return PackGBuffersBRDFData(brdfData, inputData, surfaceData.smoothness, surfaceData.emission + GIColor, surfaceData.occlusion);
+    GBufferFragOutput output = PackGBuffersBRDFData(brdfData, inputData, surfaceData.smoothness, surfaceData.emission + GIColor, surfaceData.occlusion);
+#if defined(LOY_RENDER_DEBUG)
+    output.color.rgb = LoyGetSurfaceDebugColor(surfaceData.albedo, surfaceData.emission, GIColor,
+        inputData.normalWS, surfaceData.smoothness, surfaceData.metallic, surfaceData.occlusion);
+#endif
+    return output;
 }
 
 GBufferFragOutput LitGBufferPassFrag(Varyings input)

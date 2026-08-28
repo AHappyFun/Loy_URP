@@ -122,6 +122,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // -------------------------------------
             // Defines
             #define _LIT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -186,6 +187,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // -------------------------------------
             // Defines
             #define _SIMPLELIT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -250,6 +252,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // Defines
             #define _LIT
             #define _DIRECTIONAL
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -316,6 +319,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // Universal Pipeline keywords
             #define _SIMPLELIT
             #define _DIRECTIONAL
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -369,6 +373,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // -------------------------------------
             // Defines
             #define _FOG
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -414,6 +419,7 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             // -------------------------------------
             // Defines
             #define _SSAO_ONLY
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords

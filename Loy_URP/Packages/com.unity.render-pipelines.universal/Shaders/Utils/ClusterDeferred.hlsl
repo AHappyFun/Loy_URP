@@ -9,6 +9,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
 #include "ToonDeferred.hlsl"
 #include "GrassDeferred.hlsl"
+#include "Assets/GameRes/Shader/LoyRenderDebug.hlsl"
 
 struct Attributes
 {
@@ -162,8 +163,21 @@ half4 DeferredShadingClustered(Varyings input) : SV_Target
         mainLight.color *= half3(cookieColor);
     #endif
 
+    half loyDebugShadow = mainLight.shadowAttenuation;
     #if defined(_SCREEN_SPACE_OCCLUSION)
         mainLight.shadowAttenuation *= aoFactor.directAmbientOcclusion;
+    #endif
+
+    #if defined(LOY_RENDER_DEBUG)
+    UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+    {
+        half3 debugColor = 0.0h.xxx;
+        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SHADOW)
+            debugColor = loyDebugShadow.xxx;
+        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SSAO)
+            debugColor = aoFactor.indirectAmbientOcclusion.xxx;
+        return half4(debugColor, 1.0h);
+    }
     #endif
 
     color += DeferredLightContribution(mainLight, inputData, gBufferData);

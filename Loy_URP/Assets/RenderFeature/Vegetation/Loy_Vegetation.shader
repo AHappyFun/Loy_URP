@@ -145,8 +145,10 @@ Shader "Loy/VegetationGrass"
             ZTest LEqual
 
             HLSLPROGRAM
+            #pragma target 4.5
             #pragma vertex vert
             #pragma fragment frag
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
 
             struct Varyings
             {
@@ -154,6 +156,11 @@ Shader "Loy/VegetationGrass"
                 float3 normalWS : TEXCOORD0;
                 float2 uv : TEXCOORD1;
                 half3 tint : TEXCOORD2;
+                float3 positionWS : TEXCOORD3;
+                half3 vertexSH : TEXCOORD4;
+                #ifdef USE_APV_PROBE_OCCLUSION
+                    float4 probeOcclusion : TEXCOORD5;
+                #endif
             };
 
             Varyings vert(Attributes IN)
@@ -167,6 +174,8 @@ Shader "Loy/VegetationGrass"
                 OUT.normalWS = normalWS;
                 OUT.uv = IN.uv;
                 OUT.tint = tint;
+                OUT.positionWS = worldPos;
+                OUTPUT_SH4(worldPos, normalWS, GetWorldSpaceNormalizeViewDir(worldPos), OUT.vertexSH, OUT.probeOcclusion);
                 return OUT;
             }
 
@@ -180,7 +189,17 @@ Shader "Loy/VegetationGrass"
                 half ndotl = saturate(dot(normalWS, mainLight.direction)) * 0.5 + 0.5;
 
                 half3 albedo = VegetationAlbedo(tex.rgb * IN.tint, IN.uv.y);
-                half3 color = albedo * mainLight.color * ndotl;
+                half4 probeOcclusion = half4(0, 0, 0, 0);
+                #if defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2)
+                    half3 bakedGI = SAMPLE_GI(IN.vertexSH,
+                        GetAbsolutePositionWS(IN.positionWS), normalWS,
+                        GetWorldSpaceNormalizeViewDir(IN.positionWS), IN.positionCS.xy,
+                        IN.probeOcclusion, probeOcclusion);
+                #else
+                    half3 bakedGI = SampleSHPixel(IN.vertexSH, normalWS);
+                #endif
+                float ambientMul = _GrassAmbientOverride > 0.0 ? _GrassAmbientOverride : _AmbientStrength;
+                half3 color = albedo * (mainLight.color * ndotl + bakedGI * ambientMul);
                 return half4(color, 1);
             }
             ENDHLSL
@@ -208,10 +227,13 @@ Shader "Loy/VegetationGrass"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
             #pragma multi_compile _ SHADOWS_SHADOWMASK
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
+            #include "Assets/GameRes/Shader/LoyRenderDebug.hlsl"
 
             struct Varyings
             {
@@ -221,6 +243,10 @@ Shader "Loy/VegetationGrass"
                 half3 tint : TEXCOORD2;
                 float3 positionWS : TEXCOORD3;
                 float4 shadowCoord : TEXCOORD4;
+                half3 vertexSH : TEXCOORD5;
+                #ifdef USE_APV_PROBE_OCCLUSION
+                    float4 probeOcclusion : TEXCOORD6;
+                #endif
             };
 
             Varyings vert(Attributes IN)
@@ -236,6 +262,7 @@ Shader "Loy/VegetationGrass"
                 OUT.tint = tint;
                 OUT.positionWS = worldPos;
                 OUT.shadowCoord = TransformWorldToShadowCoord(worldPos);
+                OUTPUT_SH4(worldPos, normalWS, GetWorldSpaceNormalizeViewDir(worldPos), OUT.vertexSH, OUT.probeOcclusion);
                 return OUT;
             }
 
@@ -254,11 +281,22 @@ Shader "Loy/VegetationGrass"
                 inputData.vertexLighting = half3(0, 0, 0);
                 // 环境光 = SH（方向性）+ _GlossyEnvironmentColor 兜底（URP 全局，保证非零）
                 // 乘数优先用 _GrassAmbientOverride（场景脚本实时设置），否则用材质/MPB 的 _AmbientStrength
-                half3 ambientGI = max(SampleSH(inputData.normalWS), _GlossyEnvironmentColor.rgb);
+                inputData.shadowMask = half4(0, 0, 0, 0);
+                #if defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2)
+                    half3 ambientGI = SAMPLE_GI(IN.vertexSH,
+                        GetAbsolutePositionWS(inputData.positionWS),
+                        inputData.normalWS,
+                        inputData.viewDirectionWS,
+                        inputData.positionCS.xy,
+                        IN.probeOcclusion,
+                        inputData.shadowMask);
+                #else
+                    half3 ambientGI = max(SampleSHPixel(IN.vertexSH, inputData.normalWS), _GlossyEnvironmentColor.rgb);
+                    inputData.shadowMask = half4(1, 1, 1, 1);
+                #endif
                 float ambientMul = _GrassAmbientOverride > 0.0 ? _GrassAmbientOverride : _AmbientStrength;
                 inputData.bakedGI = ambientGI * ambientMul;
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
-                inputData.shadowMask = half4(1, 1, 1, 1);
 
                 // albedo = 纹理 RGB × 逐株 tint（写实：草叶颜色来自贴图，tint 做逐株变化）
                 half3 albedo = VegetationAlbedo(tex.rgb * IN.tint, IN.uv.y);
@@ -283,6 +321,11 @@ Shader "Loy/VegetationGrass"
                                                   inputData.normalizedScreenSpaceUV);
 
                 GBufferFragOutput output = PackGBuffersBRDFData(brdfData, inputData, _Smoothness, color, occlusion);
+
+                #if defined(LOY_RENDER_DEBUG)
+                    output.color.rgb = LoyGetSurfaceDebugColor(albedo, 0.0h.xxx, color,
+                        inputData.normalWS, _Smoothness, 0.0h, occlusion);
+                #endif
 
                 // 打上草地 shading model 标记，延迟光照阶段走 GrassDeferredLighting
                 uint flags = UnpackGBufferMaterialFlags(output.gBuffer0.a) | kMaterialFlagGrass;

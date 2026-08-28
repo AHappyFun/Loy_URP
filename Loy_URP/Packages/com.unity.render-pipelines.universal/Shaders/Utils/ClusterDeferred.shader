@@ -54,6 +54,7 @@ Shader "Hidden/Universal Render Pipeline/ClusterDeferred"
             // Defines
             #define _CLUSTER_LIGHT_LOOP
             #define _LIT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -117,6 +118,7 @@ Shader "Hidden/Universal Render Pipeline/ClusterDeferred"
             // Defines
             #define _CLUSTER_LIGHT_LOOP
             #define _SIMPLELIT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords
@@ -168,6 +170,7 @@ Shader "Hidden/Universal Render Pipeline/ClusterDeferred"
             // -------------------------------------
             // Defines
             #define _FOG
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
             // -------------------------------------
             // Universal Pipeline keywords

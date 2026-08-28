@@ -4,6 +4,7 @@
 #define UNIVERSAL_FOG_DEFERRED
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferInput.hlsl"
+#include "Assets/GameRes/Shader/LoyRenderDebug.hlsl"
 
 struct Attributes
 {
@@ -36,6 +37,11 @@ Varyings Vertex(Attributes input)
 half4 Frag(Varyings input) : SV_Target
 {
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+    #if defined(LOY_RENDER_DEBUG)
+        UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+            return half4(0.0h, 0.0h, 0.0h, 1.0h);
+    #endif
 
     GBufferData gBufferData = UnpackGBuffers(input.positionCS.xy);
     float viewZ = LinearEyeDepth(gBufferData.depth, _ZBufferParams); // TODO: This wont work for orthographic camera!

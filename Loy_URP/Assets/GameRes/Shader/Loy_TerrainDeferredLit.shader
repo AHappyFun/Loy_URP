@@ -65,8 +65,17 @@ Shader "Loy/TerrainDeferredLit"
 
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
+
+    // Unity Terrain may keep a synthetic lightmap index (0) while APV is the
+    // active probe system. Treat APV variants as non-lightmapped so deferred
+    // lighting still applies realtime main-light shadows.
+    #if defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2)
+        #undef LIGHTMAP_ON
+    #endif
+
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
+    #include "LoyRenderDebug.hlsl"
     #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
 
     // -------------------------------------------------------------------------
@@ -201,6 +210,9 @@ Shader "Loy/TerrainDeferredLit"
         float3 positionWS    : TEXCOORD7;
         #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
             float4 shadowCoord : TEXCOORD8;
+        #endif
+        #ifdef USE_APV_PROBE_OCCLUSION
+            float4 probeOcclusion : TEXCOORD9;
         #endif
         float4 clipPos       : SV_POSITION;
         UNITY_VERTEX_OUTPUT_STEREO
@@ -340,9 +352,26 @@ Shader "Loy/TerrainDeferredLit"
         // SampleLightmap 返回白色 → ambientIntensity=0 时地形阴影仍发亮（已实测定位到这一项）。
         // 若以后要烘焙 lightmap，需在此重新加上 SampleLightmap(IN.uvMainAndLM.zw, inputData.normalWS)，
         // 并注意别和下面的 shGI 重复叠加环境光。
-        half3 shGI = max(SampleSH(inputData.normalWS), _GlossyEnvironmentColor.rgb);
-        inputData.bakedGI = shGI;
-        inputData.shadowMask = SAMPLE_SHADOWMASK(IN.uvMainAndLM.zw);
+        inputData.shadowMask = half4(0, 0, 0, 0);
+        #if defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2)
+            // Terrain can keep LIGHTMAP_ON enabled even when it is configured to
+            // receive APV. Call APV directly so the LIGHTMAP_ON SAMPLE_GI macro
+            // cannot redirect this path to the default terrain lightmap.
+            #ifdef USE_APV_PROBE_OCCLUSION
+                inputData.bakedGI = SampleProbeVolumePixel(IN.vertexSH,
+                    GetAbsolutePositionWS(inputData.positionWS), inputData.normalWS,
+                    inputData.viewDirectionWS, inputData.positionCS.xy,
+                    IN.probeOcclusion, inputData.shadowMask);
+            #else
+                inputData.bakedGI = SampleProbeVolumePixel(IN.vertexSH,
+                    GetAbsolutePositionWS(inputData.positionWS), inputData.normalWS,
+                    inputData.viewDirectionWS, inputData.positionCS.xy);
+            #endif
+        #else
+            half3 shGI = max(SampleSHPixel(IN.vertexSH, inputData.normalWS), _GlossyEnvironmentColor.rgb);
+            inputData.bakedGI = shGI;
+            inputData.shadowMask = SAMPLE_SHADOWMASK(IN.uvMainAndLM.zw);
+        #endif
     }
 
     // -------------------------------------------------------------------------
@@ -378,7 +407,8 @@ Shader "Loy/TerrainDeferredLit"
             o.normal = half3(TransformObjectToWorldNormal(v.normalOS));
         #endif
 
-        OUTPUT_SH(o.normal.xyz, o.vertexSH);
+        OUTPUT_SH4(positionInputs.positionWS, o.normal.xyz,
+            GetWorldSpaceNormalizeViewDir(positionInputs.positionWS), o.vertexSH, o.probeOcclusion);
 
         o.positionWS = positionInputs.positionWS;
         o.clipPos = positionInputs.positionCS;
@@ -452,7 +482,12 @@ Shader "Loy/TerrainDeferredLit"
                                        inputData.normalWS, inputData.viewDirectionWS, inputData.normalizedScreenSpaceUV);
         color.a = alpha;
 
-        return PackGBuffersBRDFData(brdfData, inputData, smoothness, color.rgb, occlusion);
+        GBufferFragOutput output = PackGBuffersBRDFData(brdfData, inputData, smoothness, color.rgb, occlusion);
+        #if defined(LOY_RENDER_DEBUG)
+            output.color.rgb = LoyGetSurfaceDebugColor(albedo, 0.0h.xxx, color.rgb,
+                inputData.normalWS, smoothness, metallic, occlusion);
+        #endif
+        return output;
     }
 
     // -------------------------------------------------------------------------
@@ -654,6 +689,7 @@ Shader "Loy/TerrainDeferredLit"
             #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ _MIXED_LIGHTING_SUBTRACTIVE
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
             #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fragment _ _LIGHT_COOKIES
@@ -683,8 +719,10 @@ Shader "Loy/TerrainDeferredLit"
             #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ _MIXED_LIGHTING_SUBTRACTIVE
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ProbeVolumeVariants.hlsl"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
             #pragma multi_compile_instancing
             #pragma instancing_options assumeuniformscaling nomatrices nolightprobe nolightmap
 
