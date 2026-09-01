@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Loy_Feature_VolumeCloud
-  m_Shader: {fileID: 4800000, guid: 1ed54bddc63b44bb8c4a307c6e367094, type: 3}
+  m_Name: Loy_Feature_GTAO
+  m_Shader: {fileID: 4800000, guid: 7158b57c14580d24fb6f605839e19205, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -23,18 +23,12 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
-    - _NoiseTex:
-        m_Texture: {fileID: 11700000, guid: 1fe54a721d0e2504e89f121c723404a8, type: 3}
+    - _MainTex:
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
-    m_Floats:
-    - _CloudDensity: 1.5
-    - _LightStep: 7
-    - _LightStepSize: 1
-    - _PhaseG: 0.24
-    - _StepSize: 0.05
-    m_Colors:
-    - _BoxCenter: {r: 0, g: 4.71, b: 0, a: 0}
-    - _BoxSize: {r: 2, g: 2, b: 2, a: 0}
+    m_Floats: []
+    m_Colors: []
   m_BuildTextureStacks: []
+  m_AllowLocking: 1

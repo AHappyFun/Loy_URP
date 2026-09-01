@@ -83,7 +83,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: VolumetricCloudsURP::VolumetricCloudsURP
   m_Active: 1
   material: {fileID: 2100000, guid: 3748131af20412e478461c6445c73923, type: 2}
-  renderingDebugger: 0
+  renderingDebugger: 1
   reflectionProbe: 0
   resolutionScale: 0.5
   upscaleMode: 0
@@ -139,6 +139,31 @@ MonoBehaviour:
     intensity: 2
     tint: {r: 1, g: 1, b: 1, a: 1}
     fogColor: {r: 0.41509432, g: 0.41509432, b: 0.41509432, a: 1}
+--- !u!114 &-3207955984075339624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c4940367a2fadd48bc02c67f0de4af5, type: 3}
+  m_Name: GTAORenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::GTAORenderFeature
+  m_Active: 1
+  settings:
+    gtaoMaterial: {fileID: 2100000, guid: 76b0e1024c01ed046a28ff1a68e10326, type: 2}
+    passEvent: 220
+    AOIntensity: 1
+    Radius: 0.3
+    Bias: 0.02
+    NumDirs: 8
+    NumSteps: 2
+    StepScale: 1.5
+    isHalfSize: 1
+    applyToGI: 1
+    MultiBounce: 0.4
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -171,7 +196,6 @@ MonoBehaviour:
   - {fileID: 4751200078909277272}
   - {fileID: 6978462706574381597}
   - {fileID: 7660457836123274701}
-  - {fileID: 7656126331739273248}
   - {fileID: 6041220770971095916}
   - {fileID: -8886208210172211487}
   - {fileID: -5298835949692327270}
@@ -180,7 +204,8 @@ MonoBehaviour:
   - {fileID: -4323354191741335186}
   - {fileID: -3445382669649501569}
   - {fileID: -8937840765294149112}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5effffb90e9ebb779d00000000000000007f224164b78a2fd0
+  - {fileID: -3207955984075339624}
+  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5e8a3f6d8877ea7f406ec90fcb445c00c47f224164b78a2fd00802a3bd2d69f68398c8196a070d7bd3
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -343,7 +368,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 955d35bc18444448956540aee140d2a4, type: 3}
   m_Name: HBAORenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::HBAORenderFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
     passEvent: 220
@@ -390,22 +415,6 @@ MonoBehaviour:
     passEvent: 240
     maxSteps: 200
     stepSize: 0.1
---- !u!114 &7656126331739273248
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 35123f25234847e8a06663fb64049041, type: 3}
-  m_Name: VolumeCloudRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::VolumeCloudRenderFeature
-  m_Active: 0
-  Settings:
-    vcMaterial: {fileID: 2100000, guid: 37d18cba5b861fd4da7329f6502c0025, type: 2}
-    passEvent: 240
 --- !u!114 &7660457836123274701
 MonoBehaviour:
   m_ObjectHideFlags: 0
