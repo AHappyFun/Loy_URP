@@ -96,7 +96,7 @@ inline void InitSurfaceData(float2 uv, out LoySurfaceData outSurface)
     half4 specGloss = SAMPLE_TEXTURE2D(_MetallicGlossMap, sampler_MetallicGlossMap, uv);
     outSurface.metallic = specGloss.r * _Metallic;
     outSurface.smoothness = saturate(specGloss.a * _Smoothness);
-    outSurface.occlusion = 1 * _Occlusion;//specGloss.b;
+    outSurface.occlusion = specGloss.g * _Occlusion;
 
     //自发光
     //白天夜晚可以Fade 自发光强度
