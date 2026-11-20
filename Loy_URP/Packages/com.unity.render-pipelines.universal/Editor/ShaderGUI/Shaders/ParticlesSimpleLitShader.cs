@@ -40,7 +40,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
 
         public override void DrawAdvancedOptions(Material material)
         {
-            SimpleLitGUI.Advanced(shadingModelProperties);
+            SimpleLitGUI.Advanced(shadingModelProperties, materialEditor, material);
 
             materialEditor.ShaderProperty(particleProps.flipbookMode, ParticleGUI.Styles.flipbookMode);
             ParticleGUI.FadingOptions(material, materialEditor, particleProps);
@@ -59,7 +59,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGUI
         {
             m_RenderersUsingThisMaterial.Clear();
 
+            #pragma warning disable CS0618 // Type or member is obsolete
             ParticleSystemRenderer[] renderers = UnityEngine.Object.FindObjectsByType<ParticleSystemRenderer>(FindObjectsSortMode.InstanceID);
+#pragma warning restore CS0618 // Type or member is obsolete
             foreach (ParticleSystemRenderer renderer in renderers)
             {
                 if (renderer.sharedMaterial == material)

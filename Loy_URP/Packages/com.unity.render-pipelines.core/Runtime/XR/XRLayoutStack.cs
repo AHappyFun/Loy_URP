@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine.Pool;
 
 namespace UnityEngine.Experimental.Rendering
 {
@@ -10,10 +9,12 @@ namespace UnityEngine.Experimental.Rendering
 
         public XRLayout New()
         {
-            GenericPool<XRLayout>.Get(out var layout);
+            UnityEngine.Pool.GenericPool<XRLayout>.Get(out var layout);
             m_Stack.Push(layout);
             return layout;
         }
+
+        public bool hasLayout => m_Stack.Count > 0;
 
         public XRLayout top => m_Stack.Peek();
 
@@ -23,7 +24,7 @@ namespace UnityEngine.Experimental.Rendering
                 throw new InvalidOperationException($"Calling {nameof(Release)} without calling {nameof(New)} first.");
 
             value.Clear();
-            GenericPool<XRLayout>.Release(value);
+            UnityEngine.Pool.GenericPool<XRLayout>.Release(value);
         }
 
         public void Dispose()

@@ -6,6 +6,14 @@ namespace UnityEngine.Rendering
         // Singleton
         static DebugShapes s_Instance = null;
 
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            s_Instance = null;
+        }
+#endif
+
         /// <summary>Singleton instance</summary>
         static public DebugShapes instance
         {

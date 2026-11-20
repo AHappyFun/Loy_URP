@@ -42,14 +42,14 @@ namespace UnityEditor.Rendering
                         {
                             background = m_TransparentTexture,
                             scaledBackgrounds = null,
-                            textColor = Color.grey
+                            textColor = EditorGUIUtility.isProSkin ? Color.grey : new Color(0.25f, 0.25f, 0.25f, 1f)
                         }
                     };
                     var activeState = new GUIStyleState
                     {
                         background = m_TransparentTexture,
                         scaledBackgrounds = null,
-                        textColor = Color.white
+                        textColor = EditorGUIUtility.isProSkin ? Color.white : Color.black
                     };
                     m_MiniLabelButton.active = activeState;
                     m_MiniLabelButton.onNormal = activeState;
@@ -179,15 +179,15 @@ namespace UnityEditor.Rendering
         public static readonly GUIContent contextMenuIcon;
 
         /// <summary>Reset Content</summary>
-        public static readonly GUIContent resetButtonLabel = EditorGUIUtility.TrTextContent("Reset");
+        public static readonly GUIContent resetButtonLabel = L10n.TextContent("Reset", null, null, null);
 
         /// <summary>Reset All content</summary>
-        public static readonly GUIContent resetAllButtonLabel = EditorGUIUtility.TrTextContent("Reset All");
+        public static readonly GUIContent resetAllButtonLabel = L10n.TextContent("Reset All", null, null, null);
 
         /// <summary>
         /// Empty space content in case that you want to keep the indentation but have nothing to write
         /// </summary>
-        public static readonly GUIContent empty = EditorGUIUtility.TrTextContent(" ");
+        public static readonly GUIContent empty = L10n.TextContent(" ", null, null, null);
 
         #endregion
 

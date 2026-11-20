@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Unity.Scripting.LifecycleManagement;
 using UnityEngine.VFX;
 
 namespace UnityEngine.Rendering
@@ -9,8 +10,13 @@ namespace UnityEngine.Rendering
     /// </summary>
     public struct CommandBufferHelpers
     {
+        // These variables are just wrappers for the CommandBuffer supplied to methods below, so their state doesn't need
+        // to be reset when entering play mode.
+        [NoAutoStaticsCleanup]
         internal static RasterCommandBuffer rasterCmd = new RasterCommandBuffer(null, null, false);
+        [NoAutoStaticsCleanup]
         internal static ComputeCommandBuffer computeCmd = new ComputeCommandBuffer(null, null, false);
+        [NoAutoStaticsCleanup]
         internal static UnsafeCommandBuffer unsafeCmd = new UnsafeCommandBuffer(null, null, false);
 
         /// <summary>

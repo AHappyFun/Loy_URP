@@ -1,4 +1,5 @@
 using System;
+using Unity.Scripting.LifecycleManagement;
 #if UNITY_EDITOR
 using UnityEditor.Rendering;
 #endif
@@ -23,6 +24,8 @@ namespace UnityEngine.Rendering
             EditorGraphicsSettings.GetRenderPipelineGlobalSettingsAsset<TRenderPipeline>() as TGlobalRenderPipelineSettings;
 #else
         public static TGlobalRenderPipelineSettings instance => s_Instance.Value;
+
+        [NoAutoStaticsCleanup]
         private static Lazy<TGlobalRenderPipelineSettings> s_Instance = new (() => GraphicsSettings.GetSettingsForRenderPipeline<TRenderPipeline>() as TGlobalRenderPipelineSettings);
 #endif
 

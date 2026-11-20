@@ -10,7 +10,15 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
     /// </summary>
     public static partial class RenderGraphUtils
     {
-        static MaterialPropertyBlock s_PropertyBlock = new MaterialPropertyBlock();
+        static readonly MaterialPropertyBlock s_PropertyBlock = new MaterialPropertyBlock();
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            s_PropertyBlock.Clear();
+        }
+#endif
 
         /// <summary>
         /// Checks if the shader features required by the MSAA version of the copy pass is supported on current platform.
@@ -50,15 +58,6 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
             return Blitter.CanCopyMSAA(bindTextureMS);
         }
 
-        internal static bool IsFramebufferFetchEmulationSupportedOnCurrentPlatform()
-        {
-#if PLATFORM_WEBGL
-            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLES3)
-                return false;
-#endif
-            return true;
-        }
-
         internal static bool IsFramebufferFetchEmulationMSAASupportedOnCurrentPlatform()
         {
             // TODO: Temporarily disable this utility pending a more efficient solution for supporting or disabling framebuffer fetch emulation on PS4/PS5.
@@ -79,9 +78,6 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
         /// </returns>
         public static bool IsFramebufferFetchSupportedOnCurrentPlatform(this RenderGraph graph, in TextureHandle tex)
         {
-            if (!IsFramebufferFetchEmulationSupportedOnCurrentPlatform())
-                return false;
-
             if (!IsFramebufferFetchEmulationMSAASupportedOnCurrentPlatform())
             {
                 var sourceInfo = graph.GetRenderTargetInfo(tex);
@@ -101,12 +97,6 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
         public static bool CanAddCopyPass(this RenderGraph graph, TextureHandle source, TextureHandle destination)
         {
             if (!source.IsValid() || !destination.IsValid())
-                return false;
-
-            if (!graph.nativeRenderPassesEnabled)
-                return false;
-
-            if (!IsFramebufferFetchEmulationSupportedOnCurrentPlatform())
                 return false;
 
             var sourceInfo = graph.GetRenderTargetInfo(source);
@@ -152,7 +142,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
         /// function please use the AddBlitPass function. To verify whether the copy pass is supported for the intended operation, use the CanAddCopyPass function.
         ///
         /// When XR is active, array textures containing both eyes will be automatically copied.
-        /// 
+        ///
         /// </summary>
         /// <param name="graph">The RenderGraph adding this pass to.</param>
         /// <param name="source">The texture the data is copied from.</param>
@@ -170,12 +160,10 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
             bool returnBuilder = false
 #if !CORE_PACKAGE_DOCTOOLS
             , [CallerFilePath] string file = "",
-            [CallerLineNumber] int line = 0)
+            [CallerLineNumber] int line = 0
 #endif
+            )
         {
-            if (!graph.nativeRenderPassesEnabled)
-                throw new ArgumentException("CopyPass only supported for native render pass. Please use the blit functions instead for non native render pass platforms.");
-
             var sourceInfo = graph.GetRenderTargetInfo(source);
             var destinationInfo = graph.GetRenderTargetInfo(destination);
 
@@ -212,9 +200,9 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
                 passData.isMSAA = isMSAA;
                 passData.force2DForXR = isXRArrayTextureActive && (!isArrayTexture);
 
-                builder.SetInputAttachment(source, 0, AccessFlags.Read);
+                builder.SetInputAttachment(source, 0);
                 builder.SetRenderAttachment(destination, 0, AccessFlags.Write);
-                builder.SetRenderFunc((CopyPassData data, RasterGraphContext context) => CopyRenderFunc(data, context));
+                builder.SetRenderFunc(static (CopyPassData data, RasterGraphContext context) => CopyRenderFunc(data, context));
 
                 if (passData.force2DForXR)
                     builder.AllowGlobalStateModification(true);// So we can set the keywords
@@ -268,8 +256,9 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
             string passName = "Copy Pass Utility"
 #if !CORE_PACKAGE_DOCTOOLS
             , [CallerFilePath] string file = "",
-            [CallerLineNumber] int line = 0)
+            [CallerLineNumber] int line = 0
 #endif
+            )
         {
             AddCopyPass(graph, source, destination, passName, false, file, line);
         }
@@ -383,8 +372,9 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
             bool returnBuilder = false
 #if !CORE_PACKAGE_DOCTOOLS
                 , [CallerFilePath] string file = "",
-                [CallerLineNumber] int line = 0)
+                [CallerLineNumber] int line = 0
 #endif
+            )
         {
             if (!source.IsValid())
             {
@@ -451,7 +441,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
                 passData.isDepth = destinationIsDepth;
                 builder.UseTexture(source, AccessFlags.Read);
                 builder.UseTexture(destination, AccessFlags.Write);
-                builder.SetRenderFunc((BlitPassData data, UnsafeGraphContext context) => BlitRenderFunc(data, context));
+                builder.SetRenderFunc(static (BlitPassData data, UnsafeGraphContext context) => BlitRenderFunc(data, context));
             }
             catch
             {
@@ -941,8 +931,9 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
             bool returnBuilder = false
 #if !CORE_PACKAGE_DOCTOOLS
                 , [CallerFilePath] string file = "",
-                [CallerLineNumber] int line = 0)
+                [CallerLineNumber] int line = 0
 #endif
+            )
         {
             if (!blitParameters.destination.IsValid())
             {
@@ -1026,7 +1017,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.Util
                     builder.UseTexture(blitParameters.source);
                 }
                 builder.UseTexture(blitParameters.destination, AccessFlags.Write);
-                builder.SetRenderFunc((BlitMaterialPassData data, UnsafeGraphContext context) => BlitMaterialRenderFunc(data, context));
+                builder.SetRenderFunc(static (BlitMaterialPassData data, UnsafeGraphContext context) => BlitMaterialRenderFunc(data, context));
             }
             catch
             {

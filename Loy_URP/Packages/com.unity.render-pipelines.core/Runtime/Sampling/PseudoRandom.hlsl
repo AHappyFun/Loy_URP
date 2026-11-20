@@ -19,10 +19,15 @@ struct QrngXorShift
         state = seed;
     }
 
-    float GetFloat(uint dimension)
+    float GetSample()
     {
         state = XorShift32(state);
         return UintToFloat01(state);
+    }
+
+    float2 GetSample(uint dimension)
+    {
+        return float2(GetSample(), GetSample());
     }
 
     void NextSample()
@@ -46,10 +51,15 @@ struct QrngPcg4D
         state = uint4(seed, 1, startSampleIndex, 0);
     }
 
-    float GetFloat(int dimension)
+    float GetSample()
     {
         state.w++;
         return UintToFloat01(Pcg4d(state).x);
+    }
+
+    float2 GetSample(uint dimension)
+    {
+        return float2(GetSample(), GetSample());
     }
 
     void NextSample()

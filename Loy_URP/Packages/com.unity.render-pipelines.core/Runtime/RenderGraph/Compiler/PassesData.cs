@@ -153,11 +153,12 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         public bool fragmentInfoValid;
         public bool fragmentInfoHasDepth;
         public bool fragmentInfoHasShadingRateImage => shadingRateImageIndex > 0;
+        public bool fragmentInfoHasDepthInputAttachment => extendedFeatureFlags.HasFlag(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment) && numFragmentInputs > 0;
         public bool insertGraphicsFence; // Whether this pass should insert a fence into the command buffer
         public bool hasShadingRateStates;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Name GetName(CompilerContextData ctx) => ctx.GetFullPassName(passId);
+        public string GetName(CompilerContextData ctx) => ctx.GetPassName(passId);
 
         public PassData(in RenderGraphPass pass, int passIndex)
         {
@@ -305,7 +306,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         {
             errorMessage = null;
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (h.type != RenderGraphResourceType.Texture)
             {
                 errorMessage = RenderGraph.RenderGraphExceptionMessages.k_NonTextureAsAttachmentError;
@@ -315,7 +316,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
 
             ref readonly var resInfo = ref ctx.UnversionedResourceData(h);
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (resInfo.width == 0 || resInfo.height == 0 || resInfo.msaaSamples == 0)
             {
                 errorMessage = RenderGraph.RenderGraphExceptionMessages.k_InvalidGetRenderTargetInfoResultsError;
@@ -324,7 +325,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
 #endif
             if (RenderGraph.enableValidityChecks && fragmentInfoValid)
             {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                 if (fragmentInfoWidth != resInfo.width ||
                     fragmentInfoHeight != resInfo.height ||
                     fragmentInfoVolumeDepth != resInfo.volumeDepth)
@@ -518,6 +519,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         ClearImported,
         ClearCreated,
         FullyRewritten,
+        DontCareMemoryless,
 
         Count
     }
@@ -532,6 +534,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             "The resource is imported in the graph but was imported with the 'clear on first use' option enabled. The data is cleared.",
             "The resource is created in this pass and cleared on first use.",
             "The pass indicated it will rewrite the full resource contents. Existing contents are not loaded or cleared.",
+            "The resource is marked as memoryless. No data is loaded."
         };
 
         public readonly LoadReason reason;
@@ -611,6 +614,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         MultisampledShaderResolveMustBeLastPass, // The current pass has MultisampledShaderResolve specified and so must be the last pass
         ExtendedFeatureFlagsIncompatible, // Handles the case where flags added via SetExtendedFeatureFlags are not compatible
         PassMergingDisabled, // Wasn't merged because pass merging is disabled
+        BackbufferInMultipleRenderTargetsNotSupported, // Prevent RG pass merging if one pass targets the backbuffer and the other pass some user render targets
+        MixedAllDepthSlicesAndSingleDepthSlice, // Prevent RG pass merging if one pass targets all depth slices while the other pass targets an individual depth slice
         Merged, // I actually got merged
 
         Count
@@ -640,7 +645,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             "The next pass uses a texture sampled in this pass as a render target.",
             "The next pass is not a raster render pass.",
             "The next pass uses a different depth buffer. All passes in the native render pass need to use the same depth buffer.",
-            $"The limit of {FixedAttachmentArray<PassFragmentData>.MaxAttachments} native pass attachments would be exceeded when merging with the next pass.",
+            $"The limit of {RenderGraph.kMaxMRTCount} native pass colour attachments would be exceeded when merging with the next pass.",
             $"The limit of {NativePassCompiler.k_MaxSubpass} native subpasses would be exceeded when merging with the next pass.",
             "This is the last pass in the graph, there are no other passes to merge.",
             "The next pass uses a different foveated rendering state",
@@ -649,6 +654,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             "The current merged pass uses multisampled shader resolve and so can't have any more passes merged into it.",
             "Extended feature flags are incompatible",
             "Pass merging is disabled so this pass was not merged",
+            "One pass targets the backbuffer while the other pass targets some user texture, this is not supported on this platform.",
+            "The passes use the same resource using different depth slice modes (all slices (-1) vs specific single slice).",
             "The next pass got merged into this pass.",
         };
     }
@@ -667,6 +674,9 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         public int firstGraphPass; // Offset+count in context pass array
         public int lastGraphPass;
         public int numGraphPasses;
+
+        public int firstCompactedNonCulledRasterPass;
+        public int lastCompactedNonCulledRasterPass;
 
         public int firstNativeSubPass; // Offset+count in context subpass array
         public int numNativeSubPasses;
@@ -693,6 +703,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             numGraphPasses = 1;
             firstNativeSubPass = -1; // Set up during compile
             numNativeSubPasses = 0;
+            firstCompactedNonCulledRasterPass = -1;
+            lastCompactedNonCulledRasterPass = -1;
 
             fragments = new FixedAttachmentArray<PassFragmentData>();
             attachments = new FixedAttachmentArray<NativePassAttachment>();
@@ -734,6 +746,14 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             primitiveShadingRateCombiner = pass.primitiveShadingRateCombiner;
             fragmentShadingRateCombiner = pass.fragmentShadingRateCombiner;
 
+            // Depth input attachment needs special handling if the native pass doesn't have depth but has depth input attachment
+            // Backend require depth input attachment to be set as depth attachment.
+            // Jira work tracking the depth input attachment only use case investigation (not set as depth attachment): https://jira.unity3d.com/projects/GXR/issues/GXR-214
+            if (!hasDepth && pass.fragmentInfoHasDepthInputAttachment)
+            {
+                AddDepthAttachmentFromDepthInputAttachment(ctx, ctx.fragmentData[pass.firstFragmentInput]);
+            }
+
             // Graph pass is added as the first native subpass
             TryMergeNativeSubPass(ctx, ref this, ref pass);
         }
@@ -747,12 +767,18 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 throw new Exception(RenderGraph.RenderGraphExceptionMessages.k_CannotDetermineSubPassFlagNoDepth);
             }
 
+            // Depth attachment is always at index 0.
+            return GetSubPassFlagForMerging(fragments[0].accessFlags);
+        }
+
+        // Same as above, from the access flags of the native pass depth attachment.
+        static SubPassFlags GetSubPassFlagForMerging(AccessFlags depthAccessFlags)
+        {
             // Only do this for mobile using Vulkan.
 #if (PLATFORM_ANDROID)
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Vulkan)
             {
-                // Depth attachment is always at index 0.
-                return (fragments[0].accessFlags.HasFlag(AccessFlags.Write)) ? SubPassFlags.None : SubPassFlags.ReadOnlyDepth;
+                return (depthAccessFlags.HasFlag(AccessFlags.Write)) ? SubPassFlags.None : SubPassFlags.ReadOnlyDepth;
             }
             else
             {
@@ -768,6 +794,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         {
             firstGraphPass = 0;
             numGraphPasses = 0;
+            firstCompactedNonCulledRasterPass = -1;
+            lastCompactedNonCulledRasterPass = -1;
             attachments.Clear();
             fragments.Clear();
             loadAudit.Clear();
@@ -780,43 +808,20 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             return numGraphPasses > 0;
         }
 
+        // This method cannot be called during the Compile step.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ReadOnlySpan<PassData> GraphPasses(CompilerContextData ctx, out NativeArray<PassData> actualPasses)
+        public readonly ReadOnlySpan<PassData> GraphPasses(CompilerContextData ctx)
         {
             // When there's no pass being culled, we can directly return a Span of the Native List
             if (lastGraphPass - firstGraphPass + 1 == numGraphPasses)
             {
-                actualPasses = default;
                 return ctx.passData.MakeReadOnlySpan(firstGraphPass, numGraphPasses);
             }
 
-            actualPasses =
-                new NativeArray<PassData>(numGraphPasses, Allocator.Temp,
-                    NativeArrayOptions.UninitializedMemory);
+            if (ctx.compactedNonCulledRasterPasses.IsEmpty)
+                throw new Exception(RenderGraph.RenderGraphExceptionMessages.k_GraphPassesCalledBeforeCompactedNonCulledRasterPasses);
 
-            for (int i = firstGraphPass, index = 0; i < lastGraphPass + 1; ++i)
-            {
-                var pass = ctx.passData[i];
-                if (!pass.culled)
-                {
-                    actualPasses[index++] = pass;
-                }
-            }
-
-            return actualPasses;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void GetGraphPassNames(CompilerContextData ctx, DynamicArray<Name> dest)
-        {
-            var span = GraphPasses(ctx, out var actualPasses);
-            foreach (ref readonly var pass in span)
-            {
-                dest.Add(pass.GetName(ctx));
-            }
-
-            if (actualPasses.IsCreated)
-                actualPasses.Dispose();
+            return ctx.compactedNonCulledRasterPasses.MakeReadOnlySpan(firstCompactedNonCulledRasterPass, lastCompactedNonCulledRasterPass - firstCompactedNonCulledRasterPass + 1);
         }
 
         static bool CanMergeMSAASamples(ref NativePassData nativePass, ref PassData passToMerge)
@@ -869,6 +874,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 if (nativePass.hasDepth && passToMerge.fragmentInfoHasDepth)
                 {
                     ref readonly var firstFragment = ref contextData.fragmentData.ElementAt(passToMerge.firstFragment);
+
                     if (nativePass.fragments[0].resource.index != firstFragment.resource.index)
                     {
                         return new PassBreakAudit(PassBreakReason.DifferentDepthTextures, passIdToMerge);
@@ -950,17 +956,22 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             var attachmentsToTryAdding = new FixedAttachmentArray<PassFragmentData>();
 
             // We can't have more than the maximum amount of attachments in a given native renderpass
-            int currAvailableAttachmentSlots = FixedAttachmentArray<PassFragmentData>.MaxAttachments - nativePass.fragments.size;
+            bool mergedPassHasDepth = nativePass.hasDepth || passToMerge.fragmentInfoHasDepth || passToMerge.fragmentInfoHasDepthInputAttachment;
+            int maxFragments = RenderGraph.kMaxMRTCount + (mergedPassHasDepth ? 1 : 0) + (nativePass.hasShadingRateImage ? 1 : 0);
+            int currAvailableAttachmentSlots = maxFragments - nativePass.fragments.size;
 
             // Early exit: only build the HashSet and check if we actually have fragments to check against it
             if (passToMerge.numFragments > 0)
             {
                 // Temporary cache of sampled textures in current Native Render Pass for conflict detection against fragments
-                using (HashSetPool<int>.Get(out var tempSampledTextures))
+                using (UnityEngine.Pool.HashSetPool<int>.Get(out var tempSampledTextures))
                 {
-                    var graphPasses = nativePass.GraphPasses(contextData, out var actualPasses);
-                    foreach (ref readonly var graphPass in graphPasses)
+                    for (int i = nativePass.firstGraphPass; i < nativePass.lastGraphPass + 1; ++i)
                     {
+                        ref var graphPass = ref contextData.passData.ElementAt(i);
+                        if (graphPass.culled)
+                            continue;
+
                         if (graphPass.numSampledOnlyRaster > 0) // Skip passes with no sampled textures
                         {
                             foreach (ref readonly var earlierInput in graphPass.SampledTexturesIfRaster(contextData))
@@ -969,9 +980,6 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                             }
                         }
                     }
-
-                    if (actualPasses.IsCreated)
-                        actualPasses.Dispose();
 
                     foreach (ref readonly var fragment in passToMerge.Fragments(contextData))
                     {
@@ -984,6 +992,19 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                                 alreadyAttached = true;
                                 break;
                             }
+
+                            // We can't mix "all slices" binding with "single slice" binding for the same resource in a native render pass, so we need to break the merge if we detect this case
+                            // Note generally we do allow mixing "all slices" with explicit slices in a single pass of *different* resources as -1 is often used as a "Default / don't care" argument
+                            // See https://jira.unity3d.com/browse/UUM-145513 for details.
+                            if (nativePass.fragments[i].resource.index == fragment.resource.index)
+                            {
+                                int curDs = nativePass.fragments[i].depthSlice;
+                                int newDS = fragment.depthSlice;
+                                if (curDs != newDS && (curDs == -1 || newDS == -1))
+                                {
+                                    return new PassBreakAudit(PassBreakReason.MixedAllDepthSlicesAndSingleDepthSlice, passIdToMerge);                                
+                                }
+                            }
                         }
 
                         // This fragment is not attached to the native renderpass yet, we will need to attach it
@@ -991,7 +1012,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                         {
                             // We already reached the maximum amount of attachments in this renderpass
                             // We can't add any new attachment, just start a new renderpass
-                            if (currAvailableAttachmentSlots == 0)
+                            if (currAvailableAttachmentSlots <= 0)
                             {
                                 return new PassBreakAudit(PassBreakReason.AttachmentLimitReached, passIdToMerge);
                             }
@@ -1029,7 +1050,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 {
                     // We already reached the maximum amount of attachments in this native renderpass
                     // We can't add any new attachment, just start a new renderpass
-                    if (currAvailableAttachmentSlots == 0)
+                    if (currAvailableAttachmentSlots <= 0)
                     {
                         return new PassBreakAudit(PassBreakReason.AttachmentLimitReached, passIdToMerge);
                     }
@@ -1048,19 +1069,60 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             }
 
             // We check first if we are at risk of having too many subpasses,
-            // only then we do the costlier subpass merging check, short circuiting it whenever possible
-            bool canAddAnExtraSubpass = (nativePass.numGraphPasses < NativePassCompiler.k_MaxSubpass);
+            // only then we do the costlier subpass merging check, short circuiting it whenever possible.
+            // The limit is on native subpasses: graph passes merged into the same native subpass don't count.
+            bool canAddAnExtraSubpass = (nativePass.numNativeSubPasses < NativePassCompiler.k_MaxSubpass);
             if (!canAddAnExtraSubpass && !CanMergeNativeSubPass(contextData, ref nativePass, ref passToMerge))
             {
                 return new PassBreakAudit(PassBreakReason.SubPassLimitReached, passIdToMerge);
+            }
+
+            var compatibleAttachments = CanMergeBackBufferAndCustomRenderTargets(contextData, ref nativePass, ref passToMerge, passIdToMerge);
+            if (!compatibleAttachments)
+            {
+                return new PassBreakAudit(PassBreakReason.BackbufferInMultipleRenderTargetsNotSupported, passIdToMerge);
             }
 
             // All is good! Pass can be merged into active native pass
             return new PassBreakAudit(PassBreakReason.Merged, passIdToMerge);
         }
 
+        static bool CanMergeBackBufferAndCustomRenderTargets(CompilerContextData contextData, ref NativePassData nativePass, ref PassData passToMerge, int passIdToMerge)
+        {
+            if (SystemInfo.supportsBackbufferInMultipleRenderTargets)
+                return true;
+
+            var hasBackBuffer = false;
+            var hasCustomRenderTarget = false;
+
+            foreach (ref readonly var graphPassFragment in passToMerge.Fragments(contextData))
+            {
+                var isBackBuffer = contextData.UnversionedResourceData(graphPassFragment.resource).isBackBuffer;
+
+                hasBackBuffer |= isBackBuffer;
+                hasCustomRenderTarget |= !isBackBuffer;
+            }
+
+            for (int i = 0; i < nativePass.fragments.size; ++i)
+            {
+                var isBackBuffer = contextData.UnversionedResourceData(nativePass.fragments[i].resource).isBackBuffer;
+
+                hasBackBuffer |= isBackBuffer;
+                hasCustomRenderTarget |= !isBackBuffer;
+
+                if (hasBackBuffer && hasCustomRenderTarget)
+                    return false;
+            }
+
+            return true;
+        }
+
         static bool TotalAttachmentsSizeExceedPixelStorageLimit(CompilerContextData contextData, ref NativePassData nativePass, ref FixedAttachmentArray<PassFragmentData> attachmentsToTryAdding)
         {
+            // A merge that adds no attachment cannot grow the tile footprint, so it can never exceed the limit
+            if (attachmentsToTryAdding.size == 0)
+                return false;
+
             // TODO: We are currently only checking for iOS GPU Family 1 to 3 since the storage size is much more restricted (16 bytes for Family 1 and 32 for Family 2 & 3).
             // This is temporary. Later on, we should check all iOS GPU Families but also Android (Vulkan) to avoid the same potential restrictions.
             if (Application.platform == RuntimePlatform.IPhonePlayer && SystemInfo.maxTiledPixelStorageSize <= 32)
@@ -1083,7 +1145,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
 
                 return totalSize > SystemInfo.maxTiledPixelStorageSize;
             }
-            
+
             return false;
         }
 
@@ -1144,6 +1206,20 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 // Check if we're handling the depth attachment
                 if (currRenderGraphPassHasDepth && fragmentIdx == 0)
                 {
+#if UNITY_ENABLE_CHECKS
+                    // If depth input attachment flag is set, depth must be read-only
+                    if (passToMerge.extendedFeatureFlags.HasFlag(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment))
+                    {
+                        if (graphPassFragment.accessFlags.HasFlag(AccessFlags.Write))
+                        {
+                            // Depth input attachments cannot have write access
+                            throw new InvalidOperationException(
+                                RenderGraph.RenderGraphExceptionMessages.DepthInputAttachmentWithWriteAccess(
+                                    passToMerge.GetName(contextData)));
+                        }
+                    }
+#endif
+
                     flags = (graphPassFragment.accessFlags.HasFlag(AccessFlags.Write))
                         ? SubPassFlags.None
                         : SubPassFlags.ReadOnlyDepth;
@@ -1195,8 +1271,23 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 inputIndex++;
             }
 
+            // Check if depth is used as input attachment
+            if (passToMerge.extendedFeatureFlags.HasFlag(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment))
+            {
+                // Depth input attachments are read-only
+                flags = SubPassFlags.ReadOnlyDepth;
+            }
+
+            // If the native pass gets its depth attachment from this merge, TryMerge adds it first and updates
+            // the flags of the existing subpasses, the last one included (see AddDepthAttachmentFirstDuringMerge)
+            SubPassFlags lastPassFlags = lastPass.flags;
+            if (currRenderGraphPassHasDepth && !nativePass.hasDepth)
+            {
+                lastPassFlags |= GetSubPassFlagForMerging(contextData.fragmentData[passToMerge.firstFragment].accessFlags);
+            }
+
             // last check for flags
-            return flags == lastPass.flags;
+            return flags == lastPassFlags;
         }
 
         // Try to merge the new graph pass into the last native sub pass or create a new one in the current native pass.
@@ -1246,6 +1337,20 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     // Check if we're handling the depth attachment
                     if (passToMerge.fragmentInfoHasDepth && fragmentIdx == 0)
                     {
+#if UNITY_ENABLE_CHECKS
+                        // If depth input attachment flag is set, depth must be read-only
+                        if (passToMerge.extendedFeatureFlags.HasFlag(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment))
+                        {
+                            if (graphPassFragment.accessFlags.HasFlag(AccessFlags.Write))
+                            {
+                                // Depth input attachments cannot have write access
+                                throw new InvalidOperationException(
+                                    RenderGraph.RenderGraphExceptionMessages.DepthInputAttachmentWithWriteAccess(
+                                        passToMerge.GetName(contextData)));
+                            }
+                        }
+#endif
+
                         desc.flags = (graphPassFragment.accessFlags.HasFlag(AccessFlags.Write))
                             ? SubPassFlags.None
                             : SubPassFlags.ReadOnlyDepth;
@@ -1299,6 +1404,13 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 }
             }
 
+            // Check if depth is used as input attachment
+            if (passToMerge.extendedFeatureFlags.HasFlag(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment))
+            {
+                // Depth input attachments are read-only
+                desc.flags = SubPassFlags.ReadOnlyDepth;
+            }
+
             // Shading rate images
             {
                 if (passToMerge.fragmentInfoHasShadingRateImage)
@@ -1324,6 +1436,80 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             }
 
             passToMerge.nativeSubPassIndex = nativePass.numNativeSubPasses - 1;
+        }
+
+        // Setup depth input attachment as depth attachment for the native pass
+        void AddDepthAttachmentFromDepthInputAttachment(CompilerContextData contextData, in PassFragmentData depthInputAttachment)
+        {
+            // If there is already depth. No need to setup depth.
+            Debug.Assert(!hasDepth);
+
+            // Try find the input attachment in native pass fragments list. 
+            int depthInputAttachmentIdx = -1;
+            for (int fragmentId = 0; fragmentId < fragments.size; ++fragmentId)
+            {
+                if (PassFragmentData.SameSubResource(fragments[fragmentId], depthInputAttachment))
+                {
+                    depthInputAttachmentIdx = fragmentId;
+                    break;
+                }
+            }
+
+            // Rare case, depth input attachment is the first attachment but it is not used as depth attachment.
+            if (depthInputAttachmentIdx == 0)
+            {
+                // Set it as depth attachment. We are done.
+                hasDepth = true;
+                return; 
+            }
+            // attachment is not added to native fragments list yet
+            else if(depthInputAttachmentIdx == -1)
+            {
+                // Add it to attachment list and.
+                fragments.Add(depthInputAttachment);
+
+                // If depth is the only attachment of the native pass, set it as depth attachment. We are done
+                if (fragments.size == 1)
+                {
+                    hasDepth = true;
+                    return;
+                }
+                // In this case, we are adding depth input attachment to a native pass with other existing attachments
+                depthInputAttachmentIdx = fragments.size - 1;
+            }
+
+            // Place the depth input attachment as the first attachment and set it as depth attachment.
+            (fragments[0], fragments[depthInputAttachmentIdx]) = (fragments[depthInputAttachmentIdx], fragments[0]);
+            hasDepth = true;
+
+            // Update previous subpasses descriptor
+            for (var nativeSubPassIndex = firstNativeSubPass; nativeSubPassIndex < firstNativeSubPass + numNativeSubPasses; nativeSubPassIndex++)
+            {
+                ref var subPassDesc = ref contextData.nativeSubPassData.ElementAt(nativeSubPassIndex);
+
+                // Updating subpass color outputs
+                for (int i = 0; i < subPassDesc.colorOutputs.Length; i++)
+                {
+                    if (subPassDesc.colorOutputs[i] == 0)
+                    {
+                        subPassDesc.colorOutputs[i] = depthInputAttachmentIdx;
+                    }
+                }
+
+                // Updating subpass color inputs (framebuffer fetch)
+                for (int i = 0; i < subPassDesc.inputs.Length; i++)
+                {
+                    if (subPassDesc.inputs[i] == 0)
+                    {
+                        subPassDesc.inputs[i] = depthInputAttachmentIdx;
+                    }
+                }
+            }
+
+            if (hasShadingRateImage && shadingRateImageIndex == 0)
+            {
+                shadingRateImageIndex = depthInputAttachmentIdx;
+            }
         }
 
         // Call this function while merging a graph pass and you need to add the depth attachment used by this graph pass
@@ -1418,6 +1604,14 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 nativePass.AddDepthAttachmentFirstDuringMerge(contextData, contextData.fragmentData[passToMerge.firstFragment]);
             }
 
+            // Depth input attachment needs special handling if the native pass doesn't have depth and merges with a graph pass that has depth input attachment
+            // Backend require depth input attachment to be set as depth attachment.
+            // Jira work tracking the depth input attachment only use case investigation (not set as depth attachment): https://jira.unity3d.com/projects/GXR/issues/GXR-214
+            if (!nativePass.hasDepth && passToMerge.fragmentInfoHasDepthInputAttachment)
+            {
+                nativePass.AddDepthAttachmentFromDepthInputAttachment(contextData, contextData.fragmentData[passToMerge.firstFragmentInput]);
+            }
+
             // Update versions and flags of existing attachments and
             // add any new attachments
             foreach (ref readonly var newAttach in passToMerge.Fragments(contextData))
@@ -1435,7 +1629,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     if (existingAttach.accessFlags.HasFlag(AccessFlags.Discard))
                         newAttachAccessFlags &= ~AccessFlags.Read;
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                     if (existingAttach.resource.version > newAttach.resource.version)
                         throw new Exception(RenderGraph.RenderGraphExceptionMessages.k_AddingOlderAttachmentVersion);
 #endif
@@ -1469,7 +1663,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     if (existingAttach.accessFlags.HasFlag(AccessFlags.Discard))
                         newAttachAccessFlags &= ~AccessFlags.Read;
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                     if (existingAttach.resource.version > newAttach.resource.version)
                         throw new Exception(RenderGraph.RenderGraphExceptionMessages.k_AddingOlderAttachmentVersion);
 #endif

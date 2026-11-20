@@ -57,7 +57,7 @@ public class SSRCombineRenderFeature : ScriptableRendererFeature
         readonly ProfilingSampler m_TemporalSampler = new ProfilingSampler("Loy_SSR Temporal Resolve");
         readonly ProfilingSampler m_CompositeSampler = new ProfilingSampler(kProfilerTag);
         readonly SSRCombineRenderFeature m_RenderFeature;
-        readonly Dictionary<int, CameraHistory> m_Histories = new Dictionary<int, CameraHistory>();
+        readonly Dictionary<EntityId, CameraHistory> m_Histories = new Dictionary<EntityId, CameraHistory>();
 
         sealed class CameraHistory
         {
@@ -127,7 +127,7 @@ public class SSRCombineRenderFeature : ScriptableRendererFeature
 
         CameraHistory GetHistory(Camera camera)
         {
-            int cameraId = camera.GetInstanceID();
+            EntityId cameraId = camera.GetEntityId();
             if (!m_Histories.TryGetValue(cameraId, out CameraHistory history))
             {
                 history = new CameraHistory();

@@ -88,7 +88,9 @@ namespace UnityEngine.Rendering.Universal
 
                 m_DecalEntityManager = new DecalEntityManager();
 
+                #pragma warning disable CS0618 // Type or member is obsolete
                 var decalProjectors = GameObject.FindObjectsByType<DecalProjector>(FindObjectsSortMode.InstanceID);
+#pragma warning restore CS0618 // Type or member is obsolete
                 foreach (var decalProjector in decalProjectors)
                 {
                     if (!decalProjector.isActiveAndEnabled || m_DecalEntityManager.IsValid(decalProjector.decalEntity))
@@ -126,7 +128,7 @@ namespace UnityEngine.Rendering.Universal
 
         public void Dispose()
         {
-            m_DecalEntityManager.Dispose();
+            m_DecalEntityManager?.Dispose();
             m_DecalEntityManager = null;
             m_ReferenceCounter = 0;
 
@@ -176,11 +178,11 @@ namespace UnityEngine.Rendering.Universal
     [SupportedOnRenderer(typeof(UniversalRendererData))]
     [DisallowMultipleRendererFeature("Decal")]
     [Tooltip("With this Renderer Feature, Unity can project specific Materials (decals) onto other objects in the Scene.")]
-    [URPHelpURL("renderer-feature-decal")]
+    [URPHelpURL("urp/renderer-feature-decal")]
     [Icon("Packages/com.unity.render-pipelines.core/Editor/Icons/Processed/DecalProjector Icon.asset")]
     public partial class DecalRendererFeature : ScriptableRendererFeature
     {
-        private static SharedDecalEntityManager sharedDecalEntityManager { get; } = new SharedDecalEntityManager();
+        private static SharedDecalEntityManager sharedDecalEntityManager = new SharedDecalEntityManager();
 
         [SerializeField]
         private DecalSettings m_Settings = new DecalSettings();
@@ -430,7 +432,7 @@ namespace UnityEngine.Rendering.Universal
                     {
                         // the RenderPassEvent needs to be RenderPassEvent.AfterRenderingPrePasses + 1, so we are sure that if depth priming is enabled
                         // this copy happens after the primed depth is copied, so the depth texture is available
-                        m_CopyDepthPass = new DBufferCopyDepthPass(RenderPassEvent.AfterRenderingPrePasses + 1, rendererShaders.copyDepthPS, false, !universalRenderer.usesDeferredLighting);
+                        m_CopyDepthPass = new DBufferCopyDepthPass(RenderPassEvent.AfterRenderingPrePasses + 1, rendererShaders.copyDepthPS, false);
                         m_DecalDrawDBufferSystem = new DecalDrawDBufferSystem(m_DecalEntityManager);
 
                         m_DBufferRenderPass = new DBufferRenderPass(m_DBufferClearMaterial, m_DBufferSettings, m_DecalDrawDBufferSystem, m_Settings.decalLayers);
@@ -507,20 +509,6 @@ namespace UnityEngine.Rendering.Universal
                 m_DecalCreateDrawCallSystem.Execute();
             }
 
-            if (m_Technique == DecalTechnique.DBuffer)
-            {
-                var universalRenderer = renderer as UniversalRenderer;
-                if (universalRenderer.usesDeferredLighting)
-                {
-                    m_CopyDepthPass.CopyToDepth = false;
-                }
-                else
-                {
-                    m_CopyDepthPass.CopyToDepth = true;
-                    m_CopyDepthPass.MsaaSamples = 1;
-                }
-            }
-
             switch (m_Technique)
             {
                 case DecalTechnique.ScreenSpace:
@@ -538,62 +526,9 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
-#if URP_COMPATIBILITY_MODE
-        internal override bool SupportsNativeRenderPass()
-        {
-            return m_Technique == DecalTechnique.GBuffer || m_Technique == DecalTechnique.ScreenSpace;
-        }
-
-        /// <inheritdoc />
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsolete + " #from(6000.2)")]
-        public override void SetupRenderPasses(ScriptableRenderer renderer, in RenderingData renderingData)
-        {
-            // Disable obsolete warning for internal usage
-            #pragma warning disable CS0618
-            if (renderer.cameraColorTargetHandle == null)
-                return;
-
-            if (m_Technique == DecalTechnique.DBuffer)
-            {
-                m_DBufferRenderPass.Setup(renderingData.cameraData);
-
-                var universalRenderer = renderer as UniversalRenderer;
-                if (universalRenderer.usesDeferredLighting)
-                {
-                    m_DBufferRenderPass.Setup(renderingData.cameraData, renderer.cameraDepthTargetHandle);
-
-                    m_CopyDepthPass.Setup(
-                        renderer.cameraDepthTargetHandle,
-                        universalRenderer.m_DepthTexture
-                    );
-                }
-                else
-                {
-                    m_DBufferRenderPass.Setup(renderingData.cameraData);
-
-                    m_CopyDepthPass.Setup(
-                        universalRenderer.m_DepthTexture,
-                        m_DBufferRenderPass.dBufferDepth
-                    );
-                    m_CopyDepthPass.CopyToDepth = true;
-                    m_CopyDepthPass.MsaaSamples = 1;
-                }
-            }
-            else if (m_Technique == DecalTechnique.GBuffer && m_DeferredLights.UseFramebufferFetch)
-            {
-                // Need to call Configure for both of these passes to setup input attachments as first frame otherwise will raise errors
-                m_GBufferRenderPass.Configure(null, renderingData.cameraData.cameraTargetDescriptor);
-            }
-        #pragma warning restore CS0618
-        }
-#endif
-
         /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
-#if URP_COMPATIBILITY_MODE
-            m_DBufferRenderPass?.Dispose();
-#endif
             m_CopyDepthPass?.Dispose();
 
             CoreUtils.Destroy(m_DBufferClearMaterial);
@@ -622,5 +557,14 @@ namespace UnityEngine.Rendering.Universal
             }
 #endif
         }
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsOnLoad()
+        {
+            sharedDecalEntityManager?.Dispose();
+            sharedDecalEntityManager = new SharedDecalEntityManager();
+        }
+#endif
     }
 }

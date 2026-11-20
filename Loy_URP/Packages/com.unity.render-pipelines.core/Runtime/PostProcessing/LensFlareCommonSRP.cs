@@ -18,22 +18,23 @@ namespace UnityEngine.Rendering
     /// </remarks>
     public sealed class LensFlareCommonSRP
     {
-        private static LensFlareCommonSRP m_Instance = null;
-        private static readonly object m_Padlock = new object();
+        private static LensFlareCommonSRP s_Instance = null;
+        private static readonly object s_Padlock = new object();
+
         /// <summary>
-        /// Class describing internal information stored to describe a shown LensFlare
+        /// Struct describing internal information stored to describe a shown LensFlare
         /// </summary>
-        internal class LensFlareCompInfo
+        internal readonly struct LensFlareCompInfo
         {
             /// <summary>
             /// Index used to compute Occlusion in a fixed order
             /// </summary>
-            internal int index;
+            internal readonly int index;
 
             /// <summary>
             /// Component used
             /// </summary>
-            internal LensFlareComponentSRP comp;
+            internal readonly LensFlareComponentSRP comp;
 
             internal LensFlareCompInfo(int idx, LensFlareComponentSRP cmp)
             {
@@ -42,14 +43,14 @@ namespace UnityEngine.Rendering
             }
         }
 
-        private static List<LensFlareCompInfo> m_Data = new List<LensFlareCompInfo>();
-        private static List<int> m_AvailableIndicies = new List<int>();
+        const int k_DefaultMaxLensFlareWithOcclusion = 128;
+        const int k_DefaultMaxFlareWithOcclusionTemporalSample = 8;
+        const int k_DefaultMergeNeeded = 1;
 
         /// <summary>
         /// Defines how many lens flare with occlusion are supported in the view at any time.
         /// </summary>
-        public static int maxLensFlareWithOcclusion = 128;
-
+        public static int maxLensFlareWithOcclusion = k_DefaultMaxLensFlareWithOcclusion;
 
         /// <summary>
         /// With TAA Occlusion jitter depth, thought frame on HDRP.
@@ -58,13 +59,13 @@ namespace UnityEngine.Rendering
         /// If this value change that could implies an implementation modification on:
         /// com.unity.render-pipelines.high-definition/Runtime/PostProcessing/Shaders/LensFlareMergeOcclusionDataDriven.compute
         /// </summary>
-        public static int maxLensFlareWithOcclusionTemporalSample = 8;
+        public static int maxLensFlareWithOcclusionTemporalSample = k_DefaultMaxFlareWithOcclusionTemporalSample;
 
         /// <summary>
         /// Set to 1 to enable temporal sample merge.
         /// Set to 0 to disable temporal sample merge (must support 16 bit textures, and the occlusion merge must be written in the last texel (vertical) of the lens flare texture.
         /// </summary>
-        public static int mergeNeeded = 1;
+        public static int mergeNeeded = k_DefaultMergeNeeded;
 
         /// <summary>
         /// occlusion texture either provided or created automatically by the SRP for lens flare.
@@ -73,9 +74,14 @@ namespace UnityEngine.Rendering
         /// Merge results must be done by the SRP and stored in the [(lens flareIndex), (maxLensFlareWithOcclusionTemporalSample + 1)] coordinate.
         /// Note: It's not supported on OpenGL3 and OpenGLCore
         /// </summary>
-        public static RTHandle occlusionRT = null;
+        public static RTHandle occlusionRT => Instance.m_OcclusionRT;
 
-        private static int frameIdx = 0;
+        private RTHandle m_OcclusionRT;
+
+        private List<LensFlareCompInfo> m_Data = new List<LensFlareCompInfo>();
+        private List<int> m_AvailableIndicies = new List<int>();
+
+        private int frameIdx = 0;
 
         internal static readonly int _FlareOcclusionPermutation = Shader.PropertyToID("_FlareOcclusionPermutation");
         internal static readonly int _FlareOcclusionRemapTex = Shader.PropertyToID("_FlareOcclusionRemapTex");
@@ -127,10 +133,11 @@ namespace UnityEngine.Rendering
 #if UNITY_SERVER
             return false;
 #else
-            return SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null &&
-                   SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLES3 &&
-                   SystemInfo.graphicsDeviceType != GraphicsDeviceType.OpenGLCore &&
-                   SystemInfo.graphicsDeviceType != GraphicsDeviceType.WebGPU;
+            var graphicsDeviceType = SystemInfo.graphicsDeviceType;
+            return graphicsDeviceType != GraphicsDeviceType.Null &&
+                   graphicsDeviceType != GraphicsDeviceType.OpenGLES3 &&
+                   graphicsDeviceType != GraphicsDeviceType.OpenGLCore &&
+                   graphicsDeviceType != GraphicsDeviceType.WebGPU;
 #endif
         }
 
@@ -165,7 +172,12 @@ namespace UnityEngine.Rendering
         /// <remarks>
         /// You usually call `Initialize` in the <see cref="RenderPipeline"/> constructor.
         /// </remarks>
-        static public void Initialize()
+        public static void Initialize()
+        {
+            Instance.Init();
+        }
+
+        void Init()
         {
             frameIdx = 0;
             if (IsOcclusionRTCompatible())
@@ -173,9 +185,9 @@ namespace UnityEngine.Rendering
                 // The height of occlusion texture is:
                 //      - '1': when no temporal accumulation
                 //      - 'maxLensFlareWithOcclusionTemporalSample + 1': for temporal accumulation, useful when TAA enabled
-                if (occlusionRT == null)
+                if (m_OcclusionRT == null)
                 {
-                    occlusionRT = RTHandles.Alloc(
+                    m_OcclusionRT = RTHandles.Alloc(
                         width: maxLensFlareWithOcclusion,
                         height: Mathf.Max(mergeNeeded * (maxLensFlareWithOcclusionTemporalSample + 1), 1),
                         format: GetOcclusionRTFormat(),
@@ -192,15 +204,17 @@ namespace UnityEngine.Rendering
         /// <remarks>
         /// Usually, `Dispose` is called in the <see cref="RenderPipeline.Dispose(bool)"/> function.
         /// </remarks>
-        static public void Dispose()
+        public static void Dispose()
         {
-            if (IsOcclusionRTCompatible())
+            s_Instance?.Cleanup();
+        }
+
+        void Cleanup()
+        {
+            if (m_OcclusionRT != null)
             {
-                if (occlusionRT != null)
-                {
-                    RTHandles.Release(occlusionRT);
-                    occlusionRT = null;
-                }
+                RTHandles.Release(occlusionRT);
+                m_OcclusionRT = null;
             }
         }
 
@@ -214,21 +228,17 @@ namespace UnityEngine.Rendering
         {
             get
             {
-                if (m_Instance == null)
+                if (s_Instance == null)
                 {
-                    lock (m_Padlock)
+                    lock (s_Padlock)
                     {
-                        if (m_Instance == null)
-                        {
-                            m_Instance = new LensFlareCommonSRP();
-                        }
+                        s_Instance ??= new LensFlareCommonSRP();
                     }
                 }
-                return m_Instance;
+
+                return s_Instance;
             }
         }
-
-        private System.Collections.Generic.List<LensFlareCompInfo> Data { get { return LensFlareCommonSRP.m_Data; } }
 
         /// <summary>
         /// Checks if at least one lens flare has been added to the pool.
@@ -245,19 +255,25 @@ namespace UnityEngine.Rendering
         /// <returns>`true` if no lens flare were added</returns>
         public bool IsEmpty()
         {
-            return Data.Count == 0;
+            return m_Data.Count == 0;
         }
 
         int GetNextAvailableIndex()
         {
+            int nextIndex;
+
             if (m_AvailableIndicies.Count == 0)
-                return m_Data.Count;
+            {
+                nextIndex = m_Data.Count;
+            }
             else
             {
-                int nextIndex = m_AvailableIndicies[m_AvailableIndicies.Count - 1];
-                m_AvailableIndicies.RemoveAt(m_AvailableIndicies.Count - 1);
-                return nextIndex;
+                int end = m_AvailableIndicies.Count - 1;
+                nextIndex = m_AvailableIndicies[end];
+                m_AvailableIndicies.RemoveAt(end);
             }
+
+            return nextIndex;
         }
 
         /// <summary>
@@ -270,9 +286,19 @@ namespace UnityEngine.Rendering
         /// <param name="newData">The new data added</param>
         public void AddData(LensFlareComponentSRP newData)
         {
-            Debug.Assert(Instance == this, "LensFlareCommonSRP can have only one instance");
+            Debug.Assert(s_Instance == this, "LensFlareCommonSRP can have only one instance");
 
-            if (!m_Data.Exists(x => x.comp == newData))
+            bool found = false;
+            foreach (LensFlareCompInfo data in m_Data)
+            {
+                if (data.comp == newData)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
             {
                 m_Data.Add(new LensFlareCompInfo(GetNextAvailableIndex(), newData));
             }
@@ -287,14 +313,31 @@ namespace UnityEngine.Rendering
         /// <param name="data">The data which exist in the pool</param>
         public void RemoveData(LensFlareComponentSRP data)
         {
-            Debug.Assert(Instance == this, "LensFlareCommonSRP can have only one instance");
+            Debug.Assert(s_Instance == this, "LensFlareCommonSRP can have only one instance");
 
-            LensFlareCompInfo info = m_Data.Find(x => x.comp == data);
-            if (info != null)
+            int index = -1;
+            for (int i = 0, imax = m_Data.Count; i < imax; ++i)
             {
-                int newIndex = info.index;
-                m_Data.Remove(info);
-                m_AvailableIndicies.Add(newIndex);
+                if (m_Data[i].comp == data)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index >= 0)
+            {
+                LensFlareCompInfo info = m_Data[index];
+                m_AvailableIndicies.Add(info.index);
+
+                int end = m_Data.Count - 1;
+                if (index != end)
+                {
+                    m_Data[index] = m_Data[end];
+                }
+
+                m_Data.RemoveAt(end);
+
                 if (m_Data.Count == 0)
                     m_AvailableIndicies.Clear();
             }
@@ -341,7 +384,7 @@ namespace UnityEngine.Rendering
         /// </code>
         /// </example>
         /// <returns>Attenuation Factor</returns>
-        static public float ShapeAttenuationPointLight()
+        public static float ShapeAttenuationPointLight()
         {
             return 1.0f;
         }
@@ -388,7 +431,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationDirLight(Vector3 forward, Vector3 wo)
+        public static float ShapeAttenuationDirLight(Vector3 forward, Vector3 wo)
         {
             return Mathf.Max(Vector3.Dot(-forward, wo), 0.0f);
         }
@@ -437,7 +480,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationSpotConeLight(Vector3 forward, Vector3 wo, float spotAngle, float innerSpotPercent01)
+        public static float ShapeAttenuationSpotConeLight(Vector3 forward, Vector3 wo, float spotAngle, float innerSpotPercent01)
         {
             float outerDot = Mathf.Max(Mathf.Cos(0.5f * spotAngle * Mathf.Deg2Rad), 0.0f);
             float innerDot = Mathf.Max(Mathf.Cos(0.5f * spotAngle * Mathf.Deg2Rad * innerSpotPercent01), 0.0f);
@@ -487,7 +530,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationSpotBoxLight(Vector3 forward, Vector3 wo)
+        public static float ShapeAttenuationSpotBoxLight(Vector3 forward, Vector3 wo)
         {
             return Mathf.Max(Mathf.Sign(Vector3.Dot(forward, wo)), 0.0f);
         }
@@ -534,7 +577,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationSpotPyramidLight(Vector3 forward, Vector3 wo)
+        public static float ShapeAttenuationSpotPyramidLight(Vector3 forward, Vector3 wo)
         {
             return ShapeAttenuationSpotBoxLight(forward, wo);
         }
@@ -692,7 +735,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationAreaRectangleLight(Vector3 forward, Vector3 wo)
+        public static float ShapeAttenuationAreaRectangleLight(Vector3 forward, Vector3 wo)
         {
             return ShapeAttenuateForwardLight(forward, wo);
         }
@@ -739,7 +782,7 @@ namespace UnityEngine.Rendering
         /// }
         /// </code>
         /// </example>
-        static public float ShapeAttenuationAreaDiscLight(Vector3 forward, Vector3 wo)
+        public static float ShapeAttenuationAreaDiscLight(Vector3 forward, Vector3 wo)
         {
             return ShapeAttenuateForwardLight(forward, wo);
         }
@@ -830,40 +873,73 @@ namespace UnityEngine.Rendering
         {
             if (isLocalLight)
             {
-                return WorldToViewportLocal(isCameraRelative, viewProjMatrix, camera.transform.position, positionWS);
+                return WorldToViewportLocal(isCameraRelative, viewProjMatrix, camera.worldToCameraMatrix, camera.transform.position, positionWS, !camera.orthographic);
             }
             else
             {
-                return WorldToViewportDistance(camera, positionWS);
+                return WorldToViewportDistance(camera, positionWS, !camera.orthographic);
             }
         }
 
-        static Vector3 WorldToViewportLocal(bool isCameraRelative, Matrix4x4 viewProjMatrix, Vector3 cameraPosWS, Vector3 positionWS)
+        static Vector3 WorldToViewportLocal(bool isCameraRelative, Matrix4x4 viewProjMatrix, Matrix4x4 worldToCameraMatrix, Vector3 cameraPosWS, Vector3 positionWS, bool isPerspective)
         {
             Vector3 localPositionWS = positionWS;
             if (isCameraRelative)
             {
                 localPositionWS -= cameraPosWS;
             }
-            Vector4 viewportPos4 = viewProjMatrix * localPositionWS;
-            Vector3 viewportPos = new Vector3(viewportPos4.x, viewportPos4.y, 0f);
-            viewportPos /= viewportPos4.w;
+            Vector4 viewportPos4 = viewProjMatrix * new Vector4(localPositionWS.x, localPositionWS.y, localPositionWS.z, isCameraRelative ? 0.0f : 1.0f);
+            Vector3 viewportPos;
+            if (isPerspective)
+            {
+                float eyeDepth = viewportPos4.w;
+                viewportPos = new Vector3(viewportPos4.x / eyeDepth, viewportPos4.y / eyeDepth, eyeDepth);
+            }
+            else
+            {
+                // An orthographic clip space w is always 1.
+                // Take the eye depth from the view matrix instead.
+                float eyeDepth = -worldToCameraMatrix.MultiplyPoint3x4(positionWS).z;
+                viewportPos = new Vector3(viewportPos4.x, viewportPos4.y, eyeDepth);
+            }
             viewportPos.x = viewportPos.x * 0.5f + 0.5f;
             viewportPos.y = viewportPos.y * 0.5f + 0.5f;
             viewportPos.y = 1.0f - viewportPos.y;
-            viewportPos.z = viewportPos4.w;
             return viewportPos;
         }
 
-        static Vector3 WorldToViewportDistance(Camera cam, Vector3 positionWS)
+        static Vector3 WorldToViewportDistance(Camera cam, Vector3 positionWS, bool isPerspective)
         {
-            Vector4 camPos = cam.worldToCameraMatrix * positionWS;
-            Vector4 viewportPos4 = cam.projectionMatrix * camPos;
-            Vector3 viewportPos = new Vector3(viewportPos4.x, viewportPos4.y, 0f);
-            viewportPos /= viewportPos4.w;
+            // positionWS is a world point anchored at the camera, so transform as a point.
+            Vector3 viewPos = cam.worldToCameraMatrix.MultiplyPoint3x4(positionWS);
+            Vector3 viewportPos;
+            if (isPerspective)
+            {
+                Vector4 viewportPos4 = cam.projectionMatrix * new Vector4(viewPos.x, viewPos.y, viewPos.z, 1.0f);
+                float eyeDepth = viewportPos4.w;
+                viewportPos = new Vector3(viewportPos4.x / eyeDepth, viewportPos4.y / eyeDepth, eyeDepth);
+            }
+            else
+            {
+                // A directional light under an orthographic camera has no screen position
+                // because there is no vanishing point for the direction to converge on.
+                //
+                // Instead, we place the flare where the light source itself would be drawn in the skybox.
+                // For example, the common case of the sun.
+                // Unity draws the skybox of an orthographic camera with an identity projection that
+                // passes w into z (See Skybox::SetupSkyboxMatrices).
+                // ndc.xy = viewPos.xy / -viewPos.z.
+                float eyeDepth = -viewPos.z;
+                if (eyeDepth <= 0.0f)
+                {
+                    // The light is behind the camera or parallel to the image plane.
+                    // Use negative depth to reject the flare.
+                    return new Vector3(0.0f, 0.0f, -1.0f);
+                }
+                viewportPos = new Vector3(viewPos.x / eyeDepth, viewPos.y / eyeDepth, eyeDepth);
+            }
             viewportPos.x = viewportPos.x * 0.5f + 0.5f;
             viewportPos.y = viewportPos.y * 0.5f + 0.5f;
-            viewportPos.z = viewportPos4.w;
             return viewportPos;
         }
 
@@ -875,9 +951,10 @@ namespace UnityEngine.Rendering
         /// </remarks>
         /// <param name="cam">Camera</param>
         /// <returns>true if cloud occlusion is requested</returns>
-        static public bool IsCloudLayerOpacityNeeded(Camera cam)
+        public static bool IsCloudLayerOpacityNeeded(Camera cam)
         {
-            if (Instance.IsEmpty())
+            var instance = Instance;
+            if (instance.IsEmpty())
                 return false;
 
 #if UNITY_EDITOR
@@ -895,9 +972,9 @@ namespace UnityEngine.Rendering
             }
 #endif
 
-            foreach (LensFlareCompInfo info in Instance.Data)
+            foreach (LensFlareCompInfo info in instance.m_Data)
             {
-                if (info == null || info.comp == null)
+                if (info.comp == null)
                     continue;
 
                 LensFlareComponentSRP comp = info.comp;
@@ -1080,7 +1157,7 @@ namespace UnityEngine.Rendering
 
         static bool DoComponent(
             bool occlusionOnly,
-            LensFlareCompInfo info,
+            in LensFlareCompInfo info,
             Camera cam,
             Vector3 cameraPositionWS,
             float actualWidth,
@@ -1116,7 +1193,7 @@ namespace UnityEngine.Rendering
             flareIntensity = 0f;
             distanceAttenuation = 1f;
 
-            if (info == null || info.comp == null)
+            if (info.comp == null)
                 return false;
 
             LensFlareComponentSRP comp = info.comp;
@@ -1148,7 +1225,8 @@ namespace UnityEngine.Rendering
 
                 if (light != null && light.type == LightType.Directional)
                 {
-                    flarePosWS = -light.transform.forward * cam.farClipPlane;
+                    // Anchor at the camera, so flarePosWS - cameraPositionWS is the direction to the light.
+                    flarePosWS = cameraPositionWS - light.transform.forward * cam.farClipPlane;
                     isDirLight = true;
                 }
                 else
@@ -1251,7 +1329,7 @@ namespace UnityEngine.Rendering
         /// <param name="hasCloudLayer">Unused</param>
         /// <param name="cloudOpacityTexture">Unused</param>
         /// <param name="sunOcclusionTexture">Sun Occlusion Texture from VolumetricCloud on HDRP or null</param>
-        static public void ComputeOcclusion(Material lensFlareShader, Camera cam, XRPass xr, int xrIndex,
+        public static void ComputeOcclusion(Material lensFlareShader, Camera cam, XRPass xr, int xrIndex,
             float actualWidth, float actualHeight,
             bool usePanini, float paniniDistance, float paniniCropToFit, bool isCameraRelative,
             Vector3 cameraPositionWS,
@@ -1284,11 +1362,13 @@ namespace UnityEngine.Rendering
 
             float aspect = actualWidth / actualHeight;
 
-            foreach (LensFlareCompInfo info in m_Data)
+            int shaderPassLensFlareOcclusion = lensFlareShader.FindPass("LensFlareOcclusion");
+            var instance = Instance;
+            foreach (LensFlareCompInfo info in instance.m_Data)
             {
                 bool okComp = DoComponent(
                     true,
-                    info,
+                    in info,
                     cam,
                     cameraPositionWS,
                     actualWidth,
@@ -1333,8 +1413,8 @@ namespace UnityEngine.Rendering
                     cmd.SetGlobalInt(_FlareOcclusionPermutation, convInt);
                 }
 
-                float globalCos0 = Mathf.Cos(0.0f);
-                float globalSin0 = Mathf.Sin(0.0f);
+                const float globalCos0 = 1f; //Mathf.Cos(0.0f);
+                const float globalSin0 = 0f; //Mathf.Sin(0.0f);
 
                 float position = 0.0f;
 
@@ -1351,24 +1431,24 @@ namespace UnityEngine.Rendering
 
                 Rect rect;
                 if (taaEnabled)
-                    rect = new Rect() { x = info.index, y = frameIdx + mergeNeeded, width = 1, height = 1 };
+                    rect = new Rect() { x = info.index, y = instance.frameIdx + mergeNeeded, width = 1, height = 1 };
                 else
                     rect = new Rect() { x = info.index, y = 0, width = 1, height = 1 };
                 cmd.SetViewport(rect);
 
-                Blitter.DrawQuad(cmd, lensFlareShader, lensFlareShader.FindPass("LensFlareOcclusion"));
+                Blitter.DrawQuad(cmd, lensFlareShader, shaderPassLensFlareOcclusion);
             }
 
             // Clear the remaining buffer if not TAA the whole OcclusionRT is already cleared
             if (taaEnabled)
             {
                 CoreUtils.SetRenderTarget(cmd, occlusionRT, depthSlice: xrIndex);
-                cmd.SetViewport(new Rect() { x = m_Data.Count, y = 0, width = (maxLensFlareWithOcclusion - m_Data.Count), height = (maxLensFlareWithOcclusionTemporalSample + mergeNeeded) });
+                cmd.SetViewport(new Rect() { x = instance.m_Data.Count, y = 0, width = (maxLensFlareWithOcclusion - instance.m_Data.Count), height = (maxLensFlareWithOcclusionTemporalSample + mergeNeeded) });
                 cmd.ClearRenderTarget(false, true, Color.black);
             }
 
-            ++frameIdx;
-            frameIdx %= maxLensFlareWithOcclusionTemporalSample;
+            ++instance.frameIdx;
+            instance.frameIdx %= maxLensFlareWithOcclusionTemporalSample;
 
             xr.StartSinglePass(cmd);
         }
@@ -1750,7 +1830,7 @@ namespace UnityEngine.Rendering
         /// <param name="colorBuffer">Source Render Target which contains the Color Buffer</param>
         /// <param name="GetLensFlareLightAttenuation">Delegate to which return return the Attenuation of the light based on their shape which uses the functions ShapeAttenuation...(...), must reimplemented per SRP</param>
         /// <param name="debugView">Debug View which setup black background to see only lens flare</param>
-        static public void DoLensFlareDataDrivenCommon(Material lensFlareShader, Camera cam, Rect viewport, XRPass xr, int xrIndex,
+        public static void DoLensFlareDataDrivenCommon(Material lensFlareShader, Camera cam, Rect viewport, XRPass xr, int xrIndex,
             float actualWidth, float actualHeight,
             bool usePanini, float paniniDistance, float paniniCropToFit,
             bool isCameraRelative,
@@ -1837,11 +1917,12 @@ namespace UnityEngine.Rendering
             cmd.SetViewport(viewport);
             float aspect = actualWidth / actualHeight;
 
-            foreach (LensFlareCompInfo info in m_Data)
+            var instance = Instance;
+            foreach (LensFlareCompInfo info in instance.m_Data)
             {
                 bool okComp = DoComponent(
                     false,
-                    info,
+                    in info,
                     cam,
                     cameraPositionWS,
                     actualWidth,
@@ -1944,7 +2025,7 @@ namespace UnityEngine.Rendering
         /// <param name="cmd">UnsafeCommandBuffer</param>
         /// <param name="result">Result RT for the lens flare Screen Space</param>
         /// <param name="debugView">Information if we are in debug mode or not</param>
-        static public void DoLensFlareScreenSpaceCommon(
+        public static void DoLensFlareScreenSpaceCommon(
             Material lensFlareShader,
             Camera cam,
             float actualWidth,
@@ -2009,7 +2090,7 @@ namespace UnityEngine.Rendering
         /// <param name="cmd">Command Buffer</param>
         /// <param name="result">Result RT for the lens flare Screen Space</param>
         /// <param name="debugView">Information if we are in debug mode or not</param>
-        static public void DoLensFlareScreenSpaceCommon(
+        public static void DoLensFlareScreenSpaceCommon(
             Material lensFlareShader,
             Camera cam,
             float actualWidth,
@@ -2243,5 +2324,17 @@ namespace UnityEngine.Rendering
         }
 
 #endregion
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsOnLoad()
+        {
+            Dispose();
+
+            maxLensFlareWithOcclusion = k_DefaultMaxLensFlareWithOcclusion;
+            maxLensFlareWithOcclusionTemporalSample = k_DefaultMaxFlareWithOcclusionTemporalSample;
+            mergeNeeded = k_DefaultMergeNeeded;
+        }
+#endif
     }
 }

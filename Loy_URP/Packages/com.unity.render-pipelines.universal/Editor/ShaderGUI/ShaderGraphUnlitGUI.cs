@@ -10,6 +10,10 @@ namespace UnityEditor
     {
         MaterialProperty[] properties;
 
+        // Hidden when the material exposes no surface options.
+        protected override void DrawRenderFaceDropdown()
+            => DoEnumPopup<UnityEditor.Rendering.Universal.ShaderGraph.RenderFace>(Styles.cullingText, cullingProp);
+
         // collect properties from the material properties
         public override void FindProperties(MaterialProperty[] properties)
         {
@@ -27,6 +31,8 @@ namespace UnityEditor
 #if ENABLE_VR && ENABLE_XR_MODULE
             BaseShaderGUI.UpdateXRMotionVectorKeywordsAndPass(material);
 #endif
+
+            BaseShaderGUI.UpdateScreenSpaceReflectionContributeTransparentPassState(material);
         }
 
         public override void ValidateMaterial(Material material)
@@ -37,13 +43,13 @@ namespace UnityEditor
         // material main surface inputs
         public override void DrawSurfaceInputs(Material material)
         {
-            DrawShaderGraphProperties(material, properties);
+            DrawShaderGraphProperties(properties);
         }
 
         public override void DrawAdvancedOptions(Material material)
         {
             // Always show the queue control field.  Only show the render queue field if queue control is set to user override
-            DoPopup(Styles.queueControl, queueControlProp, Styles.queueControlNames);
+            DoEnumPopup<QueueControl>(Styles.queueControl, queueControlProp);
             if (material.HasProperty(Property.QueueControl) && material.GetFloat(Property.QueueControl) == (float)QueueControl.UserOverride)
                 materialEditor.RenderQueueField();
             base.DrawAdvancedOptions(material);

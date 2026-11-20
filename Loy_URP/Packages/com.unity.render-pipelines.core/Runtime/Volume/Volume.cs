@@ -8,11 +8,11 @@ namespace UnityEngine.Rendering
     /// A generic Volume component holding a <see cref="VolumeProfile"/>.
     /// </summary>
     [PipelineHelpURL("HDRenderPipelineAsset","understand-volumes")]
-    [PipelineHelpURL("UniversalRenderPipelineAsset", "Volumes")]
+    [PipelineHelpURL("UniversalRenderPipelineAsset", "urp/Volumes")]
     [ExecuteAlways]
     [AddComponentMenu("Miscellaneous/Volume")]
     [Icon("Packages/com.unity.render-pipelines.core/Editor/Icons/Processed/Volume Icon.asset")]
-    public class Volume : MonoBehaviour, IVolume
+    public class Volume : MonoBehaviour
     {
         [SerializeField, FormerlySerializedAs("isGlobal")]
         bool m_IsGlobal = true;
@@ -99,13 +99,15 @@ namespace UnityEngine.Rendering
             set => m_InternalProfile = value;
         }
 
+#if ENABLE_PHYSICS_MODULE
         readonly List<Collider> m_Colliders = new List<Collider>();
 
         /// <summary>
         /// The colliders of the volume if <see cref="isGlobal"/> is false
         /// </summary>
         public List<Collider> colliders => m_Colliders;
-        
+#endif
+
         GameObject m_CachedGameObject;
         internal GameObject cachedGameObject => m_CachedGameObject;
 
@@ -157,7 +159,9 @@ namespace UnityEngine.Rendering
         /// </remarks>
         public void UpdateColliders()
         {
+#if ENABLE_PHYSICS_MODULE
             GetComponents(m_Colliders);
+#endif
         }
 
         internal void UpdateLayer()
@@ -192,5 +196,16 @@ namespace UnityEngine.Rendering
         {
             blendDistance = Mathf.Max(blendDistance, 0f);
         }
+
+        // A per-Volume scene object reference, serialized here (on the GameObject) rather than in the shared
+        // VolumeProfile so it can hold a scene reference and differ per Volume. Hidden in the inspector: authored
+        // through the relevant VolumeComponent editor. The component type it belongs to is resolved at evaluation time
+        // (see VolumeManager), not stored.
+        // This is an experimental feature - only a single reference slot is used currently (specifically to support
+        // Surface Cache GI Focus Target). The approach can be generalized later if needed.
+        [SerializeField, HideInInspector]
+        VolumeSceneObjectReference m_SceneObjectReference = new();
+
+        internal VolumeSceneObjectReference sceneObjectReference => m_SceneObjectReference;
     }
 }

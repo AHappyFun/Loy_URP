@@ -7,7 +7,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 {
     class UniversalUISubTarget: UISubTarget<UniversalTarget>
     {
-        static readonly GUID kSourceCodeGuid = new GUID("b1197b10aa62577498d67cffe1d3bd43");  // UniversalUISubTarget.cs
+        static readonly UnityEngine.GUID kSourceCodeGuid = new UnityEngine.GUID("b1197b10aa62577498d67cffe1d3bd43");  // UniversalUISubTarget.cs
 
         static readonly string kUITKPass = "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/UITKPass.hlsl";
         public override void Setup(ref TargetSetupContext context)
@@ -106,6 +106,16 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
                 registerUndo("Change Blend");
                 target.alphaMode = (AlphaMode)evt.newValue;
+                onChange();
+            });
+
+            context.AddProperty("Automatic Opacity", new UnityEngine.UIElements.Toggle() { value = uiData.automaticOpacity }, (evt) =>
+            {
+                if (Equals(uiData.automaticOpacity, evt.newValue))
+                    return;
+
+                registerUndo("Change Automatic Opacity");
+                uiData.automaticOpacity = evt.newValue;
                 onChange();
             });
         }

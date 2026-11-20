@@ -103,7 +103,7 @@ namespace UnityEngine.Rendering
     public abstract class CameraHistoryItem : ContextItem
     {
         // BufferedRTHandleSystem of the owning camera.
-        private BufferedRTHandleSystem m_owner = null;
+        private BufferedRTHandleSystem m_Owner = null;
         // Unique id for this type (derived) given by the owning camera.
         private uint m_TypeId = uint.MaxValue;
 
@@ -117,7 +117,7 @@ namespace UnityEngine.Rendering
         /// <param name="typeId">Unique id given to this class type by the owning camera.</param>
         public virtual void OnCreate(BufferedRTHandleSystem owner, uint typeId)
         {
-            m_owner = owner;
+            m_Owner = owner;
             m_TypeId = typeId;
         }
 
@@ -126,7 +126,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// The owning camera RTHandle storage for the history textures.
         /// </summary>
-        protected BufferedRTHandleSystem storage => m_owner;
+        protected BufferedRTHandleSystem storage => m_Owner;
 
         /// <summary>
         /// Creates unique ids for the RTHandle storage.
@@ -173,7 +173,7 @@ namespace UnityEngine.Rendering
             RenderTextureDescriptor d = desc;
             // Simplified for typical history textures:
             // No shadows, no mipmaps, no aniso.
-            m_owner.AllocBuffer(id, count, ref desc, filterMode, TextureWrapMode.Clamp, false, 0, 0, name);
+            m_Owner.AllocBuffer(id, count, ref desc, filterMode, TextureWrapMode.Clamp, false, 0, 0, name);
             return GetCurrentFrameRT(0);
         }
 
@@ -183,7 +183,7 @@ namespace UnityEngine.Rendering
         /// <param name="id">Id for the history RTHandle storage.</param>
         protected void ReleaseHistoryFrameRT(int id)
         {
-            m_owner.ReleaseBuffer(id);
+            m_Owner.ReleaseBuffer(id);
         }
 
         /// <summary>
@@ -193,7 +193,7 @@ namespace UnityEngine.Rendering
         /// <returns>The RTHandle from previous frame.</returns>
         protected RTHandle GetPreviousFrameRT(int id)
         {
-            return m_owner.GetFrameRT(id, 1);
+            return m_Owner.GetFrameRT(id, 1);
         }
 
         /// <summary>
@@ -203,7 +203,27 @@ namespace UnityEngine.Rendering
         /// <returns>The RTHandle of the current frame.</returns>
         protected RTHandle GetCurrentFrameRT(int id)
         {
-            return m_owner.GetFrameRT(id, 0);
+            return m_Owner.GetFrameRT(id, 0);
+        }
+
+        /// <summary>
+        /// Returns the id stable index from the previous frame.
+        /// </summary>
+        /// <param name="id">Id for the history RTHandle storage.</param>
+        /// <returns>The stable index from previous frame.</returns>
+        protected int GetPreviousFrameRTStableIndex(int id)
+        {
+            return m_Owner.GetFrameRTStableIndex(id, 1);
+        }
+
+        /// <summary>
+        /// Returns the id stable index of the current frame.
+        /// </summary>
+        /// <param name="id">Id for the history RTHandle storage.</param>
+        /// <returns>The stable index of the current frame.</returns>
+        protected int GetCurrentFrameRTStableIndex(int id)
+        {
+            return m_Owner.GetFrameRTStableIndex(id, 0);
         }
     }
 }

@@ -1,12 +1,9 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.TestTools;
-using UnityEngine.Rendering;
-using UnityEngine.SceneManagement;
 using NUnit.Framework;
+#if ENABLE_VR && ENABLE_XR_MODULE
+using UnityEngine.XR;
+#endif
 
 namespace UnityEngine.Rendering.Tests
 {
@@ -27,12 +24,17 @@ namespace UnityEngine.Rendering.Tests
             if (Application.isBatchMode)
                 Assert.Ignore("Frame timing tests are not supported in batch mode, skipping test.");
 
+            if (GraphicsSettings.currentRenderPipeline == null)
+                Assert.Ignore("No active Render Pipeline is set, skipping test.");
+
             // HACK #1 - really shouldn't have to do this here, but previous tests are leaking gameobjects
+#pragma warning disable CS0618 // Type or member is obsolete
             var objects = GameObject.FindObjectsByType<GameObject>(FindObjectsSortMode.InstanceID);
+#pragma warning restore CS0618 // Type or member is obsolete
             foreach (var o in objects)
             {
-                // HACK #2 - must not destroy DebugUpdater, which happens to have an EventSystem.
-                if (o.GetComponent<EventSystem>() == null)
+                // HACK #2 - must not destroy DebugUpdater
+                if (o.GetComponent<DebugUpdater>() == null)
                     CoreUtils.Destroy(o);
             }
 
@@ -55,21 +57,25 @@ namespace UnityEngine.Rendering.Tests
         }
     }
 
-    // Fails on WebGL, Oculus Quest and Switch.
-    // Unfortunately, there is no good way to exclude Oculus Quest from the test without excluding all Android devices.
-    // https://jira.unity3d.com/browse/GFXFOUND-559
-    [UnityPlatform(exclude = new RuntimePlatform[] { RuntimePlatform.WebGLPlayer, RuntimePlatform.Android, RuntimePlatform.Switch })]
     class RuntimeProfilerTests : RuntimeProfilerTestBase
     {
         [UnityTest]
         public IEnumerator RuntimeProfilerGivesNonZeroOutput()
         {
-            if ((Application.platform == RuntimePlatform.LinuxPlayer ||
-                 Application.platform == RuntimePlatform.LinuxEditor)
-                && SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLCore)
-                {
-                    Assert.Ignore("Test is failing on Linux OpenGLCore. https://jira.unity3d.com/browse/GFXFOUND-559");
-                }
+            // GPU Frame Time support is partial (https://docs.unity3d.com/6000.6/Documentation/Manual/frame-timing-manager.html),
+            // so adding exceptions here.
+            bool supportsGpuFrameTime = true;
+
+            if ((Application.platform == RuntimePlatform.LinuxPlayer || Application.platform == RuntimePlatform.LinuxEditor) && SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLCore)
+                supportsGpuFrameTime = false; // Linux + OpenGLCore
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                supportsGpuFrameTime = false; // WebGL/WebGPU
+            if ((Application.platform == RuntimePlatform.EmbeddedLinuxArm64 || Application.platform == RuntimePlatform.EmbeddedLinuxX64) && SystemInfo.graphicsDeviceType == GraphicsDeviceType.OpenGLES3)
+                supportsGpuFrameTime = false; // EmbeddedLinux GLES (no GL_EXT_disjoint_timer_query)
+#if ENABLE_VR && ENABLE_XR_MODULE
+            if (XRSettings.enabled)
+                supportsGpuFrameTime = false; // XR
+#endif
 
             yield return Warmup();
 
@@ -90,11 +96,28 @@ namespace UnityEngine.Rendering.Tests
                 yield return null;
             }
 
-            Assert.True(
-                m_DebugFrameTiming.m_BottleneckHistory.Histogram.Balanced > 0 ||
-                m_DebugFrameTiming.m_BottleneckHistory.Histogram.CPU > 0 ||
-                m_DebugFrameTiming.m_BottleneckHistory.Histogram.GPU > 0 ||
-                m_DebugFrameTiming.m_BottleneckHistory.Histogram.PresentLimited > 0);
+            // After k_NumFramesToRender frames, we should have a valid average for every headline counter.
+            // A failure means the counter was zero on every captured frame. RenderThreadCPUFrameTime and
+            // MainThreadCPUPresentWaitTime are excluded because they can legitimately be zero (modes without
+            // a separate render thread; no vsync / no frame rate cap). GPUFrameTime is only asserted on
+            // platforms known to report it (see supportsGpuFrameTime above).
+            var avg = m_DebugFrameTiming.m_FrameHistory.SampleAverage;
+            var zeroAvg = new System.Collections.Generic.List<string>();
+            if (avg.FramesPerSecond <= 0f)
+                zeroAvg.Add(nameof(avg.FramesPerSecond));
+            if (avg.FullFrameTime <= 0f)
+                zeroAvg.Add(nameof(avg.FullFrameTime));
+            if (avg.MainThreadCPUFrameTime <= 0f)
+                zeroAvg.Add(nameof(avg.MainThreadCPUFrameTime));
+            if (supportsGpuFrameTime && avg.GPUFrameTime <= 0f)
+                zeroAvg.Add(nameof(avg.GPUFrameTime));
+
+            Assert.That(zeroAvg, Is.Empty,
+                $"After {k_NumFramesToRender} frames the following SampleAverage counters were zero: [{string.Join(", ", zeroAvg)}]. " +
+                $"All averages: FramesPerSecond={avg.FramesPerSecond}, FullFrameTime={avg.FullFrameTime}, " +
+                $"MainThreadCPUFrameTime={avg.MainThreadCPUFrameTime}, RenderThreadCPUFrameTime={avg.RenderThreadCPUFrameTime}, " +
+                $"GPUFrameTime={avg.GPUFrameTime} (asserted={supportsGpuFrameTime}), " +
+                $"MainThreadCPUPresentWaitTime={avg.MainThreadCPUPresentWaitTime}.");
         }
     }
 }

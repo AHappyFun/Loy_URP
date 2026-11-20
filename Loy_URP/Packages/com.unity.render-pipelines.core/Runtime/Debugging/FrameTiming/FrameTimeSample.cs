@@ -49,32 +49,32 @@ namespace UnityEngine.Rendering
 
         // Helper functions
 
-        static Func<float, float, float> s_SampleValueAdd = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueAdd = (float value, float other) =>
         {
             return value + other;
         };
 
-        static Func<float, float, float> s_SampleValueMin = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueMin = (float value, float other) =>
         {
             return other > 0 ? Mathf.Min(value, other) : value;
         };
 
-        static Func<float, float, float> s_SampleValueMax = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueMax = (float value, float other) =>
         {
             return Mathf.Max(value, other);
         };
 
-        static Func<float, float, float> s_SampleValueCountValid = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueCountValid = (float value, float other) =>
         {
             return other > 0 ? value + 1 : value;
         };
 
-        static Func<float, float, float> s_SampleValueEnsureValid = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueEnsureValid = (float value, float other) =>
         {
             return other > 0 ? value : 0;
         };
 
-        static Func<float, float, float> s_SampleValueDivide = (float value, float other) =>
+        static readonly Func<float, float, float> s_SampleValueDivide = (float value, float other) =>
         {
             return other > 0 ? value / other : 0;
         };

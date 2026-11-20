@@ -1,33 +1,20 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.Universal.U2D.Profiler;
 using CommonResourceData = UnityEngine.Rendering.Universal.UniversalResourceData;
 
 namespace UnityEngine.Rendering.Universal
 {
     internal class DrawRenderer2DPass : ScriptableRenderPass
     {
-        static readonly string k_RenderPass = "Renderer2D Pass";
-        static readonly string k_SetLightBlendTexture = "SetLightBlendTextures";
-
-        private static readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler(k_RenderPass);
-        private static readonly ProfilingSampler m_SetLightBlendTextureProfilingSampler = new ProfilingSampler(k_SetLightBlendTexture);
         private static readonly ShaderTagId k_CombinedRenderingPassName = new ShaderTagId("Universal2D");
         private static readonly ShaderTagId k_LegacyPassName = new ShaderTagId("SRPDefaultUnlit");
 
-        private static readonly List<ShaderTagId> k_ShaderTags =
+        internal static readonly List<ShaderTagId> k_ShaderTags =
             new List<ShaderTagId>() {k_LegacyPassName, k_CombinedRenderingPassName};
 
         private static readonly int k_HDREmulationScaleID = Shader.PropertyToID("_HDREmulationScale");
         private static readonly int k_RendererColorID = Shader.PropertyToID("_RendererColor");
-
-#if URP_COMPATIBILITY_MODE
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            throw new NotImplementedException();
-        }
-#endif
 
         private static void Execute(RasterGraphContext context, PassData passData)
         {
@@ -91,23 +78,24 @@ namespace UnityEngine.Rendering.Universal
 #endif
         }
 
-        public void Render(RenderGraph graph, ContextContainer frameData, Renderer2DData rendererData, ref LayerBatch[] layerBatches, int batchIndex, ref FilteringSettings filterSettings)
+        public void Render(RenderGraph graph, ContextContainer frameData, int batchIndex, ref FilteringSettings filterSettings)
         {
             UniversalRenderingData renderingData = frameData.Get<UniversalRenderingData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
             UniversalLightData lightData = frameData.Get<UniversalLightData>();
             Universal2DResourceData universal2DResourceData = frameData.Get<Universal2DResourceData>();
             CommonResourceData commonResourceData = frameData.Get<CommonResourceData>();
-
-            var layerBatch = layerBatches[batchIndex];
+            Universal2DRenderingData rendering2DData = frameData.Get<Universal2DRenderingData>();
+            Renderer2DData rendererData = rendering2DData.renderingData;
+            var layerBatch = rendering2DData.layerBatches[batchIndex];
 
             // Check for lighting in scene/prefab/preview camera 
-            var isLightingActive = Renderer2D.s_IsLightingActive;
+            var isLightingActive = Renderer2D.IsSceneViewOrPreviewLightingActive(cameraData);
 
             // Preset global light textures for first batch
             if (batchIndex == 0)
             {
-                using (var builder = graph.AddRasterRenderPass<SetGlobalPassData>(k_SetLightBlendTexture, out var passData, m_SetLightBlendTextureProfilingSampler))
+                using (var builder = graph.AddRasterRenderPass<SetGlobalPassData>(ProfilerMarkers.s_SetLightBlendTexture, out var passData, ProfilerMarkers.s_ProfilingSamplerSetLightBlendTexture))
                 {
                     if (layerBatch.lightStats.useLights && isLightingActive)
                     {
@@ -116,18 +104,21 @@ namespace UnityEngine.Rendering.Universal
                             builder.UseTexture(passData.lightTextures[i]);
                     }
 
-                    SetGlobalLightTextures(graph, builder, passData.lightTextures, ref layerBatch, rendererData, isLightingActive);
+                    SetGlobalLightTextures(graph, builder, frameData, batchIndex, isLightingActive);
 
                     builder.AllowGlobalStateModification(true);
 
-                    builder.SetRenderFunc((SetGlobalPassData data, RasterGraphContext context) =>
+                    builder.SetRenderFunc(static (SetGlobalPassData data, RasterGraphContext context) =>
                     {
                     });
                 }
             }
 
             // Renderer Pass
-            using (var builder = graph.AddRasterRenderPass<PassData>(k_RenderPass, out var passData, m_ProfilingSampler))
+            var passName = ProfilerMarkers.s_RenderPass;
+            LayerDebug.FormatPassName(layerBatch, ref passName);
+
+            using (var builder = graph.AddRasterRenderPass<PassData>(passName, out var passData, LayerDebug.GetProfilingSampler(passName, ProfilerMarkers.s_ProfilingSamplerRenderPass)))
             {
                 passData.lightBlendStyles = rendererData.lightBlendStyles;
                 passData.blendStyleIndices = layerBatch.activeBlendStylesIndices;
@@ -173,25 +164,30 @@ namespace UnityEngine.Rendering.Universal
                 // Set color and depth attachments
                 builder.SetRenderAttachment(commonResourceData.activeColorTexture, 0);
 
-                if (Renderer2D.IsDepthUsageAllowed(frameData, rendererData))
+                if (commonResourceData.activeDepthTexture.IsValid())
                     builder.SetRenderAttachmentDepth(commonResourceData.activeDepthTexture);
 
                 builder.AllowGlobalStateModification(true);
 
-                // Post set global light textures for next renderer pass 
+                // Post set global light textures for next renderer pass
                 var nextBatch = batchIndex + 1;
                 if (nextBatch < universal2DResourceData.lightTextures.Length)
-                    SetGlobalLightTextures(graph, builder, universal2DResourceData.lightTextures[nextBatch], ref layerBatches[nextBatch], rendererData, isLightingActive);
+                    SetGlobalLightTextures(graph, builder, frameData, nextBatch, isLightingActive);
 
-                builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext context) =>
                 {
                     Execute(context, data);
                 });
             }
         }
 
-        void SetGlobalLightTextures(RenderGraph graph, IRasterRenderGraphBuilder builder, TextureHandle[] lightTextures, ref LayerBatch layerBatch, Renderer2DData rendererData, bool isLightingActive)
+        void SetGlobalLightTextures(RenderGraph graph, IRasterRenderGraphBuilder builder, ContextContainer frameData, int batchIndex, bool isLightingActive)
         {
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
+            Renderer2DData rendererData = frameData.Get<Universal2DRenderingData>().renderingData;
+            var layerBatch = frameData.Get<Universal2DRenderingData>().layerBatches[batchIndex];
+            var lightTextures = frameData.Get<Universal2DResourceData>().lightTextures[batchIndex];
+
             if (isLightingActive)
             {
                 if (layerBatch.lightStats.useLights)

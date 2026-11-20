@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
+using Unity.Scripting.LifecycleManagement;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler;
 
@@ -9,7 +10,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
     {
         internal static class RenderGraphExceptionMessages
         {
-            internal static bool enableCaller = true;
+            [NoAutoStaticsCleanup]
+            internal static bool enableCaller = true; // Only used from tests
 
             internal const string k_RenderGraphExecutionError = "Render Graph Execution error";
 
@@ -57,6 +59,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 "SubPassFlag for merging cannot be determined if native pass doesn't have a depth attachment. Make sure your pass has a depth attachment.";
 
             internal const string k_AddingOlderAttachmentVersion = "The pass adds an older version while a higher version is already registered with the pass. Make sure you only access the latest version.";
+
+            internal const string k_GraphPassesCalledBeforeCompactedNonCulledRasterPasses = "Cannot iterate over compactedNonCulledRasterPasses, the data is null. Did you use GraphPasses() before calling CompactNonCulledPassesForRasterPasses?";
 
             // Users shouldn't be seeing these, they are a sort of catch for internal RG mistakes.
             internal const string k_NonIncrementalCreationCall =
@@ -119,6 +123,32 @@ namespace UnityEngine.Rendering.RenderGraphModule
             internal static string IncompatibleTextureUVOriginUseTexture(TextureUVOriginSelection origin) =>
                 $"UseTexture() of a resource with `{origin}` is not compatible with Unity's standard UV origin for texture reading {TextureUVOrigin.BottomLeft}. Are you trying to UseTexture() on a backbuffer?";
 
+            internal static string DepthInputAttachmentNotEnabled(string passName) =>
+                $"In pass '{passName}' when trying to call SetInputAttachment() with a depth texture - " +
+                $"This requires calling builder.SetExtendedFeatureFlags(ExtendedFeatureFlags.DepthAttachmentAsInputAttachment) first. " +
+                $"The extended feature flag was not set before using depth as input attachment.";
+
+            internal static string DepthInputAttachmentNotSupported(string passName) =>
+                $"In pass '{passName}' - " +
+                $"Read-Only depth attachment as input attachment is not supported on the current platform. " +
+                $"Platform: {SystemInfo.graphicsDeviceType}. " +
+                $"Use SystemInfo.supportsDepthAttachmentAsInputAttachment to check support at runtime.";
+
+            internal static string DepthInputAttachmentWithWriteAccess(string passName) =>
+                $"In pass '{passName}' - " +
+                $"Depth attachment has Write access but ExtendedFeatureFlags.DepthAttachmentAsInputAttachment is set." +
+                $"Depth input attachment must be read-only. Remove write access from the depth attachment.";
+
+            internal static string DepthInputAttachmentWithInvalidIndex(string passName) =>
+                $"In pass '{passName}' - " +
+                $"Depth attachment must be set to index 0 when ExtendedFeatureFlags.DepthAttachmentAsInputAttachment is set.";
+
+            internal static string DepthInputAttachmentWithColorFormat(string passName) =>
+                $"In pass '{passName}' - " +
+                $"Color attachment is set to index 0 but ExtendedFeatureFlags.DepthAttachmentAsInputAttachment is set. " +
+                $"Index 0 is reserved for the depth when the flag is set. Remove the extended feature flag or set a depth attachment";
+
+
             // RenderGraphPass
             internal const string k_MoreThanOneResourceForMRTIndex =
                 "You can only bind a single texture to a single index in a multiple render texture (MRT). Verify your indexes are correct.";
@@ -169,10 +199,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
             internal const string k_NoActivePassForSubpass =
                 "Compiler error: Generated a subpass pass but no pass is currently active.";
-            internal static string UsingLegacyRenderGraph(string passName) =>
-                "Pass '" + passName + "' is using the legacy rendergraph API." +
-                " You cannot use legacy passes with the Native Render Pass Compiler." +
-                " The APIs that are compatible with the Native Render Pass Compiler are AddUnsafePass, AddComputePass and AddRasterRenderPass.";
 
             internal static string IncompatibleTextureUVOriginStore(string firstAttachmentName, TextureUVOriginSelection firstAttachmentOrigin, string secondAttachmentName, TextureUVOriginSelection secondAttachmentOrigin) =>
                 $"Texture attachment {firstAttachmentName} with uv origin {firstAttachmentOrigin} does not match with texture attachment {secondAttachmentName} with uv origin {secondAttachmentOrigin}. Storing both would result in contents being flipped.";

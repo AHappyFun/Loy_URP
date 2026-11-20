@@ -105,14 +105,14 @@ namespace UnityEngine.Rendering.Universal
     /// Class containing resources needed for the <c>UniversalRenderer</c>.
     /// </summary>
     [Serializable, ReloadGroup, ExcludeFromPreset]
-    [URPHelpURL("urp-universal-renderer")]
+    [URPHelpURL("urp/urp-universal-renderer")]
     public partial class UniversalRendererData : ScriptableRendererData, ISerializationCallbackReceiver
     {
 #if UNITY_EDITOR
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Performance", "CA1812")]
-        internal class CreateUniversalRendererAsset : EndNameEditAction
+        internal class CreateUniversalRendererAsset : AssetCreationEndAction
         {
-            public override void Action(int instanceId, string pathName, string resourceFile)
+            public override void Action(EntityId entityId, string pathName, string resourceFile)
             {
                 var instance = UniversalRenderPipelineAsset.CreateRendererAsset(pathName, RendererType.UniversalRenderer, false) as UniversalRendererData;
                 Selection.activeObject = instance;
@@ -123,7 +123,7 @@ namespace UnityEngine.Rendering.Universal
         static void CreateUniversalRendererData()
         {
             var icon = CoreUtils.GetIconForType<ScriptableRendererData>();
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, CreateInstance<CreateUniversalRendererAsset>(), "New Custom Universal Renderer Data.asset", icon, null);
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, CreateInstance<CreateUniversalRendererAsset>(), "New Custom Universal Renderer Data.asset", icon, null);
         }
 
 #endif
@@ -145,6 +145,7 @@ namespace UnityEngine.Rendering.Universal
         [SerializeField] CopyDepthMode m_CopyDepthMode = CopyDepthMode.AfterTransparents;
         [SerializeField] DepthFormat m_DepthAttachmentFormat = DepthFormat.Default;
         [SerializeField] DepthFormat m_DepthTextureFormat = DepthFormat.Default;
+        [SerializeField] bool m_ShadowmapStencil = false;
 #if UNITY_EDITOR
         // Do not strip accurateGbufferNormals on Mobile Vulkan as some GPUs do not support R8G8B8A8_SNorm, which then force us to use accurateGbufferNormals
         [ShaderKeywordFilter.ApplyRulesIfNotGraphicsAPI(GraphicsDeviceType.Vulkan)]
@@ -153,7 +154,8 @@ namespace UnityEngine.Rendering.Universal
         [SerializeField]
         bool m_AccurateGbufferNormals = false;
 
-        [SerializeField] IntermediateTextureMode m_IntermediateTextureMode = IntermediateTextureMode.Always;
+        [SerializeField] IntermediateTextureMode m_IntermediateTextureMode = IntermediateTextureMode.Auto;
+        [SerializeField] bool m_TileOnlyMode = false;
 
         /// <inheritdoc/>
         protected override ScriptableRenderer Create()
@@ -320,6 +322,22 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <summary>
+        /// Whether to allocate stencil bits when creating shadowmap textures. When enabled, the shadow caster pass will also respect material render queue order.
+        /// </summary>
+        public bool shadowmapStencil
+        {
+            get
+            {
+                return m_ShadowmapStencil;
+            }
+            set
+            {
+                SetDirty();
+                m_ShadowmapStencil = value;
+            }
+        }
+
+        /// <summary>
         /// Use Octahedron normal vector encoding for gbuffer normals.
         /// The overhead is negligible from desktop GPUs, while it should be avoided for mobile GPUs.
         /// </summary>
@@ -343,6 +361,24 @@ namespace UnityEngine.Rendering.Universal
             {
                 SetDirty();
                 m_IntermediateTextureMode = value;
+            }
+        }
+
+        /// <summary>
+        /// Tile-Only Mode restricts render passes to avoid memory load/store of main camera targets, keeping them in on‑chip tile memory.
+        /// It activates additional RenderGaph validation. Some features may be disabled or fall back. See docs for details.
+        /// This is a potential GPU performance optimization on Tile-Based GPU architectures.
+        /// </summary>
+        public bool tileOnlyMode
+        {
+            get => m_TileOnlyMode;
+            set
+            {
+                if (m_TileOnlyMode == value)
+                    return;
+
+                SetDirty();
+                m_TileOnlyMode = value;
             }
         }
 

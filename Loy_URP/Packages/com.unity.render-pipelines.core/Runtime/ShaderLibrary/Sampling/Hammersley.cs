@@ -7,7 +7,7 @@ namespace UnityEngine.Rendering
     /// </summary>
     public static class Hammersley
     {
-        static float[]  k_Hammersley2dSeq16 = {
+        static readonly float[]  k_Hammersley2dSeq16 = {
             0.00000000f, 0.00000000f, 0.0f, 0.0f,
             0.06250000f, 0.50000000f, 0.0f, 0.0f,
             0.12500000f, 0.25000000f, 0.0f, 0.0f,
@@ -26,7 +26,7 @@ namespace UnityEngine.Rendering
             0.93750000f, 0.93750000f,  0.0f, 0.0f,
         };
 
-        static float[] k_Hammersley2dSeq32 = {
+        static readonly float[] k_Hammersley2dSeq32 = {
             0.00000000f, 0.00000000f, 0.0f, 0.0f,
             0.03125000f, 0.50000000f, 0.0f, 0.0f,
             0.06250000f, 0.25000000f, 0.0f, 0.0f,
@@ -61,7 +61,7 @@ namespace UnityEngine.Rendering
             0.96875000f, 0.96875000f, 0.0f, 0.0f,
         };
 
-        static float[] k_Hammersley2dSeq64 = {
+        static readonly float[] k_Hammersley2dSeq64 = {
             0.00000000f, 0.00000000f, 0.0f, 0.0f,
             0.01562500f, 0.50000000f, 0.0f, 0.0f,
             0.03125000f, 0.25000000f, 0.0f, 0.0f,
@@ -128,7 +128,7 @@ namespace UnityEngine.Rendering
             0.98437500f, 0.98437500f, 0.0f, 0.0f,
         };
 
-        static float[] k_Hammersley2dSeq256 = {
+        static readonly float[] k_Hammersley2dSeq256 = {
             0.00000000f, 0.00000000f, 0.0f, 0.0f,
             0.00390625f, 0.50000000f, 0.0f, 0.0f,
             0.00781250f, 0.25000000f, 0.0f, 0.0f,
@@ -423,7 +423,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Initializing Hammersley constants.
         /// </summary>
-        unsafe public static void Initialize()
+        public static unsafe void Initialize()
         {
             Hammersley2dSeq16 hammersley2DSeq16 = new Hammersley2dSeq16();
             Hammersley2dSeq32 hammersley2DSeq32 = new Hammersley2dSeq32();

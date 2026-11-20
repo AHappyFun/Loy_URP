@@ -1,0 +1,45 @@
+#pragma only_renderers d3d11 playstation xboxone xboxseries vulkan metal ps5 switch2
+
+#pragma kernel FilterTemporally
+
+#include "Common.hlsl"
+#include "RingBuffer.hlsl"
+#include "PatchUtil.hlsl"
+
+StructuredBuffer<uint> _RingConfigBuffer;
+StructuredBuffer<SphericalHarmonics::RGBL1> _InputPatchIrradiances;
+RWStructuredBuffer<PatchUtil::PatchStatisticsSet> _PatchStatistics;
+RWStructuredBuffer<SphericalHarmonics::RGBL1> _InputOutputPatchIrradiances;
+
+uint _RingConfigOffset;
+float _TemporalSmoothing;
+
+[numthreads(64, 1, 1)]
+void FilterTemporally(uint patchIdx : SV_DispatchThreadID)
+{
+    if (!RingBuffer::IsPositionInUse(_RingConfigBuffer, _RingConfigOffset, patchIdx))
+        return;
+
+    PatchUtil::IrradianceState irradianceState = _PatchStatistics[patchIdx].irradianceState;
+
+    SphericalHarmonics::RGBL1 output = (SphericalHarmonics::RGBL1)0;
+    if (PatchUtil::GetUpdateCount(irradianceState) != 0)
+    {
+        float weight;
+        if (!PatchUtil::GetIsTemporalInitialized(irradianceState))
+        {
+            PatchUtil::SetIsTemporalInitialized(irradianceState, true);
+            _PatchStatistics[patchIdx].irradianceState = irradianceState;
+            weight = 0;
+        }
+        else
+        {
+            weight = lerp(0.9f, 0.95f, _TemporalSmoothing);
+        }
+        const SphericalHarmonics::RGBL1 newIrradiance = _InputPatchIrradiances[patchIdx];
+        const SphericalHarmonics::RGBL1 oldIrradiance = _InputOutputPatchIrradiances[patchIdx];
+        output = SphericalHarmonics::Lerp(newIrradiance, oldIrradiance, weight);;
+    }
+
+    _InputOutputPatchIrradiances[patchIdx] = output;
+}

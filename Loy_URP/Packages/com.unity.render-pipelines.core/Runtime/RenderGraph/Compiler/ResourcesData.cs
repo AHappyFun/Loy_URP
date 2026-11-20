@@ -24,13 +24,26 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
     // RenderGraphResourceRegistry was identified as slow in the profiler
     internal struct ResourceUnversionedData
     {
-        public readonly bool isImported; // Imported graph resource
-        public bool isShared; // Shared graph resource
-        public int tag;
+        public int versionedDataOffset;     // Where this resource's versioned data starts in the packed array
+        public int versionedDataCount;      // Number of versions this resource actually has
+        public int readerDataOffset;        // Where this resource's reader data starts in the packed array
+        public int maxReadersPerVersion;    // Max readers across all versions of this resource
+
         public int lastUsePassID; // Index of last used pass. The resource (if not imported) is destroyed after this pass.
         public int lastWritePassID; // The last pass writing it. After this other passes may still read the resource
-        public int firstUsePassID; //First pas using the resource this may be reading or writing. If not imported the resource is allocated just before this pass.
+        public int firstUsePassID; // First pass using the resource this may be reading or writing. If not imported the resource is allocated just before this pass.
+        public int latestVersionNumber; // Mostly readonly, can be decremented only if all passes using the last version are culled
+
+        public readonly bool isImported; // Imported graph resource
         public bool memoryLess; // Never create the texture on GPU if it is allocated/freed within a renderpass
+        public int lastGraphicsUsePassID; // Last non culled pass using this resource on the graphics queue, -1 if none
+        public int lastAsyncComputeUsePassID; // Last non culled pass using this resource on the async compute queue, -1 if none
+        public int tag;
+
+        // True when at least one non-culled async compute pass touches this resource, whether or not graphics passes
+        // use it as well. These are pooled separately from resources only ever used on the graphics queue.
+        // See RenderGraphResource.CreatePooledGraphicsResource().
+        public readonly bool usedByAsyncComputePass => lastAsyncComputeUsePassID >= 0;
 
         public readonly int width;
         public readonly int height;
@@ -38,26 +51,28 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         public readonly int msaaSamples;
         public readonly GraphicsFormat graphicsFormat;
 
-        public int latestVersionNumber; // mostly readonly, can be decremented only if all passes using the last version are culled
-
         public readonly bool clear; // graph.m_Resources.GetTextureResourceDesc(fragment.resource).clearBuffer;
         public readonly bool discard; // graph.m_Resources.GetTextureResourceDesc(fragment.resource).discardBuffer;
         public readonly bool bindMS;
+        public readonly bool isBackBuffer;
 
         public TextureUVOriginSelection textureUVOrigin;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetName(CompilerContextData ctx, in ResourceHandle h) => ctx.GetResourceName(h);
 
-        public ResourceUnversionedData(TextureResource rll, ref RenderTargetInfo info, ref TextureDesc desc, bool isResourceShared)
+        public ResourceUnversionedData(TextureResource rll, ref RenderTargetInfo info, ref TextureDesc desc, bool isResBackBuffer)
         {
             isImported = rll.imported;
-            isShared = isResourceShared;
             tag = 0;
             firstUsePassID = -1;
             lastUsePassID = -1;
             lastWritePassID = -1;
-            memoryLess = false;
+            lastGraphicsUsePassID = -1;
+            lastAsyncComputeUsePassID = -1;
+
+            // Check if imported texture is memoryless
+            memoryLess = desc.memoryless != RenderTextureMemoryless.None;
 
             width = info.width;
             height = info.height;
@@ -69,21 +84,28 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             clear = desc.clearBuffer;
             discard = desc.discardBuffer;
             bindMS = info.bindMS;
+            isBackBuffer = isResBackBuffer;
             textureUVOrigin = rll.textureUVOrigin;
             graphicsFormat = desc.format;
+
+            versionedDataOffset = 0;
+            versionedDataCount = 0;
+            readerDataOffset = 0;
+            maxReadersPerVersion = 0;
         }
 
-        public ResourceUnversionedData(IRenderGraphResource rll, ref BufferDesc _, bool isResourceShared)
+        public ResourceUnversionedData(IRenderGraphResource rll, ref BufferDesc _, bool isResBackBuffer)
         {
             // We don't do anything with the BufferDesc for now. The compiler doesn't really need the details of the buffer like it does with textures
             // since for textures it needs the details to merge passes etc. Which is not relevant for buffers.
             isImported = rll.imported;
-            isShared = isResourceShared;
             tag = 0;
             firstUsePassID = -1;
             lastUsePassID = -1;
             lastWritePassID = -1;
             memoryLess = false;
+            lastGraphicsUsePassID = -1;
+            lastAsyncComputeUsePassID = -1;
 
             width = -1;
             height = -1;
@@ -95,21 +117,28 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             clear = false;
             discard = false;
             bindMS = false;
+            isBackBuffer = isResBackBuffer;
             textureUVOrigin = TextureUVOriginSelection.Unknown;
             graphicsFormat = GraphicsFormat.None;
+
+            versionedDataOffset = 0;
+            versionedDataCount = 0;
+            readerDataOffset = 0;
+            maxReadersPerVersion = 0;
         }
 
-        public ResourceUnversionedData(IRenderGraphResource rll, ref RayTracingAccelerationStructureDesc _, bool isResourceShared)
+        public ResourceUnversionedData(IRenderGraphResource rll, ref RayTracingAccelerationStructureDesc _, bool isResBackBuffer)
         {
             // We don't do anything with the RayTracingAccelerationStructureDesc for now. The compiler doesn't really need the details of the acceleration structures like it does with textures
             // since for textures it needs the details to merge passes etc. Which is not relevant for acceleration structures.
             isImported = rll.imported;
-            isShared = isResourceShared;
             tag = 0;
             firstUsePassID = -1;
             lastUsePassID = -1;
             lastWritePassID = -1;
             memoryLess = false;
+            lastGraphicsUsePassID = -1;
+            lastAsyncComputeUsePassID = -1;
 
             width = -1;
             height = -1;
@@ -121,8 +150,14 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             clear = false;
             discard = false;
             bindMS = false;
+            isBackBuffer = isResBackBuffer;
             textureUVOrigin = TextureUVOriginSelection.Unknown;
             graphicsFormat = GraphicsFormat.None;
+
+            versionedDataOffset = 0;
+            versionedDataCount = 0;
+            readerDataOffset = 0;
+            maxReadersPerVersion = 0;
         }
 
         public void InitializeNullResource()
@@ -130,6 +165,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             firstUsePassID = -1;
             lastUsePassID = -1;
             lastWritePassID = -1;
+            lastGraphicsUsePassID = -1;
+            lastAsyncComputeUsePassID = -1;
             textureUVOrigin = TextureUVOriginSelection.Unknown;
         }
     }
@@ -138,6 +175,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
     internal struct ResourceVersionedData
     {
         public bool written; // This version of the resource is written by a pass (external resources may never be written by the graph for example)
+        public bool countedAsUnused;
         public int writePassId; // Index in the pass array of the pass writing this specific version. If any, there is always a single index as the version differs when a resource is written several times.
         public int numReaders; // Number of other passes reading this version
 
@@ -145,7 +183,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetWritingPass(CompilerContextData ctx, in ResourceHandle h, int passId)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (written)
             {
                 string passName = ctx.GetPassName(passId);
@@ -162,12 +200,13 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RegisterReadingPass(CompilerContextData ctx, in ResourceHandle h, int passId, int index)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
-            if (numReaders >= ctx.resources.MaxReaders[h.iType])
+#if UNITY_ENABLE_CHECKS
+            ref var unversioned = ref ctx.resources.unversionedData[h.iType].ElementAt(h.index);
+            if (numReaders >= unversioned.maxReadersPerVersion)
             {
                 string passName = ctx.GetPassName(passId);
                 string resourceName = ctx.GetResourceName(h);
-                throw new Exception($"Maximum '{ctx.resources.MaxReaders}' passes can use a single graph output as input. Pass {passName} is trying to read {resourceName}.");
+                throw new Exception($"Maximum '{unversioned.maxReadersPerVersion}' passes can use a single graph output as input. Pass {passName} is trying to read {resourceName}.");
             }
 #endif
             ctx.resources.readerData[h.iType][ctx.resources.IndexReader(h, numReaders)] = new ResourceReaderData(passId, index);
@@ -199,30 +238,29 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
     }
 
     // This class allows quick lookups from ResourceHandle -> ResourceUnversionedData/ResourceVersionData/ResourceReaderData
-    // This is implementing a fully allocated array, we assume there aren't too many resources & versions. This lookup is fast and doesn't
-    // require GC allocs to fill.
+    // Uses resource-level sparse allocation: each resource allocates only the versions it needs.
+    // Reader allocation uses total read count as conservative upper bound (not true per-version sparse).
+    // Allocation metadata is inlined in ResourceUnversionedData for optimal cache performance.
     internal class ResourcesData
     {
-        public NativeList<ResourceUnversionedData>[] unversionedData; // Flattened fixed size array storing info per resource id shared between all versions.
-        public NativeList<ResourceVersionedData>[] versionedData; // Flattened fixed size array storing up to MaxVersions versions per resource id.
-        public NativeList<ResourceReaderData>[] readerData; // Flattened fixed size array storing up to MaxReaders per resource id per version.
+        public NativeList<ResourceUnversionedData>[] unversionedData; // Per-resource data (one per resource, includes allocation metadata)
+        public NativeList<ResourceVersionedData>[] versionedData;     // Packed versioned data (sparse)
+        public NativeList<ResourceReaderData>[] readerData;           // Partially packed reader data (semi-sparse)
 
-        public int[] MaxVersions;
-        public int[] MaxReaders;
-
+#if UNITY_ENABLE_CHECKS
         public DynamicArray<Name>[] resourceNames;
+#endif
 
         public ResourcesData()
         {
             unversionedData = new NativeList<ResourceUnversionedData>[(int)RenderGraphResourceType.Count];
             versionedData = new NativeList<ResourceVersionedData>[(int)RenderGraphResourceType.Count];
             readerData = new NativeList<ResourceReaderData>[(int)RenderGraphResourceType.Count];
+#if UNITY_ENABLE_CHECKS
             resourceNames = new DynamicArray<Name>[(int)RenderGraphResourceType.Count];
-            MaxVersions = new int[(int)RenderGraphResourceType.Count];
-            MaxReaders = new int[(int)RenderGraphResourceType.Count];
-
             for (int t = 0; t < (int)RenderGraphResourceType.Count; t++)
-                resourceNames[t] = new DynamicArray<Name>(0); // T in NativeList<T> cannot contain managed types, so the names are stored separately
+                resourceNames[t] = new DynamicArray<Name>(NativePassCompiler.k_EstimatedPassCount, false);
+#endif
         }
 
         public void Clear()
@@ -237,20 +275,16 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
 
                 if (readerData[t].IsCreated)
                     readerData[t].Clear();
-
-                resourceNames[t].Clear();
             }
         }
 
         void AllocateAndResizeNativeListIfNeeded<T>(ref NativeList<T> nativeList, int size, NativeArrayOptions options) where T : unmanaged
         {
             // Allocate the first time or if Dispose() has been called through RenderGraph.Cleanup()
-            // Length remains 0, list is still empty
             if (!nativeList.IsCreated)
                 nativeList = new NativeList<T>(size, AllocatorManager.Persistent);
 
             // Resize the list (it will allocate if necessary)
-            // List is not empty anymore
             nativeList.Resize(size, options);
         }
 
@@ -261,32 +295,38 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 RenderGraphResourceType resourceType = (RenderGraphResourceType) t;
                 var numResources = resources.GetResourceCount(resourceType);
 
-                uint maxReaders = 0;
-                uint maxWriters = 0;
-
                 // We don't clear the list as we reinitialize it right after
                 AllocateAndResizeNativeListIfNeeded(ref unversionedData[t], numResources, NativeArrayOptions.UninitializedMemory);
 
-                resourceNames[t].Resize(numResources, true);
+#if UNITY_ENABLE_CHECKS
+                resourceNames[t].Clear();
+#endif
 
                 if (numResources > 0) // Null Resource
                 {
                     var nullResource = new ResourceUnversionedData();
                     nullResource.InitializeNullResource();
                     unversionedData[t][0] = nullResource;
-                    resourceNames[t][0] = new Name("");
+#if UNITY_ENABLE_CHECKS
+                    resourceNames[t].Add(new Name(""));
+#endif
                 }
 
-                // Fill the buffer with any existing external info requested for NRP RG process
+                // Compute allocation sizes and populate unversionedData in a single pass
+                int totalVersionedDataCount = 0;
+                int totalReaderDataCount = 0;
+
+                // Null resource at index 0 already initialized to 0 in constructors
+                // Process all resources in one pass for better cache locality
                 for (int r = 1; r < numResources; r++)
                 {
-                    // We cache these values here
-                    // as getting them over and over from other
-                    // graph data structures external to NRP RG is costly
                     var h = new ResourceHandle(r, resourceType, false);
                     var rll = resources.GetResourceLowLevel(h);
-                    resourceNames[t][r] = new Name(rll.GetName());
+#if UNITY_ENABLE_CHECKS
+                    resourceNames[t].Add(new Name(rll.GetName()));
+#endif
 
+                    // Initialize unversionedData based on resource type
                     switch (t)
                     {
                         case (int)RenderGraphResourceType.Texture:
@@ -294,74 +334,84 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                                 var tex = rll as TextureResource;
                                 resources.GetRenderTargetInfo(h, out var info);
                                 ref var desc = ref tex.desc;
-                                bool isResourceShared = resources.IsRenderGraphResourceShared(h);
+                                bool isBackBuffer = resources.IsRenderGraphResourceBackBuffer(h);
 
-                                unversionedData[t][r] = new ResourceUnversionedData(tex, ref info, ref desc, isResourceShared);
+                                unversionedData[t][r] = new ResourceUnversionedData(tex, ref info, ref desc, isBackBuffer);
                                 break;
                             }
                         case (int)RenderGraphResourceType.Buffer:
                             {
                                 ref var desc = ref (rll as BufferResource).desc;
                                 bool isResourceShared = resources.IsRenderGraphResourceShared(h);
+                                bool isBackBuffer = resources.IsRenderGraphResourceBackBuffer(h);
 
-                                unversionedData[t][r] = new ResourceUnversionedData(rll, ref desc, isResourceShared);
+                                unversionedData[t][r] = new ResourceUnversionedData(rll, ref desc, isBackBuffer);
                                 break;
                             }
                         case (int)RenderGraphResourceType.AccelerationStructure:
                             {
                                 ref var desc = ref (rll as RayTracingAccelerationStructureResource).desc;
                                 bool isResourceShared = resources.IsRenderGraphResourceShared(h);
+                                bool isBackBuffer = resources.IsRenderGraphResourceBackBuffer(h);
 
-                                unversionedData[t][r] = new ResourceUnversionedData(rll, ref desc, isResourceShared);
+                                unversionedData[t][r] = new ResourceUnversionedData(rll, ref desc, isBackBuffer);
                                 break;
                             }
                         default:
                             throw new Exception("Unsupported resource type: " + t);
                     }
 
-                    maxReaders = Math.Max(maxReaders, rll.readCount);
-                    maxWriters = Math.Max(maxWriters, rll.writeCount);
+                    // Compute allocation metadata for this resource
+                    // +1 for versions: v0 exists even without writes
+                    int numVersions = (int)rll.writeCount + 1;
+                    // +1 for readers: transient resources don't call IncrementReadCount, but BuildGraph adds 1 implicit read
+                    // Note: rll.readCount is total across all versions (not per-version), so this is a conservative upper bound
+                    int numReaders = (int)rll.readCount + 1;
+
+                    // Populate allocation metadata
+                    ref var unversioned = ref unversionedData[t].ElementAt(r);
+                    unversioned.versionedDataOffset = totalVersionedDataCount;
+                    unversioned.versionedDataCount = numVersions;
+                    unversioned.readerDataOffset = totalReaderDataCount;
+                    unversioned.maxReadersPerVersion = numReaders;
+
+                    totalVersionedDataCount += numVersions;
+                    totalReaderDataCount += numVersions * numReaders;
                 }
 
-                // The first resource is a null resource, so we need to add 1 to the count.
-                MaxReaders[t] = (int)maxReaders + 1;
-                MaxVersions[t]  = (int)maxWriters + 1;
-
-                // Clear the other caching structures, they will be filled later
-                AllocateAndResizeNativeListIfNeeded(ref versionedData[t], MaxVersions[t] * numResources, NativeArrayOptions.ClearMemory);
-                AllocateAndResizeNativeListIfNeeded(ref readerData[t], MaxVersions[t] * MaxReaders[t] * numResources, NativeArrayOptions.ClearMemory);
+                AllocateAndResizeNativeListIfNeeded(ref versionedData[t], totalVersionedDataCount, NativeArrayOptions.ClearMemory);
+                AllocateAndResizeNativeListIfNeeded(ref readerData[t], totalReaderDataCount, NativeArrayOptions.ClearMemory);
             }
         }
 
-        // Flatten array index
+        // Flatten array index using sparse allocation (uses inlined allocation metadata)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Index(in ResourceHandle h)
         {
+            ref var unversioned = ref unversionedData[h.iType].ElementAt(h.index);
 #if UNITY_EDITOR // Hot path
-            if (h.version < 0 || h.version >= MaxVersions[h.iType])
+            if (h.version < 0 || h.version >= unversioned.versionedDataCount)
                 throw new Exception("Invalid version: " + h.version);
 #endif
-            return h.index * MaxVersions[h.iType] + h.version;
+            return unversioned.versionedDataOffset + h.version;
         }
 
-        // Flatten array index
+        // Flatten array index for readers using sparse allocation (uses inlined allocation metadata)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int IndexReader(in ResourceHandle h, int readerID)
         {
+            ref var unversioned = ref unversionedData[h.iType].ElementAt(h.index);
 #if UNITY_EDITOR // Hot path
-            if (h.version < 0 || h.version >= MaxVersions[h.iType])
+            if (h.version < 0 || h.version >= unversioned.versionedDataCount)
                 throw new Exception("Invalid version");
-            if (readerID < 0 || readerID >= MaxReaders[h.iType])
+            if (readerID < 0 || readerID >= unversioned.maxReadersPerVersion)
                 throw new Exception("Invalid reader");
 #endif
-            return (h.index * MaxVersions[h.iType] + h.version) * MaxReaders[h.iType] + readerID;
+            return unversioned.readerDataOffset + h.version * unversioned.maxReadersPerVersion + readerID;
         }
 
         // Lookup data for a given handle
-        public ref ResourceVersionedData this[ResourceHandle h]
-        {
-            get { return ref versionedData[h.iType].ElementAt(Index(h)); }
-        }
+        public ref ResourceVersionedData this[ResourceHandle h] => ref versionedData[h.iType].ElementAt(Index(h));
 
         public void Dispose()
         {

@@ -10,8 +10,6 @@ using UnityEditor.U2D.Common.Path;
 
 namespace UnityEditor.Rendering.Universal
 {
-
-
     [CustomEditor(typeof(Light2D))]
     [CanEditMultipleObjects]
     internal class Light2DEditor
@@ -21,7 +19,6 @@ namespace UnityEditor.Rendering.Universal
         : Editor
 #endif
     {
-
 #if USING_2DCOMMON
 
         [EditorTool("Edit Freeform Shape", typeof(Light2D))]
@@ -59,68 +56,94 @@ namespace UnityEditor.Rendering.Universal
                 // This is untracked right now...
                 serializedObject.ApplyModifiedProperties();
             }
-    }
-
+        }
 #endif
 
         private static class Styles
         {
-            public static readonly GUIContent InnerOuterSpotAngle = EditorGUIUtility.TrTextContent("Inner / Outer Spot Angle", "Adjusts the inner / outer angles of this light to change the angle ranges of this Spot Light’s beam.");
+            public static readonly GUIContent InnerOuterSpotAngle = L10n.TextContent("Inner / Outer Spot Angle", "Adjusts the inner / outer angles of this light to change the angle ranges of this Spot Light’s beam.", null, null);
 
-            public static Texture lightCapTopRight = Resources.Load<Texture>("LightCapTopRight");
-            public static Texture lightCapTopLeft = Resources.Load<Texture>("LightCapTopLeft");
-            public static Texture lightCapBottomLeft = Resources.Load<Texture>("LightCapBottomLeft");
-            public static Texture lightCapBottomRight = Resources.Load<Texture>("LightCapBottomRight");
-            public static Texture lightCapUp = Resources.Load<Texture>("LightCapUp");
-            public static Texture lightCapDown = Resources.Load<Texture>("LightCapDown");
+            static Texture s_LightCapTopRight;
+            static Texture s_LightCapTopLeft;
+            static Texture s_LightCapBottomLeft;
+            static Texture s_LightCapBottomRight;
+            static Texture s_LightCapUp;
+            static Texture s_LightCapDown;
 
+            public static Texture lightCapTopRight => s_LightCapTopRight ??= LoadIcon("LightCapTopRight.png");
+            public static Texture lightCapTopLeft => s_LightCapTopLeft ??= LoadIcon("LightCapTopLeft.png");
+            public static Texture lightCapBottomLeft => s_LightCapBottomLeft ??= LoadIcon("LightCapBottomLeft.png");
+            public static Texture lightCapBottomRight => s_LightCapBottomRight ??= LoadIcon("LightCapBottomRight.png");
+            public static Texture lightCapUp => s_LightCapUp ??= LoadIcon("LightCapUp.png");
+            public static Texture lightCapDown => s_LightCapDown ??= LoadIcon("LightCapDown.png");
 
-            public static GUIContent lightTypeFreeform = new GUIContent("Freeform", Resources.Load("InspectorIcons/FreeformLight") as Texture);
-            public static GUIContent lightTypeSprite = new GUIContent("Sprite", Resources.Load("InspectorIcons/SpriteLight") as Texture);
-            public static GUIContent lightTypePoint = new GUIContent("Spot", Resources.Load("InspectorIcons/PointLight") as Texture);
-            public static GUIContent lightTypeGlobal = new GUIContent("Global", Resources.Load("InspectorIcons/GlobalLight") as Texture);
-            public static GUIContent[] lightTypeOptions = new GUIContent[] { lightTypeFreeform, lightTypeSprite, lightTypePoint, lightTypeGlobal };
+            static Texture LoadIcon(string fileName) => AssetDatabase.LoadAssetAtPath<Texture>(Light2DEditorUtility.ResourcePath + fileName);
 
+            public static GUIContent blendingSettingsFoldout = L10n.TextContent("Blending", "Options used for blending", null, null);
+            public static GUIContent shadowsSettingsFoldout = L10n.TextContent("Shadows", "Options used for shadows", null, null);
+            public static GUIContent volumetricSettingsFoldout = L10n.TextContent("Volumetric", "Options used for volumetric lighting", null, null);
+            public static GUIContent normalMapsSettingsFoldout = L10n.TextContent("Normal Maps", "Options used for normal maps", null, null);
+            public static GUIContent filteringSettingsFoldout = L10n.TextContent("Filtering", "Options to filter the light", null, null);
 
-            public static GUIContent blendingSettingsFoldout = EditorGUIUtility.TrTextContent("Blending", "Options used for blending");
-            public static GUIContent shadowsSettingsFoldout = EditorGUIUtility.TrTextContent("Shadows", "Options used for shadows");
-            public static GUIContent volumetricSettingsFoldout = EditorGUIUtility.TrTextContent("Volumetric", "Options used for volumetric lighting");
-            public static GUIContent normalMapsSettingsFoldout = EditorGUIUtility.TrTextContent("Normal Maps", "Options used for normal maps");
+            public static GUIContent generalLightType = L10n.TextContent("Light Type", "Select the light type. \n\nGlobal Light: For ambient light. \nSpot Light: For a spot light / point light. \nFreeform Light: For a custom shape light. \nSprite Light: For a custom light cookie using Sprites.", null, null);
 
-            public static GUIContent generalLightType = EditorGUIUtility.TrTextContent("Light Type", "Select the light type. \n\nGlobal Light: For ambient light. \nSpot Light: For a spot light / point light. \nFreeform Light: For a custom shape light. \nSprite Light: For a custom light cookie using Sprites.");
+            // Format argument: {0} the name of the provider type that is no longer in the project.
+            public static readonly GUIContent providerScriptRemoved = L10n.TextContent(
+                "{0} has been removed. Pick another Light Type, or restore the script.", null, null, null);
+            public static readonly GUIContent providerScriptRemovedUnnamed = L10n.TextContent(
+                "This light's provider script has been removed. Pick another Light Type, or restore the script.", null, null, null);
 
-            public static GUIContent generalFalloffSize = EditorGUIUtility.TrTextContent("Falloff", "Adjusts the falloff area of this light. The higher the falloff value, the larger area the falloff spans.");
-            public static GUIContent generalFalloffIntensity = EditorGUIUtility.TrTextContent("Falloff Strength", "Adjusts the falloff curve to control the softness of this light’s edges. The higher the falloff strength, the softer the edges of this light.");
-            public static GUIContent generalLightColor = EditorGUIUtility.TrTextContent("Color", "Adjusts this light’s color.");
-            public static GUIContent generalLightIntensity = EditorGUIUtility.TrTextContent("Intensity", "Adjusts this light’s color intensity by using multiply to brighten the Sprite beyond its original color.");
-            public static GUIContent generalVolumeIntensity = EditorGUIUtility.TrTextContent("Intensity", "Adjusts the intensity of this additional light volume that's additively blended on top of this light. To enable the Volumetric Shadow Strength, increase this Intensity to be greater than 0.");
-            public static GUIContent generalBlendStyle = EditorGUIUtility.TrTextContent("Blend Style", "Adjusts how this light blends with the Sprites on the Target Sorting Layers. Different Blend Styles can be customized in the 2D Renderer Data Asset.");
-            public static GUIContent generalLightOverlapOperation = EditorGUIUtility.TrTextContent("Overlap Operation", "Determines how this light blends with the other lights either through additive or alpha blending.");
-            public static GUIContent generalLightOrder = EditorGUIUtility.TrTextContent("Light Order", "Determines the relative order in which lights of the same Blend Style get rendered. Lights with lower values are rendered first.");
-            public static GUIContent generalShadowIntensity = EditorGUIUtility.TrTextContent("Strength", "Adjusts the amount of light occlusion from the Shadow Caster 2D component(s) when blocking this light.The higher the value, the more opaque the shadow becomes.");
-            public static GUIContent generalShadowSoftness = EditorGUIUtility.TrTextContent("Softness", "Adjusts the amount of softness at the edge of the shadow.");
-            public static GUIContent generalShadowSoftnessFalloffIntensity = EditorGUIUtility.TrTextContent("Falloff Strength", "Adjusts the falloff curve to control the softness of the shadow edges. The higher the falloff strength, the softer the edges of this shadow.");
-            public static GUIContent generalShadowVolumeIntensity = EditorGUIUtility.TrTextContent("Shadow Strength", "Adjusts the amount of volume light occlusion from the Shadow Caster 2D component(s) when blocking this light.");
-            public static GUIContent generalSortingLayerPrefixLabel = EditorGUIUtility.TrTextContent("Target Sorting Layers", "Determines which layers this light affects. To optimize performance, minimize the number of layers this light affects.");
-            public static GUIContent generalLightNoLightEnabled = EditorGUIUtility.TrTextContentWithIcon("No valid blend styles are enabled.", MessageType.Error);
-            public static GUIContent generalNormalMapZDistance = EditorGUIUtility.TrTextContent("Distance", "Adjusts the z-axis distance of this light and the lit Sprite(s). Do note that this distance does not Transform the position of this light in the Scene.");
-            public static GUIContent generalNormalMapLightQuality = EditorGUIUtility.TrTextContent("Quality", "Determines the accuracy of the lighting calculations when normal map is used. To optimize for performance, select Fast.");
+            public static GUIContent generalFalloffSize = L10n.TextContent("Falloff", "Adjusts the falloff area of this light. The higher the falloff value, the larger area the falloff spans.", null, null);
+            public static GUIContent generalFalloffIntensity = L10n.TextContent("Falloff Strength", "Adjusts the falloff curve to control the softness of this light’s edges. The higher the falloff strength, the softer the edges of this light.", null, null);
+            public static GUIContent generalLightColor = L10n.TextContent("Color", "Adjusts this light’s color.", null, null);
+            public static GUIContent generalLightIntensity = L10n.TextContent("Intensity", "Brightens the Sprite beyond its original color.", null, null);
+            public static GUIContent generalMaterial = L10n.TextContent("Material", "Specifies a custom Light2D compatible Shader Graph Material which is used to render this light's lighting. When empty, URP's built-in lighting materials are used.", null, null);
+            public static GUIContent generalVolumeIntensity = L10n.TextContent("Intensity", "Adjusts the intensity of this additional light volume that's additively blended on top of this light. To enable the Volumetric Shadow Strength, increase this Intensity to be greater than 0.", null, null);
+            public static GUIContent generalBlendStyle = L10n.TextContent("Blend Style", "Adjusts how this light blends with the Sprites on the Target Sorting Layers. Different Blend Styles can be customized in the 2D Renderer Data Asset.", null, null);
+            public static GUIContent generalLightOverlapOperation = L10n.TextContent("Overlap Operation", "Determines how this light blends with the other lights either through additive or alpha blending.", null, null);
+            public static GUIContent generalLightOrder = L10n.TextContent("Light Order", "Determines the relative order in which lights of the same Blend Style get rendered. Lights with lower values are rendered first.", null, null);
+            public static GUIContent generalShadowIntensity = L10n.TextContent("Strength", "Adjusts the amount of light occlusion from the Shadow Caster 2D component(s) when blocking this light.The higher the value, the more opaque the shadow becomes.", null, null);
+            public static GUIContent generalShadowSoftness = L10n.TextContent("Softness", "Adjusts the amount of softness at the edge of the shadow.", null, null);
+            public static GUIContent generalShadowSoftnessFalloffIntensity = L10n.TextContent("Falloff Strength", "Adjusts the falloff curve to control the softness of the shadow edges. The higher the falloff strength, the softer the edges of this shadow.", null, null);
+            public static GUIContent shadowMaterial = L10n.TextContent("Material", "Specifies a custom Shadow2D compatible Shader Graph Material which is used to render this light's shadows. When empty, URP's built-in shadow materials are used.", null, null);
 
-            public static GUIContent pointLightRadius = EditorGUIUtility.TrTextContent("Radius", "Adjusts the inner / outer radius of this light to change the size of this light.");
-            public static GUIContent pointLightInner = EditorGUIUtility.TrTextContent("Inner", "Specify the inner radius of the light");
-            public static GUIContent pointLightOuter = EditorGUIUtility.TrTextContent("Outer", "Specify the outer radius of the light");
-            public static GUIContent pointLightSprite = EditorGUIUtility.TrTextContent("Sprite", "Specify the sprite (deprecated)");
+            // Format arguments: {0} material name, {1} shader name, {2} missing pass names.
+            public static readonly GUIContent shadowMaterialMissingPasses = L10n.TextContent(
+                "Material '{0}' (shader '{1}') is missing the shadow pass(es): {2}. Add them to the shader, or clear the Material to use URP's built-in shadow shader.", null, null, null);
+            public static readonly GUIContent shadowMaterialNoShader = L10n.TextContent("The assigned Material has no shader, so no shadow passes can be resolved and this light's shadows will not render. Assign a shader to the Material, or clear it to use URP's built-in shadow shader.", null, null, null);
 
-            public static GUIContent shapeLightSprite = EditorGUIUtility.TrTextContent("Sprite", "Assign a Sprite which acts as a mask to create a light cookie.");
+            // Format arguments: {0} material name, {1} shader name, {2} missing pass names.
+            public static readonly GUIContent lightMaterialMissingPasses = L10n.TextContent(
+                "Material '{0}' (shader '{1}') is missing the light pass(es): {2}. Add them to the shader, or clear the Material to use URP's built-in light shader.", null, null, null);
+            public static readonly GUIContent lightMaterialNoShader = L10n.TextContent("The assigned Material has no shader, so no light passes can be resolved and this light will not render. Assign a shader to the Material, or clear it to use URP's built-in light shader.", null, null, null);
+            // The rebuild-and-may-look-different caveat is deliberately not repeated here: it is on the
+            // Geometry Version setting's own tooltip, which is where the change is actually made.
+            public static readonly GUIContent shadowMaterialNeedsEnhancedGeometry = L10n.TextContent(
+                "This project uses Legacy 2D shadow geometry, so this Material is ignored. Set 2D Shadow Geometry to Enhanced in Project Settings > Graphics to use it.", null, null, null);
+            // The short form, for the disabled and empty field. The long one above says what happens
+            // to a Material that is already assigned, which is not the question when there is none.
+            public static readonly GUIContent shadowMaterialLegacyHint = L10n.TextContent("Material requires Enhanced 2D shadow geometry generation. Set 2D Shadow Geometry to Enhanced in Project Settings > Graphics to use.", null, null, null);
+            public static GUIContent generalShadowVolumeIntensity = L10n.TextContent("Shadow Strength", "Adjusts the amount of volume light occlusion from the Shadow Caster 2D component(s) when blocking this light.", null, null);
+            public static GUIContent generalSortingLayerPrefixLabel = L10n.TextContent("Target Sorting Layers", "Determines which layers this light affects. To optimize performance, minimize the number of layers this light affects.", null, null);
+            public static GUIContent generalLightNoLightEnabled = L10n.TextContentWithIcon("No valid blend styles are enabled.", MessageType.Error, null);
+            public static GUIContent generalNormalMapZDistance = L10n.TextContent("Distance", "Adjusts the z-axis distance between this light and the lit Sprites. This distance does not move the light in the Scene.", null, null);
+            public static GUIContent generalNormalMapLightQuality = L10n.TextContent("Quality", "Determines the accuracy of the lighting calculations when normal map is used. To optimize for performance, select Fast.", null, null);
 
-            public static GUIContent deprecatedParametricLightWarningSingle = EditorGUIUtility.TrTextContentWithIcon("Parametic Lights have been deprecated. To continue, upgrade your Parametric Light to a Freeform Light to enjoy similar light functionality.", MessageType.Warning);
-            public static GUIContent deprecatedParametricLightWarningMulti = EditorGUIUtility.TrTextContentWithIcon("Parametic Lights have been deprecated. To continue, upgrade your Parametric Lights to Freeform Lights to enjoy similar light functionality.", MessageType.Warning);
-            public static GUIContent deprecatedParametricLightInstructions = EditorGUIUtility.TrTextContent("Alternatively, you may choose to upgrade from the menu. Window > Rendering > Render Pipeline Converter > URP 2D Converters");
-            public static GUIContent deprecatedParametricLightButtonSingle = EditorGUIUtility.TrTextContent("Upgrade Parametric Light");
-            public static GUIContent deprecatedParametricLightButtonMulti = EditorGUIUtility.TrTextContent("Upgrade Parametric Lights");
+            public static GUIContent pointLightRadius = L10n.TextContent("Radius", "Adjusts the inner / outer radius of this light to change the size of this light.", null, null);
+            public static GUIContent pointLightInner = L10n.TextContent("Inner", "Specify the inner radius of the light", null, null);
+            public static GUIContent pointLightOuter = L10n.TextContent("Outer", "Specify the outer radius of the light", null, null);
+            public static GUIContent pointLightSprite = L10n.TextContent("Sprite", "Specify the sprite (deprecated)", null, null);
 
-            public static GUIContent renderPipelineUnassignedWarning = EditorGUIUtility.TrTextContentWithIcon("Universal scriptable renderpipeline asset must be assigned in Graphics Settings or Quality Settings.", MessageType.Warning);
-            public static GUIContent asset2DUnassignedWarning = EditorGUIUtility.TrTextContentWithIcon("2D renderer data must be assigned to your universal render pipeline asset or camera.", MessageType.Warning);
+            public static GUIContent shapeLightSprite = L10n.TextContent("Sprite", "Assign a Sprite which acts as a mask to create a light cookie.", null, null);
+
+            public static GUIContent deprecatedParametricLightWarningSingle = L10n.TextContentWithIcon("Parametic Lights have been deprecated. To continue, upgrade your Parametric Light to a Freeform Light to enjoy similar light functionality.", MessageType.Warning, null);
+            public static GUIContent deprecatedParametricLightWarningMulti = L10n.TextContentWithIcon("Parametic Lights have been deprecated. To continue, upgrade your Parametric Lights to Freeform Lights to enjoy similar light functionality.", MessageType.Warning, null);
+            public static GUIContent deprecatedParametricLightInstructions = L10n.TextContent("Alternatively, you may choose to upgrade from the menu. Window > Rendering > Render Pipeline Converter > URP 2D Converters", null, null, null);
+            public static GUIContent deprecatedParametricLightButtonSingle = L10n.TextContent("Upgrade Parametric Light", null, null, null);
+            public static GUIContent deprecatedParametricLightButtonMulti = L10n.TextContent("Upgrade Parametric Lights", null, null, null);
+
+            public static GUIContent renderPipelineUnassignedWarning = L10n.TextContentWithIcon("Universal scriptable renderpipeline asset must be assigned in Graphics Settings or Quality Settings.", MessageType.Warning, null);
+            public static GUIContent asset2DUnassignedWarning = L10n.TextContentWithIcon("2D renderer data must be assigned to your universal render pipeline asset or camera.", MessageType.Warning, null);
 
             public static string deprecatedParametricLightDialogTextSingle = "The upgrade will convert the selected parametric light into a freeform light. You can't undo this operation.";
             public static string deprecatedParametricLightDialogTextMulti = "The upgrade will convert the selected parametric lights into freeform lights. You can't undo this operation.";
@@ -128,8 +151,9 @@ namespace UnityEditor.Rendering.Universal
             public static string deprecatedParametricLightDialogProceed = "Proceed";
             public static string deprecatedParametricLightDialogCancel = "Cancel";
 
-            public static readonly GUIContent buttonText = EditorGUIUtility.TrTextContent("Install 2D Common Package");
-            public static readonly GUIContent helpBox = EditorGUIUtility.TrTextContent("2D Common Package is required to edit Light 2D Shape. Please install it by clicking button above");
+            public static readonly GUIContent buttonText = L10n.TextContent("Install 2D Common Package", null, null, null);
+            public static readonly GUIContent helpBox = L10n.TextContent("2D Common Package is required to edit Light 2D Shape. Please install it by clicking button above", null, null, null);
+            public static readonly GUIContent freeformRequires2DCommon = L10n.TextContent("Freeform lights need the 2D Common package to render their inner area. Without it, only the falloff edge is lit. Install or update com.unity.2d.common (13.0.0 or newer) to fix this.", null, null, null);
         }
 
         const float k_GlobalLightGizmoSize = 1.2f;
@@ -138,18 +162,17 @@ namespace UnityEditor.Rendering.Universal
         const float k_AngleCapOffsetSecondary = -0.05f;
         const float k_RangeCapSize = 0.025f * k_GlobalLightGizmoSize;
         const float k_InnerRangeCapSize = 0.08f * k_GlobalLightGizmoSize;
-
-        SerializedProperty m_LightType;
+        
         SerializedProperty m_LightColor;
         SerializedProperty m_LightIntensity;
-        SerializedProperty m_UseNormalMap;
+        SerializedProperty m_Material;
         SerializedProperty m_ShadowsEnabled;
         SerializedProperty m_ShadowIntensity;
         SerializedProperty m_ShadowSoftness;
         SerializedProperty m_ShadowSoftnessFalloffIntensity;
         SerializedProperty m_ShadowVolumeIntensity;
         SerializedProperty m_ShadowVolumeIntensityEnabled;
-        SerializedProperty m_ApplyToSortingLayers;
+        SerializedProperty m_ShadowMaterial;
         SerializedProperty m_VolumetricIntensity;
         SerializedProperty m_VolumetricEnabled;
         SerializedProperty m_BlendStyleIndex;
@@ -159,24 +182,27 @@ namespace UnityEditor.Rendering.Universal
         SerializedProperty m_LightOrder;
         SerializedProperty m_OverlapOperation;
 
+        SerializedProperty m_LightType;
+
         // Point Light Properties
         SerializedProperty m_PointInnerAngle;
         SerializedProperty m_PointOuterAngle;
         SerializedProperty m_PointInnerRadius;
         SerializedProperty m_PointOuterRadius;
-        SerializedProperty m_DeprecatedPointLightSprite;
 
         // Shape Light Properties
-        SerializedProperty m_ShapeLightParametricRadius;
         SerializedProperty m_ShapeLightFalloffSize;
-        SerializedProperty m_ShapeLightParametricSides;
         SerializedProperty m_ShapeLightSprite;
 
+        SerializedProperty m_SelectionSources;
+        SerializedProperty m_RenderingLayersMask;
+
         SavedBool m_BlendingSettingsFoldout;
+        SavedBool m_ProviderFoldout;
         SavedBool m_ShadowsSettingsFoldout;
         SavedBool m_VolumetricSettingsFoldout;
         SavedBool m_NormalMapsSettingsFoldout;
-
+        SavedBool m_FilteringSettingsFoldout;
 
         int[] m_BlendStyleIndices;
         GUIContent[] m_BlendStyleNames;
@@ -202,34 +228,6 @@ namespace UnityEditor.Rendering.Universal
             }
         }
 
-        private void DrawHeaderFoldoutWithToggle(GUIContent title, SavedBool foldoutState, SerializedProperty toggleState, string documentationURL = "")
-        {
-            const float height = 17f;
-            var backgroundRect = GUILayoutUtility.GetRect(0, 0);
-            float xMin = backgroundRect.xMin;
-
-            var labelRect = backgroundRect;
-            labelRect.yMax += height;
-            labelRect.xMin += 16f;
-            labelRect.xMax -= 20f;
-
-            var labelRect_toggle = labelRect;
-            labelRect_toggle.width = labelRect.height;
-
-            bool newToggleState = GUI.Toggle(labelRect_toggle, toggleState.boolValue, " ");  // Needs a space because the checkbox won't have a proper outline if we don't make a space here
-            bool newFoldoutState = CoreEditorUtils.DrawHeaderFoldout("", foldoutState.value);
-
-            if (newToggleState != toggleState.boolValue)
-                toggleState.boolValue = newToggleState;
-
-            if (newFoldoutState != foldoutState.value)
-                foldoutState.value = newFoldoutState;
-
-
-            labelRect.xMin += 20;
-            EditorGUI.LabelField(labelRect, title, EditorStyles.boldLabel);
-        }
-
         void OnEnable()
         {
             m_Analytics = Analytics.Renderer2DAnalytics.instance;
@@ -240,18 +238,20 @@ namespace UnityEditor.Rendering.Universal
             m_ShadowsSettingsFoldout = new SavedBool($"{target.GetType()}.2DURPShadowsSettingsFoldout", false);
             m_VolumetricSettingsFoldout = new SavedBool($"{target.GetType()}.2DURPVolumetricSettingsFoldout", false);
             m_NormalMapsSettingsFoldout = new SavedBool($"{target.GetType()}.2DURPNormalMapsSettingsFoldout", false);
+            m_FilteringSettingsFoldout = new SavedBool($"{target.GetType()}.2DURPFilteringSettingsFoldout", false);
+            m_ProviderFoldout = new SavedBool($"{target.GetType()}.2DURPLight2DProviderFoldout", false);
 
-            m_LightType = serializedObject.FindProperty("m_LightType");
+
             m_LightColor = serializedObject.FindProperty("m_Color");
             m_LightIntensity = serializedObject.FindProperty("m_Intensity");
-            m_UseNormalMap = serializedObject.FindProperty("m_UseNormalMap");
+            m_Material = serializedObject.FindProperty("m_Material");
             m_ShadowsEnabled = serializedObject.FindProperty("m_ShadowsEnabled");
             m_ShadowIntensity = serializedObject.FindProperty("m_ShadowIntensity");
             m_ShadowSoftness = serializedObject.FindProperty("m_ShadowSoftness");
             m_ShadowSoftnessFalloffIntensity = serializedObject.FindProperty("m_ShadowSoftnessFalloffIntensity");
             m_ShadowVolumeIntensity = serializedObject.FindProperty("m_ShadowVolumeIntensity");
             m_ShadowVolumeIntensityEnabled = serializedObject.FindProperty("m_ShadowVolumeIntensityEnabled");
-            m_ApplyToSortingLayers = serializedObject.FindProperty("m_ApplyToSortingLayers");
+            m_ShadowMaterial = serializedObject.FindProperty("m_ShadowMaterial");
             m_VolumetricIntensity = serializedObject.FindProperty("m_LightVolumeIntensity");
             m_VolumetricEnabled = serializedObject.FindProperty("m_LightVolumeEnabled");
             m_BlendStyleIndex = serializedObject.FindProperty("m_BlendStyleIndex");
@@ -261,19 +261,22 @@ namespace UnityEditor.Rendering.Universal
             m_LightOrder = serializedObject.FindProperty("m_LightOrder");
             m_OverlapOperation = serializedObject.FindProperty("m_OverlapOperation");
 
+            m_LightType = serializedObject.FindProperty("m_LightType");
+
             // Point Light
             m_PointInnerAngle = serializedObject.FindProperty("m_PointLightInnerAngle");
             m_PointOuterAngle = serializedObject.FindProperty("m_PointLightOuterAngle");
             m_PointInnerRadius = serializedObject.FindProperty("m_PointLightInnerRadius");
             m_PointOuterRadius = serializedObject.FindProperty("m_PointLightOuterRadius");
-            m_DeprecatedPointLightSprite = serializedObject.FindProperty("m_DeprecatedPointLightCookieSprite");
 
             // Shape Light
-            m_ShapeLightParametricRadius = serializedObject.FindProperty("m_ShapeLightParametricRadius");
             m_ShapeLightFalloffSize = serializedObject.FindProperty("m_ShapeLightFalloffSize");
-            m_ShapeLightParametricSides = serializedObject.FindProperty("m_ShapeLightParametricSides");
             m_ShapeLightSprite = serializedObject.FindProperty("m_LightCookieSprite");
 
+            m_SelectionSources = serializedObject.FindProperty("m_SelectionSources");
+            m_RenderingLayersMask = serializedObject.FindProperty("m_RenderingLayersMask");
+
+            
             m_AnyBlendStyleEnabled = false;
             var blendStyleIndices = new List<int>();
             var blendStyleNames = new List<string>();
@@ -316,7 +319,7 @@ namespace UnityEditor.Rendering.Universal
 
         internal void SendModifiedAnalytics(Analytics.Renderer2DAnalytics analytics, Light2D light)
         {
-            Analytics.LightDataAnalytic lightData = new Analytics.LightDataAnalytic(light.GetInstanceID(), false, light.lightType);
+            Analytics.LightDataAnalytic lightData = new Analytics.LightDataAnalytic(light.GetEntityId(), false, light.lightType);
             Analytics.Renderer2DAnalytics.instance.SendData(lightData);
         }
 
@@ -327,6 +330,34 @@ namespace UnityEditor.Rendering.Universal
                 foreach (Light2D light in m_ModifiedLights)
                 {
                     SendModifiedAnalytics(m_Analytics, light);
+                }
+            }
+        }
+
+        void DrawFilteringContent()
+        {
+            CoreEditorUtils.DrawSplitter(false);
+            bool foldoutState = CoreEditorUtils.DrawHeaderFoldout(Styles.filteringSettingsFoldout, m_FilteringSettingsFoldout.value);
+            if (foldoutState != m_FilteringSettingsFoldout.value)
+                m_FilteringSettingsFoldout.value = foldoutState;
+
+            if (m_FilteringSettingsFoldout.value)
+            {
+                m_SortingLayerDropDown.OnTargetSortingLayers(serializedObject, targets, Styles.generalSortingLayerPrefixLabel, AnalyticsTrackChanges);
+
+                if (m_LightType.intValue != (int)Light2D.LightType.Global)
+                {
+                    GUI.enabled = UniversalRenderPipeline.asset.useRenderingLayers;
+                    EditorGUILayout.PropertyField(m_RenderingLayersMask, UniversalRenderPipelineLightUI.Styles.RenderingLayers);
+                    GUI.enabled = true;
+                    if (!UniversalRenderPipeline.asset.useRenderingLayers)
+                    {
+                        CoreEditorUtils.DrawFixMeBox(UniversalRenderPipelineLightUI.Styles.RenderingLayersHelpBox, "Enable", () =>
+                        {
+                            UniversalRenderPipeline.asset.useRenderingLayers = true;
+                            EditorUtility.SetDirty(UniversalRenderPipeline.asset);
+                        });
+                    }
                 }
             }
         }
@@ -354,7 +385,7 @@ namespace UnityEditor.Rendering.Universal
         {
             CoreEditorUtils.DrawSplitter(false);
 
-            DrawHeaderFoldoutWithToggle(Styles.shadowsSettingsFoldout, m_ShadowsSettingsFoldout, m_ShadowsEnabled);
+            Light2DEditorUtility.DrawHeaderFoldoutWithToggle(Styles.shadowsSettingsFoldout, m_ShadowsSettingsFoldout, m_ShadowsEnabled);
 
             if (m_ShadowsSettingsFoldout.value)
             {
@@ -362,17 +393,127 @@ namespace UnityEditor.Rendering.Universal
                 EditorGUI.BeginDisabledGroup(!m_ShadowsEnabled.boolValue);
                 EditorGUILayout.PropertyField(m_ShadowIntensity, Styles.generalShadowIntensity);
                 EditorGUILayout.PropertyField(m_ShadowSoftness, Styles.generalShadowSoftness);
-                EditorGUILayout.PropertyField(m_ShadowSoftnessFalloffIntensity,Styles.generalShadowSoftnessFalloffIntensity);
+                EditorGUILayout.PropertyField(m_ShadowSoftnessFalloffIntensity, Styles.generalShadowSoftnessFalloffIntensity);
+
+                // Disabled rather than hidden on the Legacy geometry generation. The field is inert
+                // there -- ShadowRendering ignores it, see Light2D.effectiveShadowMaterial -- but a
+                // control that vanishes reads as "this light cannot have one", which sends the user
+                // looking through the component rather than at the project setting that actually
+                // governs it. Greyed out with the reason underneath, the field says what it needs.
+                // Any value already assigned is left alone rather than cleared, so moving to Enhanced
+                // gives it back.
+                using (new EditorGUI.DisabledScope(!Shadow2DGeometry.enhancedGeometryEnabled))
+                    Light2DEditorUtility.DrawFilteredMaterialField(m_ShadowMaterial, Styles.shadowMaterial, ShadowRendering.IsCompatibleShadowMaterial);
+
+                // Only when the field is empty: with a Material assigned, DrawShadowMaterialErrors
+                // says the same thing and more, and two boxes saying it is worse than one.
+                if (!Shadow2DGeometry.enhancedGeometryEnabled && !AnyTargetHasShadowMaterial())
+                    EditorGUILayout.HelpBox(Styles.shadowMaterialLegacyHint.text, MessageType.Info);
+
                 EditorGUI.EndDisabledGroup();
+
+                DrawShadowMaterialErrors();
+
                 EditorGUI.indentLevel--;
             }
+        }
+
+        bool AnyTargetHasShadowMaterial()
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var light = targets[i] as Light2D;
+                if (light != null && light.shadowMaterial != null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        // A custom Material replaces URP's shadow shaders outright rather than filling in around
+        // them, so a shader that omits any of the five shadow passes silently drops that phase of
+        // every shadow this light casts. Nothing in the Scene view distinguishes that from a
+        // correctly-authored shadow, so the omission is reported here.
+        //
+        // Outside the disabled group above: an error about a Material is not something to grey out
+        // because shadows happen to be switched off.
+        // The picker only offers Materials whose shader declares the light passes, but drag-and-drop
+        // onto the field bypasses it, so an incompatible Material is reported here. A material that
+        // declares neither pass renders nothing at all, which is worth naming rather than leaving the
+        // user to wonder why the light went dark.
+        void DrawLightMaterialErrors()
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var light = targets[i] as Light2D;
+                if (light == null || light.material == null)
+                    continue;
+
+                if (light.material.shader == null)
+                {
+                    DrawLightError(light, Styles.lightMaterialNoShader.text, MessageType.Error);
+                    continue;
+                }
+
+                var missing = RendererLighting.GetMissingLightPasses(light.material);
+                if (missing.Length > 0)
+                {
+                    DrawLightError(light, string.Format(Styles.lightMaterialMissingPasses.text,
+                        light.material.name,
+                        light.material.shader.name,
+                        missing), MessageType.Error);
+                }
+            }
+        }
+
+        void DrawShadowMaterialErrors()
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var light = targets[i] as Light2D;
+                if (light == null || light.shadowMaterial == null)
+                    continue;
+
+                // Reported rather than hidden along with the field: a Material assigned before the
+                // project moved back to Legacy is silently doing nothing, which is exactly the state
+                // worth naming.
+                if (!Shadow2DGeometry.enhancedGeometryEnabled)
+                {
+                    DrawLightError(light, Styles.shadowMaterialNeedsEnhancedGeometry.text, MessageType.Warning);
+                    continue;
+                }
+
+                if (light.shadowMaterial.shader == null)
+                {
+                    DrawLightError(light, Styles.shadowMaterialNoShader.text, MessageType.Error);
+                    continue;
+                }
+
+                var missing = ShadowRendering.GetMissingShadowPasses(light.shadowMaterial);
+                if (missing != ShadowRendering.ShadowPassRoles.None)
+                {
+                    DrawLightError(light, string.Format(Styles.shadowMaterialMissingPasses.text,
+                        light.shadowMaterial.name,
+                        light.shadowMaterial.shader.name,
+                        ShadowRendering.GetShadowPassRoleNames(missing)), MessageType.Error);
+                }
+            }
+        }
+
+        // With several lights selected the message alone is ambiguous, so name the object.
+        void DrawLightError(Light2D light, string message, MessageType type)
+        {
+            if (targets.Length > 1)
+                message = $"{light.name}: {message}";
+
+            EditorGUILayout.HelpBox(message, type);
         }
 
         void DrawVolumetricGroup()
         {
             CoreEditorUtils.DrawSplitter(false);
 
-            DrawHeaderFoldoutWithToggle(Styles.volumetricSettingsFoldout, m_VolumetricSettingsFoldout, m_VolumetricEnabled);
+            Light2DEditorUtility.DrawHeaderFoldoutWithToggle(Styles.volumetricSettingsFoldout, m_VolumetricSettingsFoldout, m_VolumetricEnabled);
 
             if (m_VolumetricSettingsFoldout.value)
             {
@@ -530,8 +671,42 @@ namespace UnityEditor.Rendering.Universal
 
         void DrawGlobalLight(SerializedObject serializedObject)
         {
-            m_SortingLayerDropDown.OnTargetSortingLayers(serializedObject, targets, Styles.generalSortingLayerPrefixLabel, AnalyticsTrackChanges);
             DrawBlendingGroup();
+        }
+
+        void DrawProviderLight(SerializedObject serializedObject)
+        {
+            serializedObject.Update();
+
+            // We have to get this because it may have changed in this editor redraw already
+            SerializedProperty provider = serializedObject.FindProperty("m_Light2DProvider");
+            Light2DProvider lightProvider = provider.boxedValue as Light2DProvider;
+
+            // The light is set to Provider but the provider is gone, which is what deleting the script
+            // that defined it leaves behind. Say so here rather than showing an empty section.
+            if (lightProvider == null)
+            {
+                string removedName = Light2DEditorUtility.GetMissingProviderTypeName(serializedObject.targetObject);
+                EditorGUILayout.HelpBox(removedName != null
+                    ? string.Format(Styles.providerScriptRemoved.text, removedName)
+                    : Styles.providerScriptRemovedUnnamed.text, MessageType.Warning);
+            }
+
+            bool foldoutState = CoreEditorUtils.DrawHeaderFoldout("Provider", m_ProviderFoldout.value);
+            if (foldoutState != m_ProviderFoldout.value)
+                m_ProviderFoldout.value = foldoutState;
+
+            if (m_ProviderFoldout.value)
+            {
+                if (lightProvider != null)
+                {
+                    Light2DProviderSources.DrawSelectedSourceUI(m_SelectionSources);
+                }
+            }
+
+            serializedObject.ApplyModifiedProperties();
+
+            DrawFoldouts();
         }
 
         void DrawParametricDeprecated(SerializedObject serializedObject)
@@ -561,74 +736,123 @@ namespace UnityEditor.Rendering.Universal
             EditorGUILayout.HelpBox(Styles.deprecatedParametricLightInstructions);
         }
 
+        int GetSelectedValue(Light2DProvider light2DProvider)
+        {
+            int selectedValue = m_LightType.intValue;
+            if (selectedValue == (int)Light2D.LightType.Provider)
+            {
+                if (light2DProvider != null)
+                {
+                    selectedValue = light2DProvider.GetType().GetHashCode();
+                }
+            }
+
+            return selectedValue;
+        }
+
         bool DrawLightCommon()
         {
-            var meshChanged = false;
-            Rect lightTypeRect = EditorGUILayout.GetControlRect();
-            EditorGUI.BeginProperty(lightTypeRect, GUIContent.none, m_LightType);
-            EditorGUI.BeginChangeCheck();
-            int newLightType = EditorGUI.Popup(lightTypeRect, Styles.generalLightType, m_LightType.intValue - 1, Styles.lightTypeOptions);  // -1 is a bit hacky its to support compatibiltiy. We need something better.
-            if (EditorGUI.EndChangeCheck())
+            bool meshChanged = false;
+
+            // Use shared utility method for Light Type dropdown. It is drawn outside the change check
+            // because ApplyLightTypeSelection already reports a duplicate global light, and
+            // CheckForExistingGlobalLight below would report it again for every global light.
+            Light2DEditorUtility.DrawLightTypePopup(default(Rect), Styles.generalLightType, serializedObject, layoutMode: true);
+
+            serializedObject.Update();
+
+            // The editor's USING_2DCOMMON uses a lower version threshold than the runtime's, so this
+            // button must not sit behind it: an installed but too-old 2D Common needs it too.
+            if (!LightUtility.canTessellateFreeformInterior &&
+                targets.Any(t => t is Light2D selected && Light2DEditorUtility.ShouldShowMissing2DCommonError(selected.lightType)))
             {
-                m_LightType.intValue = newLightType + 1; // -1 is a bit hacky its to support compatibiltiy. We need something better.
-                meshChanged = true;
+                EditorGUILayout.HelpBox(Styles.freeformRequires2DCommon.text, MessageType.Error);
+                if (GUILayout.Button(Styles.buttonText))
+                    URP2DConverterUtility.InstallPackage("com.unity.2d.common");
             }
-            EditorGUI.EndProperty();
+
+            EditorGUI.BeginChangeCheck();
 
             // Color and intensity
             EditorGUILayout.PropertyField(m_LightColor, Styles.generalLightColor);
-            EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_LightIntensity, Styles.generalLightIntensity);
+            if (m_LightType.intValue != (int)Light2D.LightType.Global)
+            {
+                Light2DEditorUtility.DrawFilteredMaterialField(m_Material, Styles.generalMaterial, RendererLighting.IsCompatibleLightMaterial);
+                DrawLightMaterialErrors();
+            }
+
+            DrawFilteringContent();
+
+            serializedObject.ApplyModifiedProperties();
+            
+            // Only check for duplicates when properties change (avoid spam on every repaint)
             if (EditorGUI.EndChangeCheck())
+            {
                 m_LightIntensity.floatValue = Mathf.Max(m_LightIntensity.floatValue, 0);
+                Light2D light = (Light2D)target;
+                LightUtility.CheckForExistingGlobalLight(light.gameObject);
+            }
 
             return meshChanged;
         }
 
         void DrawSpotLight(SerializedObject serializedObject)
         {
-            DrawRadiusProperties(Styles.pointLightRadius, m_PointInnerRadius, Styles.pointLightInner, m_PointOuterRadius, Styles.pointLightOuter);
-            DrawInnerAndOuterSpotAngle(m_PointInnerAngle, m_PointOuterAngle, Styles.InnerOuterSpotAngle);
-            EditorGUILayout.Slider(m_FalloffIntensity, 0, 1, Styles.generalFalloffIntensity);
+            bool foldoutState = CoreEditorUtils.DrawHeaderFoldout("Spot", m_ProviderFoldout.value);
+            if (foldoutState != m_ProviderFoldout.value)
+                m_ProviderFoldout.value = foldoutState;
 
-            if (m_DeprecatedPointLightSprite.objectReferenceValue != null)
-                EditorGUILayout.PropertyField(m_DeprecatedPointLightSprite, Styles.pointLightSprite);
+            if (m_ProviderFoldout.value)
+            {
+                DrawRadiusProperties(Styles.pointLightRadius, m_PointInnerRadius, Styles.pointLightInner, m_PointOuterRadius, Styles.pointLightOuter);
+                DrawInnerAndOuterSpotAngle(m_PointInnerAngle, m_PointOuterAngle, Styles.InnerOuterSpotAngle);
+                EditorGUILayout.Slider(m_FalloffIntensity, 0, 1, Styles.generalFalloffIntensity);
 
-            m_SortingLayerDropDown.OnTargetSortingLayers(serializedObject, targets, Styles.generalSortingLayerPrefixLabel, AnalyticsTrackChanges);
+                if (m_ShapeLightSprite.objectReferenceValue != null)
+                    EditorGUILayout.PropertyField(m_ShapeLightSprite, Styles.pointLightSprite);
+            }
+
 
             DrawFoldouts();
         }
 
         void DrawSpriteLight(SerializedObject serializedObject)
         {
-            EditorGUILayout.PropertyField(m_ShapeLightSprite, Styles.shapeLightSprite);
+            bool foldoutState = CoreEditorUtils.DrawHeaderFoldout("Sprite", m_ProviderFoldout.value);
+            if (foldoutState != m_ProviderFoldout.value)
+                m_ProviderFoldout.value = foldoutState;
 
-            m_SortingLayerDropDown.OnTargetSortingLayers(serializedObject, targets, Styles.generalSortingLayerPrefixLabel, AnalyticsTrackChanges);
+            if (m_ProviderFoldout.value)
+                EditorGUILayout.PropertyField(m_ShapeLightSprite, Styles.shapeLightSprite);
+
             DrawFoldouts();
         }
 
         void DrawShapeLight(SerializedObject serializedObject)
         {
-            EditorGUILayout.PropertyField(m_ShapeLightFalloffSize, Styles.generalFalloffSize);
-            if (m_ShapeLightFalloffSize.floatValue < 0)
-                m_ShapeLightFalloffSize.floatValue = 0;
+            bool foldoutState = CoreEditorUtils.DrawHeaderFoldout("Freeform", m_ProviderFoldout.value);
+            if (foldoutState != m_ProviderFoldout.value)
+                m_ProviderFoldout.value = foldoutState;
 
-            EditorGUILayout.Slider(m_FalloffIntensity, 0, 1, Styles.generalFalloffIntensity);
-
-            m_SortingLayerDropDown.OnTargetSortingLayers(serializedObject, targets, Styles.generalSortingLayerPrefixLabel, AnalyticsTrackChanges);
-
-            if (m_LightType.intValue == (int)Light2D.LightType.Freeform)
+            if (m_ProviderFoldout.value)
             {
+                EditorGUILayout.PropertyField(m_ShapeLightFalloffSize, Styles.generalFalloffSize);
+                if (m_ShapeLightFalloffSize.floatValue < 0 || m_ShapeLightFalloffSize.floatValue > Light2D.k_MaxFalloffSize)
+                    m_ShapeLightFalloffSize.floatValue = Mathf.Clamp(m_ShapeLightFalloffSize.floatValue, 0, Light2D.k_MaxFalloffSize);
+
+                EditorGUILayout.Slider(m_FalloffIntensity, 0, 1, Styles.generalFalloffIntensity);
+
+                if (m_LightType.intValue == (int)Light2D.LightType.Freeform)
+                {
 #if USING_2DCOMMON
-                DoEditButton<FreeformShapeTool>(PathEditorToolContents.icon, "Edit Shape");
-                DoPathInspector<FreeformShapeTool>();
+                    DoEditButton<FreeformShapeTool>(PathEditorToolContents.icon, "Edit Shape");
+                    DoPathInspector<FreeformShapeTool>();
 #else
-                var clicked = GUILayout.Button(Styles.buttonText);
-                if (clicked)
-                    URP2DConverterUtility.InstallPackage("com.unity.2d.common");
-                else
+                    // The install button is drawn with the missing-2D-Common error at the top of the inspector.
                     EditorGUILayout.HelpBox(Styles.helpBox.text, MessageType.Info);
 #endif
+                }
             }
 
             DrawFoldouts();
@@ -844,6 +1068,7 @@ namespace UnityEditor.Rendering.Universal
 
             serializedObject.Update();
 
+
             UniversalRenderPipelineAsset asset = UniversalRenderPipeline.asset;
             if (asset != null)
             {
@@ -881,6 +1106,12 @@ namespace UnityEditor.Rendering.Universal
                         case (int)Light2D.DeprecatedLightType.Parametric:
                         {
                             DrawParametricDeprecated(serializedObject);
+                        }
+                        break;
+                        case (int)Light2D.LightType.Provider:
+                        {
+                            Light2D light = target as Light2D;
+                            DrawProviderLight(serializedObject);
                         }
                         break;
                     }

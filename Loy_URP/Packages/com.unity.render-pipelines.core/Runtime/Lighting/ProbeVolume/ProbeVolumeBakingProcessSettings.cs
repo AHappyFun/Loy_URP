@@ -24,6 +24,9 @@ namespace UnityEngine.Rendering
     [System.Serializable]
     internal struct VirtualOffsetSettings
     {
+        // Duplicated Physics.DefaultRaycastLayers because that dependency is removed from render-pipelines.core. Kept in sync with a unit test.
+        internal const int k_PhysicsDefaultRaycastLayers = ~(1 << 2);
+
         public bool useVirtualOffset;
         [Range(0f, 0.95f)] public float validityThreshold;
         [Range(0f, 1f)] public float outOfGeoOffset;
@@ -45,7 +48,7 @@ namespace UnityEngine.Rendering
             if (from < ProbeVolumeBakingProcessSettings.SettingsVersion.ThreadedVirtualOffset && to >= ProbeVolumeBakingProcessSettings.SettingsVersion.ThreadedVirtualOffset)
             {
                 rayOriginBias = -0.001f;
-                collisionMask = Physics.DefaultRaycastLayers;
+                collisionMask = k_PhysicsDefaultRaycastLayers;
             }
         }
     }
@@ -62,7 +65,7 @@ namespace UnityEngine.Rendering
             ThreadedVirtualOffset,
 
             Max,
-            Current = Max - 1
+            Current = Max - 1,
         }
 
         internal ProbeVolumeBakingProcessSettings(ProbeDilationSettings dilationSettings, VirtualOffsetSettings virtualOffsetSettings)

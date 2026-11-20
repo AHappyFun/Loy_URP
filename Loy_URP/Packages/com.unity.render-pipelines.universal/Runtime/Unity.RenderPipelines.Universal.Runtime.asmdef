@@ -12,7 +12,10 @@
         "GUID:86bc95e6fdb13ff43aa04316542905ae",
         "GUID:d04eb9c554ad44ceab303cecf0c0cf82",
         "GUID:214c0945bb158c940aada223f3223ee8",
-        "GUID:c49c619b6af2be941af9bcbca2641964"
+        "GUID:c49c619b6af2be941af9bcbca2641964",
+        "GUID:b5b1bcf1950c2204f8e3959f64726eab",
+        "GUID:e5b1192ba6705cb48be174012f9f35f8",
+        "Unity.Collections"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -38,11 +41,6 @@
             "define": "ENABLE_BURST_1_0_0_OR_NEWER"
         },
         {
-            "name": "com.unity.modules.vr",
-            "expression": "1.0.0",
-            "define": "ENABLE_VR_MODULE"
-        },
-        {
             "name": "com.unity.modules.xr",
             "expression": "1.0.0",
             "define": "ENABLE_XR_MODULE"
@@ -61,6 +59,21 @@
             "name": "com.unity.inputsystem",
             "expression": "0.0.0",
             "define": "ENABLE_INPUT_SYSTEM_PACKAGE"
+        },
+        {
+            "name": "com.unity.2d.common",
+            "expression": "13.0.0",
+            "define": "USING_2DCOMMON"
+        },
+        {
+            "name": "com.unity.modules.terrain",
+            "expression": "1.0.0",
+            "define": "ENABLE_TERRAIN_MODULE"
+        },
+        {
+            "name": "com.unity.modules.uielements",
+            "expression": "1.0.0",
+            "define": "ENABLE_UIELEMENTS_MODULE"
         }
     ],
     "noEngineReferences": false

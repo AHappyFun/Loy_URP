@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using UnityEngine.Experimental.Rendering;
+using static UnityEngine.Rendering.RenderGraphModule.RenderGraphValidationLayer;
 using static UnityEngine.Rendering.RenderGraphModule.RenderGraph;
 
 namespace UnityEngine.Rendering.RenderGraphModule
@@ -13,6 +15,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         RenderGraphPass m_RenderPass;
         RenderGraphResourceRegistry m_Resources;
         RenderGraph m_RenderGraph;
+        RenderGraphValidationLayer m_AdditionalValidationLayer;
         bool m_Disposed;
 
         public RenderGraphBuilders()
@@ -20,12 +23,25 @@ namespace UnityEngine.Rendering.RenderGraphModule
             m_RenderPass = null;
             m_Resources = null;
             m_RenderGraph = null;
+            m_AdditionalValidationLayer = null;
             m_Disposed = true;
         }
 
-        public void Setup(RenderGraphPass renderPass, RenderGraphResourceRegistry resources, RenderGraph renderGraph)
+        internal RenderGraphValidationLayer additionalValidationLayer
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            // By design we don't allow the validation during release. This limits the usage to strictly validation and not actual runtime behavior.
+#if UNITY_ENABLE_CHECKS
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return (RenderGraph.enableValidityChecks)? m_AdditionalValidationLayer : null; }
+#else
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return null; }
+#endif
+        }
+
+        public void Setup(RenderGraphPass renderPass, RenderGraphResourceRegistry resources, RenderGraph renderGraph, RenderGraphValidationLayer validationLayer)
+        {
+#if UNITY_ENABLE_CHECKS
             // If the object is not disposed yet this is an error as the pass is not finished (only in the dispose we register it with the rendergraph)
             // This is likely cause by a user not doing a clean using and then forgetting to manually dispose the object.
             if (m_Disposed != true)
@@ -36,6 +52,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             m_RenderPass = renderPass;
             m_Resources = resources;
             m_RenderGraph = renderGraph;
+            m_AdditionalValidationLayer = validationLayer;  
             m_Disposed = false;
 
             renderPass.useAllGlobalTextures = false;
@@ -44,8 +61,59 @@ namespace UnityEngine.Rendering.RenderGraphModule
             {
                 CommandBuffer.ThrowOnSetRenderTarget = true;
             }
+
+#if UNITY_ENABLE_CHECKS
+            if (additionalValidationLayer != null)
+            {
+                RenderPassInfo info = new()
+                {
+                    type = renderPass.type,
+                    name = renderPass.name
+                };
+                additionalValidationLayer.OnPassAddedBegin(in info);
+            }
+#endif            
         }
 
+        [Conditional("UNITY_ENABLE_CHECKS")]
+        private void CheckInputAttachment(int index, bool isDepth)
+        {
+            if (RenderGraph.enableValidityChecks)
+            {
+                if (isDepth)
+                {
+                    // Check ExtendedFeatureFlags
+                    if ((m_RenderPass.extendedFeatureFlags & ExtendedFeatureFlags.DepthAttachmentAsInputAttachment) == 0)
+                    {
+                        throw new InvalidOperationException(
+                            RenderGraphExceptionMessages.DepthInputAttachmentNotEnabled(m_RenderPass.name));
+                    }
+
+                    // Check Systeminfo
+                    if (!SystemInfo.supportsDepthAttachmentAsInputAttachment)
+                    {
+                        throw new InvalidOperationException(
+                            RenderGraphExceptionMessages.DepthInputAttachmentNotSupported(m_RenderPass.name));
+                    }
+
+                    // Check Index.
+                    if (index != 0)
+                    {
+                        throw new InvalidOperationException(
+                            RenderGraphExceptionMessages.DepthInputAttachmentWithInvalidIndex(m_RenderPass.name));
+                    }
+                }
+                else
+                {
+                    // Check invalid input attachment use case for color
+                    if ((m_RenderPass.extendedFeatureFlags & ExtendedFeatureFlags.DepthAttachmentAsInputAttachment) != 0 && index == 0)
+                    {
+                        throw new InvalidOperationException(
+                            RenderGraphExceptionMessages.DepthInputAttachmentWithColorFormat(m_RenderPass.name));
+                    }
+                }
+            }
+        }
 
         public void EnableAsyncCompute(bool value)
         {
@@ -128,6 +196,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 {
                     m_RenderGraph.RenderGraphState = RenderGraphState.RecordingGraph;
 
+#if UNITY_ENABLE_CHECKS
+                    additionalValidationLayer?.OnPassAddedDispose();
+#endif
                     // Use all globals simply means this... we do a UseTexture on all globals so the pass has the correct dependencies.
                     // This of course goes to show how bad an idea shader-system wide globals really are dependency/lifetime tracking wise :-)
                     if (m_RenderPass.useAllGlobalTextures)
@@ -144,8 +215,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     {
                         m_RenderGraph.SetGlobal(t.Item1, t.Item2);
                     }
-
-                    m_RenderGraph.OnPassAdded(m_RenderPass);
                 }
             }
             finally
@@ -158,11 +227,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 m_RenderPass = null;
                 m_Resources = null;
                 m_RenderGraph = null;
+                m_AdditionalValidationLayer = null;
                 m_Disposed = true;
             }
         }
 
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        [Conditional("UNITY_ENABLE_CHECKS")]
         private void CheckWriteTo(in ResourceHandle handle)
         {
             if (RenderGraph.enableValidityChecks)
@@ -262,6 +332,10 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         public BufferHandle UseBuffer(in BufferHandle input, AccessFlags flags)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.UseBuffer(input, flags);
+#endif
+
             UseResource(input.handle, flags);
             return input;
         }
@@ -271,7 +345,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         // We currently ignore the version. In theory there might be some cases that are actually allowed with versioning
         // for ample UseTexture(myTexV1, read) UseFragment(myTexV2, ReadWrite) as they are different versions
         // but for now we don't allow any of that.
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        [Conditional("UNITY_ENABLE_CHECKS")]
         private void CheckNotUseFragment(in TextureHandle tex)
         {
             if (RenderGraph.enableValidityChecks)
@@ -297,7 +371,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
         }
 
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        [Conditional("UNITY_ENABLE_CHECKS")]
         private void CheckTextureUVOriginIsValid(in ResourceHandle handle, TextureResource texRes)
         {
             if (texRes.textureUVOrigin == TextureUVOriginSelection.TopLeft)
@@ -309,6 +383,10 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         public void UseTexture(in TextureHandle input, AccessFlags flags)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.UseTexture(input, flags);
+#endif
+
             CheckNotUseFragment(input);
             UseResource(input.handle, flags);
 
@@ -317,14 +395,21 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 if (m_RenderGraph.renderTextureUVOriginStrategy == RenderTextureUVOriginStrategy.PropagateAttachmentOrientation)
                 {
                     TextureResource texRes = m_Resources.GetTextureResource(input.handle);
-                    CheckTextureUVOriginIsValid(input.handle, texRes);
-                    texRes.textureUVOrigin = TextureUVOriginSelection.BottomLeft;
+                    if (!texRes.imported)
+                    {
+                        CheckTextureUVOriginIsValid(input.handle, texRes);
+                        texRes.textureUVOrigin = TextureUVOriginSelection.BottomLeft;
+                    }
                 }
             }
         }
 
         public void UseGlobalTexture(int propertyId, AccessFlags flags)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.UseGlobalTexture(propertyId, flags);
+#endif
+
             var h = m_RenderGraph.GetGlobal(propertyId);
             if (h.IsValid())
             {
@@ -340,17 +425,25 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         public void UseAllGlobalTextures(bool enable)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.UseAllGlobalTextures(enable);
+#endif
+
             m_RenderPass.useAllGlobalTextures = enable;
         }
 
         public void SetGlobalTextureAfterPass(in TextureHandle input, int propertyId)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.SetGlobalTextureAfterPass(input, propertyId);
+#endif
+
             m_RenderPass.setGlobalsList.Add(ValueTuple.Create(input, propertyId));
         }
 
         // Shared validation between SetRenderAttachment/SetRenderAttachmentDepth
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
-        private void CheckUseFragment(in TextureHandle tex, bool isDepth)
+        [Conditional("UNITY_ENABLE_CHECKS")]
+        private void CheckUseFragment(in TextureHandle tex, bool isDepth, int depthSlice)
         {
             if (RenderGraph.enableValidityChecks)
             {
@@ -386,72 +479,113 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.k_SetRenderAttachmentTextureAlreadyUsed);
                 }
 
+                for (int i = 0; i < m_RenderPass.fragmentInputMaxIndex + 1; ++i)
+                {
+                    if (!m_RenderPass.fragmentInputAccess[i].textureHandle.IsValid()) continue;
+                    ref readonly var input = ref m_RenderPass.fragmentInputAccess[i];
+
+                    if (input.textureHandle.handle.index == tex.handle.index && input.depthSlice != depthSlice)
+                    {
+                        // You can't mix XR style "all slices" with explicit slices int the same pass. It doesn't make sense, when XR is ON, you either want two eye rendering or rendering to a specific eye.
+                        if (depthSlice == -1 || input.depthSlice == -1)
+                        {
+                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use a resource '{name}'. The same resource uses different depth slice modes (all slices vs single slice)");
+                        }
+                    }
+                }
+
+                for (int i = 0; i < m_RenderPass.colorBufferMaxIndex + 1; ++i)
+                {
+                    if (!m_RenderPass.colorBufferAccess[i].textureHandle.IsValid()) continue;
+                    ref readonly var input = ref m_RenderPass.colorBufferAccess[i];
+
+                    if (input.textureHandle.handle.index == tex.handle.index && input.depthSlice != depthSlice)
+                    {
+                        // You can't mix XR style "all slices" with explicit slices int the same pass. It doesn't make sense, when XR is ON, you either want two eye rendering or rendering to a specific eye.
+                        if (depthSlice == -1 || input.depthSlice == -1)
+                        {
+                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use a resource '{name}'. The same resource uses different depth slice modes (all slices vs single slice)");
+                        }
+                    }
+                }
+
+                if (m_RenderPass.depthAccess.textureHandle.IsValid())
+                {
+                    var input = m_RenderPass.depthAccess;
+
+                    if (input.textureHandle.handle.index == tex.handle.index && input.depthSlice != depthSlice)
+                    {
+                        // You can't mix XR style "all slices" with explicit slices int the same pass. It doesn't make sense, when XR is ON, you either want two eye rendering or rendering to a specific eye.
+                        if (depthSlice == -1 || input.depthSlice == -1)
+                        {
+                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use a resource '{name}'. The same resource uses different depth slice modes (all slices vs single slice)");
+                        }
+                    }
+                }
+
                 m_Resources.GetRenderTargetInfo(tex.handle, out var info);
 
-                // The old path is full of invalid uses that somehow work (or seem to work) so we skip validation if not using actual native renderpass
-                if (m_RenderGraph.nativeRenderPassesEnabled)
+                bool isDepthFormat = GraphicsFormatUtility.IsDepthFormat(info.format);
+                bool formatMismatch = isDepth != isDepthFormat;
+
+                if (formatMismatch)
                 {
-                    if (isDepth)
-                    {
-                        if (!GraphicsFormatUtility.IsDepthFormat(info.format))
-                        {
-                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
-                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.UseDepthWithColorFormat(info.format));
-                        }
-                    }
-                    else
-                    {
-                        if (GraphicsFormatUtility.IsDepthFormat(info.format))
-                        {
-                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
-                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.k_SetRenderAttachmentOnDepthTexture);
-                        }
-                    }
+                    var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                    var errorMsg = isDepth
+                        ? RenderGraph.RenderGraphExceptionMessages.UseDepthWithColorFormat(info.format)
+                        : RenderGraph.RenderGraphExceptionMessages.k_SetRenderAttachmentOnDepthTexture;
 
-                    if (m_RenderGraph.renderTextureUVOriginStrategy == RenderTextureUVOriginStrategy.PropagateAttachmentOrientation)
+                    throw new InvalidOperationException(
+                        $"In pass '{m_RenderPass.name}' when trying to use resource '{name}' " +
+                        $"of type {tex.handle.type} at index {tex.handle.index} - {errorMsg}");
+                }
+
+                if (m_RenderGraph.renderTextureUVOriginStrategy == RenderTextureUVOriginStrategy.PropagateAttachmentOrientation)
+                {
+                    var texResource = m_Resources.GetTextureResource(tex.handle);
+                    TextureResource checkTexResource = null;
+                    for (int i = 0; i < m_RenderPass.fragmentInputMaxIndex + 1; ++i)
                     {
-                        var texResource = m_Resources.GetTextureResource(tex.handle);
-                        TextureResource checkTexResource = null;
-                        for (int i = 0; i < m_RenderPass.fragmentInputMaxIndex + 1; ++i)
+                        if (m_RenderPass.fragmentInputAccess[i].textureHandle.IsValid())
                         {
-                            if (m_RenderPass.fragmentInputAccess[i].textureHandle.IsValid())
-                            {
-                                ref readonly TextureHandle texCheck = ref m_RenderPass.fragmentInputAccess[i].textureHandle;
-                                checkTexResource = m_Resources.GetTextureResource(texCheck.handle);
-                                if (texResource.textureUVOrigin != TextureUVOriginSelection.Unknown && checkTexResource.textureUVOrigin != TextureUVOriginSelection.Unknown && texResource.textureUVOrigin != checkTexResource.textureUVOrigin)
-                                {
-                                    var name = m_Resources.GetRenderGraphResourceName(tex.handle);
-                                    var checkName = m_Resources.GetRenderGraphResourceName(texCheck.handle);
-                                    throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "input", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
-                                }
-                            }
-                        }
-
-                        for (int i = 0; i < m_RenderPass.colorBufferMaxIndex + 1; ++i)
-                        {
-                            if (m_RenderPass.colorBufferAccess[i].textureHandle.IsValid())
-                            {
-                                ref readonly TextureHandle texCheck = ref m_RenderPass.colorBufferAccess[i].textureHandle;
-                                checkTexResource = m_Resources.GetTextureResource(texCheck.handle);
-                                if (texResource.textureUVOrigin != TextureUVOriginSelection.Unknown && checkTexResource.textureUVOrigin != TextureUVOriginSelection.Unknown && texResource.textureUVOrigin != checkTexResource.textureUVOrigin)
-                                {
-                                    var name = m_Resources.GetRenderGraphResourceName(tex.handle);
-                                    var checkName = m_Resources.GetRenderGraphResourceName(texCheck.handle);
-                                    throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "render", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
-                                }
-                            }
-                        }
-
-                        if (!isDepth && m_RenderPass.depthAccess.textureHandle.IsValid())
-                        {
-                            TextureHandle texCheck = m_RenderPass.depthAccess.textureHandle;
+                            ref readonly TextureHandle texCheck = ref m_RenderPass.fragmentInputAccess[i].textureHandle;
                             checkTexResource = m_Resources.GetTextureResource(texCheck.handle);
                             if (texResource.textureUVOrigin != TextureUVOriginSelection.Unknown && checkTexResource.textureUVOrigin != TextureUVOriginSelection.Unknown && texResource.textureUVOrigin != checkTexResource.textureUVOrigin)
                             {
                                 var name = m_Resources.GetRenderGraphResourceName(tex.handle);
                                 var checkName = m_Resources.GetRenderGraphResourceName(texCheck.handle);
-                                throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "depth", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
+                                throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "input", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
                             }
+                        }
+                    }
+
+                    for (int i = 0; i < m_RenderPass.colorBufferMaxIndex + 1; ++i)
+                    {
+                        if (m_RenderPass.colorBufferAccess[i].textureHandle.IsValid())
+                        {
+                            ref readonly TextureHandle texCheck = ref m_RenderPass.colorBufferAccess[i].textureHandle;
+                            checkTexResource = m_Resources.GetTextureResource(texCheck.handle);
+                            if (texResource.textureUVOrigin != TextureUVOriginSelection.Unknown && checkTexResource.textureUVOrigin != TextureUVOriginSelection.Unknown && texResource.textureUVOrigin != checkTexResource.textureUVOrigin)
+                            {
+                                var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                                var checkName = m_Resources.GetRenderGraphResourceName(texCheck.handle);
+                                throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "render", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
+                            }
+                        }
+                    }
+
+                    if (!isDepth && m_RenderPass.depthAccess.textureHandle.IsValid())
+                    {
+                        TextureHandle texCheck = m_RenderPass.depthAccess.textureHandle;
+                        checkTexResource = m_Resources.GetTextureResource(texCheck.handle);
+                        if (texResource.textureUVOrigin != TextureUVOriginSelection.Unknown && checkTexResource.textureUVOrigin != TextureUVOriginSelection.Unknown && texResource.textureUVOrigin != checkTexResource.textureUVOrigin)
+                        {
+                            var name = m_Resources.GetRenderGraphResourceName(tex.handle);
+                            var checkName = m_Resources.GetRenderGraphResourceName(texCheck.handle);
+                            throw new InvalidOperationException($"In pass '{m_RenderPass.name}' when trying to use resource '{name}' of type {tex.handle.type} at index {tex.handle.index} - " + RenderGraph.RenderGraphExceptionMessages.IncompatibleTextureUVOrigin(texResource.textureUVOrigin, "depth", checkName, texCheck.handle.type, texCheck.handle.index, checkTexResource.textureUVOrigin));
                         }
                     }
                 }
@@ -469,23 +603,46 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         public void SetRenderAttachment(TextureHandle tex, int index, AccessFlags flags, int mipLevel, int depthSlice)
         {
-            CheckUseFragment(tex, false);
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.SetRenderAttachment(tex, index, flags, mipLevel, depthSlice);
+#endif
+
+            CheckUseFragment(tex, false, depthSlice);
             var versionedTextureHandle = new TextureHandle(UseResource(tex.handle, flags));
             m_RenderPass.SetColorBufferRaw(versionedTextureHandle, index, flags, mipLevel, depthSlice);
         }
 
         public void SetInputAttachment(TextureHandle tex, int index, AccessFlags flags, int mipLevel, int depthSlice)
         {
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.SetInputAttachment(tex, index, flags, mipLevel, depthSlice);
+#endif
+
             CheckFrameBufferFetchEmulationIsSupported(tex);
 
-            CheckUseFragment(tex, false);
+            m_Resources.GetRenderTargetInfo(tex.handle, out var info);
+            if (GraphicsFormatUtility.IsDepthFormat(info.format))
+            {
+                CheckInputAttachment(index, true);
+                CheckUseFragment(tex, true, depthSlice);
+            }
+            else
+            {
+                CheckInputAttachment(index, false);
+                CheckUseFragment(tex, false, depthSlice);
+            }
+
             var versionedTextureHandle = new TextureHandle(UseResource(tex.handle, flags));
             m_RenderPass.SetFragmentInputRaw(versionedTextureHandle, index, flags, mipLevel, depthSlice);
         }
 
         public void SetRenderAttachmentDepth(TextureHandle tex, AccessFlags flags, int mipLevel, int depthSlice)
         {
-            CheckUseFragment(tex, true);
+#if UNITY_ENABLE_CHECKS
+            additionalValidationLayer?.SetRenderAttachmentDepth(tex, flags, mipLevel, depthSlice);
+#endif
+
+            CheckUseFragment(tex, true, depthSlice);
             var versionedTextureHandle = new TextureHandle(UseResource(tex.handle, flags));
             m_RenderPass.SetDepthBufferRaw(versionedTextureHandle, flags, mipLevel, depthSlice);
         }
@@ -539,7 +696,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             m_RenderPass.UseRendererList(input);
         }
         
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        [Conditional("UNITY_ENABLE_CHECKS")]
         void CheckResource(in ResourceHandle res, bool checkTransientReadWrite = false)
         {
             if (RenderGraph.enableValidityChecks)
@@ -570,16 +727,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
         }
 
-        [Conditional("DEVELOPMENT_BUILD"), Conditional("UNITY_EDITOR")]
+        [Conditional("UNITY_ENABLE_CHECKS")]
         void CheckFrameBufferFetchEmulationIsSupported(in TextureHandle tex)
         {
             if (enableValidityChecks)
             {
-                if (!Util.RenderGraphUtils.IsFramebufferFetchEmulationSupportedOnCurrentPlatform())
-                {
-                    throw new InvalidOperationException($"This API is not supported on the current platform: {SystemInfo.graphicsDeviceType}");
-                }
-
                 if (!Util.RenderGraphUtils.IsFramebufferFetchEmulationMSAASupportedOnCurrentPlatform())
                 {
                     var sourceInfo = m_RenderGraph.GetRenderTargetInfo(tex);

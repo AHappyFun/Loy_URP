@@ -1,4 +1,5 @@
 using System;
+using Unity.Profiling.LowLevel;
 using UnityEngine.Assertions;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
@@ -131,19 +132,10 @@ namespace UnityEngine.Rendering
 
         /// <summary>
         /// Static allocation of per-view configurations
-        /// </summary>
-        static PerViewConfig[] s_PerViewConfigs = new PerViewConfig[kMaxPerViewConfigs];
-
-        /// <summary>
-        /// Static allocation of per-view configurations
         /// Users are expected to populate this during STP configuration and then assign it to the relevant
         /// configuration structure field(s) to avoid unnecessary allocations.
         /// </summary>
-        public static PerViewConfig[] perViewConfigs
-        {
-            get { return s_PerViewConfigs; }
-            set { s_PerViewConfigs = value; }
-        }
+        public static PerViewConfig[] perViewConfigs { get; set; } = new PerViewConfig[kMaxPerViewConfigs];
 
         /// <summary>
         /// Top-level configuration structure required for STP execution
@@ -944,14 +936,27 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
-        /// Profiling identifiers associated with STP's passes
+        /// Uploads the STP constant buffer and dispatches the setup compute shader at input
+        /// resolution, sampling input color, depth, and motion to produce intermediate color,
+        /// depth-motion, luma, convergence, and feedback textures for subsequent passes.
+        /// Kernel width doubles on Qualcomm GPUs to maximize FP16 ALU efficiency.
         /// </summary>
-        enum ProfileId
-        {
-            StpSetup,
-            StpPreTaa,
-            StpTaa
-        }
+        static readonly ProfilingSampler k_StpSetup = ProfilingSampler.Create("StpSetup", MarkerFlags.Default);
+
+        /// <summary>
+        /// Dispatches the Pre-TAA compute shader at input resolution to compute per-texel
+        /// blending weights from the intermediate convergence data, and writes updated luma
+        /// and convergence history textures consumed by the TAA pass.
+        /// </summary>
+        static readonly ProfilingSampler k_StpPreTaa = ProfilingSampler.Create("StpPreTaa", MarkerFlags.Default);
+
+        /// <summary>
+        /// Dispatches the TAA compute shader at <em>output</em> resolution to temporally
+        /// accumulate and upscale the frame using the intermediate color, blending weights,
+        /// prior feedback, depth-motion, and convergence textures. This is the most expensive
+        /// of the three STP passes because it runs at the upscaled target resolution.
+        /// </summary>
+        static readonly ProfilingSampler k_StpTaa = ProfilingSampler.Create("StpTaa", MarkerFlags.Default);
 
         /// <summary>
         /// Integer value used to identify when STP is running on a Qualcomm GPU
@@ -1075,6 +1080,7 @@ namespace UnityEngine.Rendering
             noiseTextureInfo.msaaSamples = 1;
             noiseTextureInfo.format = noiseTexture.graphicsFormat;
             noiseTextureInfo.bindMS = false;
+            noiseTextureInfo.isMemoryless = false;
 
             TextureHandle noiseTextureHandle = renderGraph.ImportTexture(noiseTextureRtHandle, noiseTextureInfo);
 
@@ -1106,7 +1112,7 @@ namespace UnityEngine.Rendering
 
             SetupData setupData;
 
-            using (var builder = renderGraph.AddComputePass<SetupData>("STP Setup", out var passData, ProfilingSampler.Get(ProfileId.StpSetup)))
+            using (var builder = renderGraph.AddComputePass<SetupData>("STP Setup", out var passData, k_StpSetup))
             {
                 passData.cs = runtimeResources.setupCS;
                 passData.cs.shaderKeywords = null;
@@ -1170,7 +1176,7 @@ namespace UnityEngine.Rendering
                 passData.priorConvergence = UseTexture(builder, renderGraph.ImportTexture(priorConvergence));
 
                 builder.SetRenderFunc(
-                    (SetupData data, ComputeGraphContext ctx) =>
+                    static (SetupData data, ComputeGraphContext ctx) =>
                     {
                         // Update the constant buffer data on the GPU
                         // TODO: Fix usage of m_WrappedCommandBuffer here once NRP support is added to ConstantBuffer.cs
@@ -1209,7 +1215,7 @@ namespace UnityEngine.Rendering
 
             PreTaaData preTaaData;
 
-            using (var builder = renderGraph.AddComputePass<PreTaaData>("STP Pre-TAA", out var passData, ProfilingSampler.Get(ProfileId.StpPreTaa)))
+            using (var builder = renderGraph.AddComputePass<PreTaaData>("STP Pre-TAA", out var passData, k_StpPreTaa))
             {
                 passData.cs = runtimeResources.preTaaCS;
                 passData.cs.shaderKeywords = null;
@@ -1248,7 +1254,7 @@ namespace UnityEngine.Rendering
                 passData.convergence = UseTexture(builder, renderGraph.ImportTexture(convergence), AccessFlags.WriteAll);
 
                 builder.SetRenderFunc(
-                    (PreTaaData data, ComputeGraphContext ctx) =>
+                    static (PreTaaData data, ComputeGraphContext ctx) =>
                     {
                         ConstantBuffer.Set<StpConstantBufferData>(data.cs, ShaderResources._StpConstantBufferData);
 
@@ -1272,7 +1278,7 @@ namespace UnityEngine.Rendering
 
             TaaData taaData;
 
-            using (var builder = renderGraph.AddComputePass<TaaData>("STP TAA", out var passData, ProfilingSampler.Get(ProfileId.StpTaa)))
+            using (var builder = renderGraph.AddComputePass<TaaData>("STP TAA", out var passData, k_StpTaa))
             {
                 passData.cs = runtimeResources.taaCS;
                 passData.cs.shaderKeywords = null;
@@ -1310,7 +1316,7 @@ namespace UnityEngine.Rendering
                 passData.output = UseTexture(builder, config.destination, AccessFlags.WriteAll);
 
                 builder.SetRenderFunc(
-                    (TaaData data, ComputeGraphContext ctx) =>
+                    static (TaaData data, ComputeGraphContext ctx) =>
                     {
                         ConstantBuffer.Set<StpConstantBufferData>(data.cs, ShaderResources._StpConstantBufferData);
 
@@ -1337,5 +1343,13 @@ namespace UnityEngine.Rendering
 
             return taaData.output;
         }
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsOnLoad()
+        {
+            perViewConfigs = new PerViewConfig[kMaxPerViewConfigs];
+        }
+#endif
     }
 }

@@ -1,7 +1,7 @@
 Shader "OnTileUberPost"
 {
     HLSLINCLUDE
-    #pragma multi_compile_local_fragment _ _HDR_GRADING _TONEMAP_ACES _TONEMAP_NEUTRAL
+    #pragma multi_compile_local_fragment _ _HDR_GRADING _TONEMAP_ACES _TONEMAP_NEUTRAL _TONEMAP_AGX
     #pragma multi_compile_local_fragment _ _FILM_GRAIN
     #pragma multi_compile_local_fragment _ _DITHERING
     #pragma multi_compile_local_fragment _ _GAMMA_20 _LINEAR_TO_SRGB_CONVERSION
@@ -33,19 +33,26 @@ Shader "OnTileUberPost"
     float4 _Vignette_Params2;
 #ifdef USING_STEREO_MATRICES
     float4 _Vignette_ParamsXR;
+    float4 _Quad_View_Uv_Remap_scalesXR;  // xy = Eye0 scale, zw = Eye1 scale
+    float4 _Quad_View_Uv_Remap_offsetsXR; // xy = Eye0 offset, zw = Eye1 offset
 #endif
     float2 _Grain_Params;
     float4 _Grain_TilingParams;
     float4 _Dithering_Params;
     float4 _HDROutputLuminanceParams;
+    float4 _AgxParams;              // x: contrast, y: mid-grey, z: toe-a, w: slope (AgX)
 
     #define VignetteColor           _Vignette_Params1.xyz
-    #ifdef USING_STEREO_MATRICES
+#ifdef USING_STEREO_MATRICES
     #define VignetteCenterEye0      _Vignette_ParamsXR.xy
     #define VignetteCenterEye1      _Vignette_ParamsXR.zw
-    #else
+    #define QuadViewUvRemapEye0Scale  _Quad_View_Uv_Remap_scalesXR.xy
+    #define QuadViewUvRemapEye1Scale  _Quad_View_Uv_Remap_scalesXR.zw
+    #define QuadViewUvRemapEye0Offset _Quad_View_Uv_Remap_offsetsXR.xy
+    #define QuadViewUvRemapEye1Offset _Quad_View_Uv_Remap_offsetsXR.zw
+#else
     #define VignetteCenter          _Vignette_Params2.xy
-    #endif
+#endif
     #define VignetteIntensity       _Vignette_Params2.z
     #define VignetteSmoothness      _Vignette_Params2.w
     #define VignetteRoundness       _Vignette_Params1.w
@@ -83,6 +90,15 @@ Shader "OnTileUberPost"
         }
         #endif
 
+        // Remapped UV for screen-space effects in Quad View
+        float2 uvRemapped = uv;
+#ifdef USING_STEREO_MATRICES
+        // Select per-eye scale and offset for robust handling of asymmetric projection matrices
+        const float2 quadViewScale = unity_StereoEyeIndex == 0 ? QuadViewUvRemapEye0Scale : QuadViewUvRemapEye1Scale;
+        const float2 quadViewOffset = unity_StereoEyeIndex == 0 ? QuadViewUvRemapEye0Offset : QuadViewUvRemapEye1Offset;
+        uvRemapped = uv * quadViewScale + quadViewOffset;
+#endif
+
         // To save on variants we use an uniform branch for vignette. This may have performance impact on lower end platforms
         UNITY_BRANCH
         if (VignetteIntensity > 0)
@@ -93,17 +109,17 @@ Shader "OnTileUberPost"
             const float2 VignetteCenter = unity_StereoEyeIndex == 0 ? VignetteCenterEye0 : VignetteCenterEye1;
         #endif
 
-            color = ApplyVignette(color, uv, VignetteCenter, VignetteIntensity, VignetteRoundness, VignetteSmoothness, VignetteColor);
+            color = ApplyVignette(color, uvRemapped, VignetteCenter, VignetteIntensity, VignetteRoundness, VignetteSmoothness, VignetteColor);
         }
 
         // Color grading is always enabled when post-processing/uber is active
         {
-            color = ApplyColorGrading(color, PostExposure, TEXTURE2D_ARGS(_InternalLut, sampler_LinearClamp), LutParams, TEXTURE2D_ARGS(_UserLut, sampler_LinearClamp), UserLutParams, UserLutContribution, PaperWhite, OneOverPaperWhite);
+            color = ApplyColorGrading(color, PostExposure, TEXTURE2D_ARGS(_InternalLut, sampler_LinearClamp), LutParams, TEXTURE2D_ARGS(_UserLut, sampler_LinearClamp), UserLutParams, UserLutContribution, PaperWhite, OneOverPaperWhite, _AgxParams);
         }
-        
+
         #if _FILM_GRAIN
         {
-            color = ApplyGrain(color, uv, TEXTURE2D_ARGS(_Grain_Texture, sampler_LinearRepeat), GrainIntensity, GrainResponse, GrainScale, GrainOffset, OneOverPaperWhite);
+            color = ApplyGrain(color, uvRemapped, TEXTURE2D_ARGS(_Grain_Texture, sampler_LinearRepeat), GrainIntensity, GrainResponse, GrainScale, GrainOffset, OneOverPaperWhite);
         }
         #endif
 
@@ -123,7 +139,7 @@ Shader "OnTileUberPost"
 
         #if _DITHERING
         {
-            color = ApplyDithering(color, uv, TEXTURE2D_ARGS(_BlueNoise_Texture, sampler_PointRepeat), DitheringScale, DitheringOffset, PaperWhite, OneOverPaperWhite);
+            color = ApplyDithering(color, uvRemapped, TEXTURE2D_ARGS(_BlueNoise_Texture, sampler_PointRepeat), DitheringScale, DitheringOffset, PaperWhite, OneOverPaperWhite);
         }
         #endif
 
@@ -134,6 +150,20 @@ Shader "OnTileUberPost"
         return half4(color, 1);
 #endif
     }
+
+    // Fallback shader to use when we can't keep things on tile, so usually in the editor when dealing with
+    // MSAA source targets to a non MSAA destination we can't perform a software resolve in the shader and
+    // so have to fall back to resolving the color target and reading it in as a texture.
+    // Where we have a MSAA destination we can avoid this.
+    half4 FragUberPostTextureSample(Varyings input) : SV_Target0
+    {
+        UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+        float2 uv = SCREEN_COORD_APPLY_SCALEBIAS(UnityStereoTransformScreenSpaceTex(input.texcoord));
+        half4 inputColor = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
+        return UberPost(inputColor, uv);
+    }   
+
     ENDHLSL
 
     SubShader
@@ -223,29 +253,13 @@ Shader "OnTileUberPost"
 
         Pass
         {
-            Name "OnTileUberPostTextureReadVersion"
+            Name "OnTileUberPostTextureSample"
             LOD 100
             ZTest Always ZWrite Off Cull Off
 
             HLSLPROGRAM
                 #pragma vertex Vert
-                #pragma fragment FragUberPostTextureReadVersion
-                #pragma target 5.0
-                #pragma enable_d3d11_debug_symbols
-                #pragma debug
-
-                // Fallback shader to use when we can't keep things on tile, so usually in the editor when dealing with
-                // MSAA source targets to a non MSAA destination we can't perform a software resolve in the shader and
-                // so have to fall back to resolving the color target and reading it in as a texture.
-                // Where we have a MSAA destination we can avoid this.
-                half4 FragUberPostTextureReadVersion(Varyings input) : SV_Target0
-                {
-                    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
-                    float2 uv = SCREEN_COORD_APPLY_SCALEBIAS(UnityStereoTransformScreenSpaceTex(input.texcoord));
-                    half4 inputColor = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
-                    return UberPost(inputColor, uv);
-                }
+                #pragma fragment FragUberPostTextureSample
             ENDHLSL
         }
 
@@ -335,29 +349,33 @@ Shader "OnTileUberPost"
 
         Pass
         {
-            Name "OnTileUberPostTextureReadVersionVisMesh"
+            Name "OnTileUberPostTextureSampleVisMesh"
             LOD 100
             ZTest Always ZWrite Off Cull Off
 
             HLSLPROGRAM
                 #include "Packages/com.unity.render-pipelines.universal/Shaders/XR/XRVisibilityMeshHelper.hlsl"
                 #pragma vertex VertVisibilityMeshXR
-                #pragma fragment FragUberPostTextureReadVersion
+                #pragma fragment FragUberPostTextureSample
                 #pragma target 5.0
-                #pragma debug
+            ENDHLSL
+        }
+    }
 
-                // Fallback shader to use when we can't keep things on tile, so usually in the editor when dealing with
-                // MSAA source targets to a non MSAA destination we can't perform a software resolve in the shader and
-                // so have to fall back to resolving the color target and reading it in as a texture.
-                // Where we have a MSAA destination we can avoid this.
-                half4 FragUberPostTextureReadVersion(Varyings input) : SV_Target0
-                {
-                    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+    //Supported subshader for WebGL
+    SubShader
+    {
+        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalPipeline"}
 
-                    float2 uv = SCREEN_COORD_APPLY_SCALEBIAS(UnityStereoTransformScreenSpaceTex(input.texcoord));
-                    half4 inputColor = SAMPLE_TEXTURE2D_X(_BlitTexture, sampler_LinearClamp, uv);
-                    return UberPost(inputColor, uv);
-                }
+        Pass
+        {
+            Name "OnTileUberPostTextureSample"
+            LOD 100
+            ZTest Always ZWrite Off Cull Off
+
+            HLSLPROGRAM
+                #pragma vertex Vert
+                #pragma fragment FragUberPostTextureSample
             ENDHLSL
         }
     }

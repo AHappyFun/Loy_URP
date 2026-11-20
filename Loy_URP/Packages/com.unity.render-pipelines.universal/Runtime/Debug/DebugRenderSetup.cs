@@ -73,17 +73,6 @@ namespace UnityEngine.Rendering.Universal
         }
 
         internal void CreateRendererList(
-            ScriptableRenderContext context,
-            ref CullingResults cullResults,
-            ref DrawingSettings drawingSettings,
-            ref FilteringSettings filteringSettings,
-            ref RenderStateBlock renderStateBlock,
-            ref RendererList rendererList)
-        {
-            RenderingUtils.CreateRendererListWithRenderStateBlock(context, ref cullResults, drawingSettings, filteringSettings, renderStateBlock, ref rendererList);
-        }
-
-        internal void CreateRendererList(
             RenderGraph renderGraph,
             ref CullingResults cullResults,
             ref DrawingSettings drawingSettings,
@@ -110,6 +99,14 @@ namespace UnityEngine.Rendering.Universal
                 DrawingSettings modifiedDrawingSettings = drawingSettings;
 
                 modifiedDrawingSettings.overrideMaterial = replacementMaterial;
+                modifiedDrawingSettings.overrideMaterialPassIndex = 0;
+                return modifiedDrawingSettings;
+            }
+
+            if (m_DebugHandler.IsBatchingTypeViewActive)
+            {
+                DrawingSettings modifiedDrawingSettings = drawingSettings;
+                modifiedDrawingSettings.overrideMaterial = m_DebugHandler.BatchingTypeDebugMaterial;
                 modifiedDrawingSettings.overrideMaterialPassIndex = 0;
                 return modifiedDrawingSettings;
             }
@@ -151,7 +148,7 @@ namespace UnityEngine.Rendering.Universal
                 {
                     // Disable culling to see all lines
                     renderStateBlock.rasterState = new RasterState(
-                        cullingMode: CullMode.Off        
+                        cullingMode: CullMode.Off
                     );
 
                     renderStateBlock.mask = RenderStateMask.Raster;

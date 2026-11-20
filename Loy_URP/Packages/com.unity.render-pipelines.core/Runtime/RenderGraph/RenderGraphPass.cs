@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Unity.Scripting.LifecycleManagement;
 
 namespace UnityEngine.Rendering.RenderGraphModule
 {
@@ -67,8 +68,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         public List<ResourceHandle> implicitReadsList = new List<ResourceHandle>();
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        public RenderGraph.DebugData.PassScriptInfo debugScriptInfo { get; set; }
+#if UNITY_ENABLE_CHECKS
+        public RenderGraph.DebugData.ScriptInfo debugScriptInfo { get; set; }
 #endif
 
         public RenderGraphPass()
@@ -119,6 +120,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
             shadingRateFragmentSize = ShadingRateFragmentSize.FragmentSize1x1;
             primitiveShadingRateCombiner = ShadingRateCombiner.Keep;
             fragmentShadingRateCombiner = ShadingRateCombiner.Keep;
+
+            // Invalidate ExtendedFeatureFlags
+            extendedFeatureFlags = ExtendedFeatureFlags.None;
         }
 
         // Check if the pass has any render targets set-up
@@ -276,7 +280,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
             else
             {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                 // You tried to do SetRenderAttachment(tex1, 1, ..); SetRenderAttachment(tex2, 1, ..); that is not valid for different textures on the same index
                 throw new InvalidOperationException(
                     $"In pass '{name}' when trying to call SetRenderAttachment with resource of type {resource.handle.type} at index {index} - " +
@@ -297,7 +301,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             }
             else
             {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                 // You tried to do SetRenderAttachment(tex1, 1, ..); SetRenderAttachment(tex2, 1, ..); that is not valid for different textures on the same index
                 throw new InvalidOperationException(
                     $"In pass '{name}' when trying to call SetInputAttachment with resource of type {resource.handle.type} at index {index} - " +
@@ -347,7 +351,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             {
                 depthAccess = new TextureAccess(resource, accessFlags, mipLevel, depthSlice);
             }
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             else
             {
                 throw new InvalidOperationException(
@@ -453,6 +457,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             generator.Append(allowPassCulling);
             generator.Append(allowGlobalState);
             generator.Append(enableFoveatedRasterization);
+            generator.Append(extendedFeatureFlags);
 
             var depthHandle = depthAccess.textureHandle.handle;
             if (depthHandle.IsValid())
@@ -654,6 +659,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
     internal sealed class RenderGraphPass<PassData> : BaseRenderGraphPass<PassData, RenderGraphContext>
         where PassData : class, new()
     {
+        // Variable is reused by overwriting its contents in FromInternalContext() before usage, so no need to reset it when entering play mode.
+        [NoAutoStaticsCleanup]
         internal static RenderGraphContext c = new RenderGraphContext();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -677,6 +684,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
     internal sealed class ComputeRenderGraphPass<PassData> : BaseRenderGraphPass<PassData, ComputeGraphContext>
     where PassData : class, new()
     {
+        // Variable is reused by overwriting its contents in FromInternalContext() before usage, so no need to reset it when entering play mode.
+        [NoAutoStaticsCleanup]
         internal static ComputeGraphContext c = new ComputeGraphContext();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -700,6 +709,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
     internal sealed class RasterRenderGraphPass<PassData> : BaseRenderGraphPass<PassData, RasterGraphContext>
     where PassData : class, new()
     {
+        // Variable is reused by overwriting its contents in FromInternalContext() before usage, so no need to reset it when entering play mode.
+        [NoAutoStaticsCleanup]
         internal static RasterGraphContext c = new RasterGraphContext();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -723,6 +734,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
     internal sealed class UnsafeRenderGraphPass<PassData> : BaseRenderGraphPass<PassData, UnsafeGraphContext>
         where PassData : class, new()
     {
+        // Variable is reused by overwriting its contents in FromInternalContext() before usage, so no need to reset it when entering play mode.
+        [NoAutoStaticsCleanup]
         internal static UnsafeGraphContext c = new UnsafeGraphContext();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

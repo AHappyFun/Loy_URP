@@ -16,13 +16,14 @@ namespace UnityEngine.Rendering.Universal
     /// <seealso cref="Shader"/>
     /// <seealso cref="Texture"/>
     [Serializable]
+    [URPHelpURL("urp/integration-with-post-processing")]
     public class PostProcessData : ScriptableObject
     {
 #if UNITY_EDITOR
         [SuppressMessage("Microsoft.Performance", "CA1812")]
-        internal class CreatePostProcessDataAsset : EndNameEditAction
+        internal class CreatePostProcessDataAsset : AssetCreationEndAction
         {
-            public override void Action(int instanceId, string pathName, string resourceFile)
+            public override void Action(EntityId entityId, string pathName, string resourceFile)
             {
                 var instance = CreateInstance<PostProcessData>();
                 AssetDatabase.CreateAsset(instance, pathName);
@@ -34,7 +35,7 @@ namespace UnityEngine.Rendering.Universal
         static void CreatePostProcessData()
         {
             var icon = EditorGUIUtility.IconContent("ScriptableObject Icon").image as Texture2D;
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, CreateInstance<CreatePostProcessDataAsset>(), "CustomPostProcessData.asset", icon, null);
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, CreateInstance<CreatePostProcessDataAsset>(), "CustomPostProcessData.asset", icon, null);
         }
 
         internal static PostProcessData GetDefaultPostProcessData()
@@ -239,19 +240,7 @@ namespace UnityEngine.Rendering.Universal
             /// <summary>
             /// Film Grain textures.
             /// </summary>
-            [ResourcePaths(new[]
-            {
-                "Textures/FilmGrain/Thin01.png",
-                "Textures/FilmGrain/Thin02.png",
-                "Textures/FilmGrain/Medium01.png",
-                "Textures/FilmGrain/Medium02.png",
-                "Textures/FilmGrain/Medium03.png",
-                "Textures/FilmGrain/Medium04.png",
-                "Textures/FilmGrain/Medium05.png",
-                "Textures/FilmGrain/Medium06.png",
-                "Textures/FilmGrain/Large01.png",
-                "Textures/FilmGrain/Large02.png"
-            })]
+            [Obsolete("Film grain textures have been moved to FilmGrainResources in GraphicsSettings. This field is no longer used. #from(6000.6)", false)]
             public Texture2D[] filmGrainTex;
 
             /// <summary>

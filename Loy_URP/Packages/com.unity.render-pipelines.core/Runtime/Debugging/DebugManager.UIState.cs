@@ -1,18 +1,14 @@
+#if ENABLE_UIELEMENTS_MODULE && UNITY_ENABLE_CHECKS
+#define ENABLE_RENDERING_DEBUGGER_UI
+#endif
+#if ENABLE_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM_PACKAGE
+#define USE_INPUT_SYSTEM
+#endif
+
 using System;
-using System.Diagnostics;
-using UnityEngine.Rendering.UI;
-
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
-
-#if UNITY_ANDROID || UNITY_IPHONE || UNITY_TVOS || UNITY_SWITCH || UNITY_SWITCH2
-using UnityEngine.UI;
-#endif
 
 namespace UnityEngine.Rendering
 {
-    using UnityObject = UnityEngine.Object;
 
     public sealed partial class DebugManager
     {
@@ -40,8 +36,8 @@ namespace UnityEngine.Rendering
         {
             public UIMode mode;
 
-            [SerializeField]
-            private bool m_Open;
+            bool m_Open;
+
             public bool open
             {
                 get => m_Open;
@@ -57,18 +53,18 @@ namespace UnityEngine.Rendering
             }
         }
 
-        private UIState editorUIState = new UIState() { mode = UIMode.EditorMode };
+        readonly UIState m_EditorUIState = new UIState() { mode = UIMode.EditorMode };
 
         /// <summary>
         /// Is the debug editor window open.
         /// </summary>
         public bool displayEditorUI
         {
-            get => editorUIState.open;
-            set => editorUIState.open = value;
+            get => m_EditorUIState.open;
+            set => m_EditorUIState.open = value;
         }
 
-        private bool m_EnableRuntimeUI = true;
+        bool m_EnableRuntimeUI = true;
 
         /// <summary>
         /// Controls whether runtime UI can be enabled. When this is set to false, there will be no overhead
@@ -87,42 +83,53 @@ namespace UnityEngine.Rendering
             }
         }
 
-        private UIState runtimeUIState = new UIState() { mode = UIMode.RuntimeMode };
+        readonly UIState m_RuntimeUIState = new UIState() { mode = UIMode.RuntimeMode };
 
         /// <summary>
         /// Displays the runtime version of the debug window.
         /// </summary>
         public bool displayRuntimeUI
         {
-            get => m_Root != null && m_Root.activeInHierarchy;
+#if ENABLE_RENDERING_DEBUGGER_UI
+            get => m_RuntimeDebugWindow != null && m_RuntimeDebugWindow.gameObject.activeInHierarchy;
             set
             {
                 if (value)
                 {
-                    m_Root = UnityObject.Instantiate(Resources.Load<Transform>("DebugUICanvas")).gameObject;
-                    m_Root.name = "[Debug Canvas]";
-                    m_Root.transform.localPosition = Vector3.zero;
-                    m_RootUICanvas = m_Root.GetComponent<DebugUIHandlerCanvas>();
-
-#if UNITY_ANDROID || UNITY_IPHONE || UNITY_TVOS || UNITY_SWITCH || UNITY_SWITCH2
-                    var canvasScaler = m_Root.GetComponent<CanvasScaler>();
-                    canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                    if (m_RuntimeDebugWindow == null && GraphicsSettings.TryGetRenderPipelineSettings<RenderingDebuggerRuntimeResources>(out _))
+                    {
+                        var go = new GameObject("[Debug UI]");
+                        m_RuntimeDebugWindow = go.AddComponent<RuntimeDebugWindow>();
+                        go.SetActive(true);
+                    }
+#if USE_INPUT_SYSTEM
+                    m_DebugMenuActions.Enable();
 #endif
-
-                    m_Root.SetActive(true);
                 }
                 else
                 {
-                    CoreUtils.Destroy(m_Root);
-                    m_Root = null;
-                    m_RootUICanvas = null;
+                    if (m_RuntimeDebugWindow != null)
+                    {
+                        CoreUtils.Destroy(m_RuntimeDebugWindow.gameObject);
+                        m_RuntimeDebugWindow = null;
+                    }
+#if USE_INPUT_SYSTEM
+                    m_DebugMenuActions.Disable();
+#endif
                 }
 
                 onDisplayRuntimeUIChanged(value);
-                DebugUpdater.HandleInternalEventSystemComponents(value);
 
-                runtimeUIState.open = m_Root != null && m_Root.activeInHierarchy;
+                m_RuntimeUIState.open = m_RuntimeDebugWindow != null && m_RuntimeDebugWindow.gameObject.activeInHierarchy;
             }
+#else
+            get => false;
+            set
+            {
+                if (value)
+                    throw new NotSupportedException("Rendering Debugger Runtime UI requires the UIElements module.");
+            }
+#endif
         }
 
         /// <summary>
@@ -130,20 +137,33 @@ namespace UnityEngine.Rendering
         /// </summary>
         public bool displayPersistentRuntimeUI
         {
-            get => m_RootUIPersistentCanvas != null && m_PersistentRoot.activeInHierarchy;
+#if ENABLE_RENDERING_DEBUGGER_UI
+            get => m_RuntimePersistentDebugUI != null && m_RuntimePersistentDebugUI.gameObject.activeInHierarchy;
             set
             {
                 if (value)
                 {
-                    EnsurePersistentCanvas();
+                    if (m_RuntimePersistentDebugUI == null && GraphicsSettings.TryGetRenderPipelineSettings<RenderingDebuggerRuntimeResources>(out _))
+                    {
+                        var go = new GameObject("[Persistent Debug UI]");
+                        m_RuntimePersistentDebugUI = go.AddComponent<RuntimePersistentDebugUI>();
+                        go.SetActive(true);
+                    }
                 }
                 else
                 {
-                    CoreUtils.Destroy(m_PersistentRoot);
-                    m_PersistentRoot = null;
-                    m_RootUIPersistentCanvas = null;
+                    CoreUtils.Destroy(m_RuntimePersistentDebugUI?.gameObject);
+                    m_RuntimePersistentDebugUI = null;
                 }
             }
+#else
+            get => false;
+            set
+            {
+                if (value)
+                    throw new NotSupportedException("Rendering Debugger Runtime UI requires the UIElements module.");
+            }
+#endif
         }
     }
 }

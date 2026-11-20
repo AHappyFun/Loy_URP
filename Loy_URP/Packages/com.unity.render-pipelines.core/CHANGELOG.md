@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- Added a `ReadOnlySpan<Matrix4x4>` overload of `SetGlobalMatrixArray` on the render graph command buffers, so matrices that are already stored contiguously can be pushed without being copied into an array first.
+
+### Fixed
+- Fixed a `variant DISABLE_TEXTURE2D_X_ARRAY not found` shader error when copying MSAA textures on OpenGL ES 3.1 drivers that lack per-sample shading (`gl_SampleID`); these devices now fall back to a regular blit instead.
+- Fixed a "Shader 'Hidden/Core/ProbeVolumeDebug': All SubShaders were stripped" warning when building an HDRP project, caused by a leftover URP-specific RenderPipeline tag on the shared probe volume debug shader.
+- Fixed the Adaptive Probe Volume Samples fields accepting typed values above the slider maximum.
+- Fixed GC allocations during native render pass compilation. Debug-only pass and resource names are now stored as UTF8 in native memory instead of managed arrays.
+- Fixed the Editor becoming stuck when an asynchronous Adaptive Probe Volumes bake fails, for example when the selected lightmapper cannot run on the machine. A failed bake now reports the error and stops instead of leaving the progress item and further bakes blocked.
+
 Version Updated
 The version number for this package has increased due to a version update of a related graphics package.
+
+## [17.6.0] - 2026-06-26
+
+This version is compatible with Unity 6000.7.0a2.
+For the release notes, refer to the [Unity download archive](https://unity.com/releases/editor/archive).
+
+Version Updated
+The version number for this package has increased due to a version update of a related graphics package.
+
+## [17.5.0] - 2026-02-18
+
+This version is compatible with Unity 6000.6.0a7.
+
+For the release notes, refer to the [Unity download archive](https://unity.com/releases/editor/archive).
+
+## [17.4.0] - 2025-10-22
+
+This version is compatible with Unity 6000.4.0a4.
+For the release notes, refer to the [Unity download archive](https://unity.com/releases/editor/archive).
+
+## [17.3.0] - 2025-08-27
+
+This version is compatible with Unity 6000.3.0b1.
+For the release notes, refer to the [Unity download archive](https://unity.com/releases/editor/archive).
 
 ## [17.2.0] - 2025-05-14
 

@@ -34,7 +34,30 @@ namespace UnityEditor.Rendering
         /// </summary>
         public List<RenderPipelineAsset> renderPipelineAssets { get; private set; } = new();
 
-        internal Dictionary<int, ComputeShader> computeShaderCache { get; private set; } = new();
+        /// <summary>
+        /// Whether the current build's managed code variant has <c>UNITY_ENABLE_CHECKS</c> defined
+        /// (Debug or Checked variant).
+        /// </summary>
+        /// <remarks>
+        /// Use this to gate inclusion of diagnostic shaders, resources, and other build-time decisions
+        /// that mirror C# code paths compiled under <c>#if UNITY_ENABLE_CHECKS</c>.
+        /// </remarks>
+        public bool useDiagnosticChecks
+        {
+            get
+            {
+                var buildTarget = EditorUserBuildSettings.activeBuildTarget;
+                return PlayerSettings.GetManagedCodeVariant(GetNamedBuildTarget(buildTarget)) <= ManagedCodeVariant.Checked;
+            } 
+        }
+
+        /// <summary>
+        /// Obsolete. Always returns <c>false</c>.
+        /// </summary>
+        [Obsolete("developmentBuild is no longer populated and always returns false. Use useDiagnosticChecks for stripping decisions that mirror UNITY_ENABLE_CHECKS-gated C# code.")]
+        public bool developmentBuild => false;
+
+        internal Dictionary<EntityId, ComputeShader> computeShaderCache { get; private set; } = new();
 
         internal bool pipelineSupportGPUResidentDrawer { get; private set; } = false;
         internal bool playerNeedGPUResidentDrawer { get; private set; } = false;
@@ -58,6 +81,18 @@ namespace UnityEditor.Rendering
         private static CoreBuildData CreateInstance()
             => new(EditorUserBuildSettings.activeBuildTarget);
 
+        // NamedBuildTarget for buildTarget under the active subtarget (Player vs Server for Standalone).
+        private static NamedBuildTarget GetNamedBuildTarget(BuildTarget buildTarget)
+        {
+            var buildTargetGroup = BuildPipeline.GetBuildTargetGroup(buildTarget);
+            if (buildTargetGroup == BuildTargetGroup.Standalone &&
+                EditorUserBuildSettings.standaloneBuildSubtarget == StandaloneBuildSubtarget.Server)
+            {
+                return NamedBuildTarget.Server;
+            }
+            return NamedBuildTarget.FromBuildTargetGroup(buildTargetGroup);
+        }
+
         private void CheckGPUResidentDrawerUsage()
         {
             foreach (var renderPipelineAsset in renderPipelineAssets)
@@ -80,8 +115,10 @@ namespace UnityEditor.Rendering
             if (!playerNeedGPUResidentDrawer)
                 return;
 
+            #pragma warning disable 618 // Todo(@daniel.andersen): Remove deprecated API usage
             GraphicsSettings.GetRenderPipelineSettings<GPUResidentDrawerResources>()
-                .ForEachFieldOfType<ComputeShader>(computeShader => computeShaderCache.Add(computeShader.GetInstanceID(), computeShader));
+                .ForEachFieldOfType<ComputeShader>(computeShader => computeShaderCache.Add(computeShader.GetEntityId(), computeShader));
+            #pragma warning restore 618
         }
 
         /// <summary>

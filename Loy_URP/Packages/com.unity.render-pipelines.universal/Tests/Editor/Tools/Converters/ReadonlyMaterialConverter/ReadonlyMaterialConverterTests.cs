@@ -1,8 +1,8 @@
 using NUnit.Framework;
+using UnityEditor.Rendering.Converter;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.TestTools;
 
 namespace UnityEditor.Rendering.Universal.Tools
 {
@@ -10,11 +10,47 @@ namespace UnityEditor.Rendering.Universal.Tools
     [Category("Graphics Tools")]
     class ReadonlyMaterialConverterTests
     {
-        const string k_PrefabPath = "Packages/com.unity.render-pipelines.universal/Tests/Editor/Tools/Converters/ReadonlyMaterialConverter/Cube.prefab";
+        const string k_BasePrefabPath = "Assets/ReadonlyMaterialConverterTests/";
 
         GameObject m_GO;
         MeshRenderer m_MeshRenderer;
-        Material[] m_RollbackMaterials;
+        string m_CurrentTestAssetPath;
+
+        public static GameObject CreatePrefabWithMeshRenderer(Material[] materials, string assetPath)
+        {
+            var go = new GameObject("TestPrefab");
+
+            try
+            {
+                var mf = go.AddComponent<MeshFilter>();
+                var mr = go.AddComponent<MeshRenderer>();
+                mr.sharedMaterials = materials;
+
+                CoreUtils.EnsureFolderTreeInAssetFilePath(assetPath);
+
+                var prefab = PrefabUtility.SaveAsPrefabAsset(go, assetPath, out bool success);
+                if (!success || prefab == null)
+                {
+                    Debug.LogError("Failed to save prefab at: " + assetPath);
+                    return null;
+                }
+
+                AssetDatabase.ImportAsset(assetPath);
+                AssetDatabase.SaveAssets();
+
+                return prefab;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+
+            return null;
+        }
 
         [OneTimeSetUp]
         public void OneTimeSetup()
@@ -22,80 +58,162 @@ namespace UnityEditor.Rendering.Universal.Tools
             var urpAsset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
             if (urpAsset == null)
                 Assert.Ignore("Project without URP. Skipping test");
-
-            var universalRenderer = urpAsset.scriptableRenderer as UniversalRenderer;
-            if (universalRenderer == null)
-                Assert.Ignore("Project without URP - Universal Renderer. Skipping test");
-        }
-
-        [SetUp]
-        public void Setup()
-        {
-            m_GO = AssetDatabase.LoadAssetAtPath<GameObject>(k_PrefabPath);
-            m_MeshRenderer = m_GO.GetComponent<MeshRenderer>();
-            Assert.AreEqual(ReadonlyMaterialMap.count, m_MeshRenderer.sharedMaterials.Length, "ReadonlyMaterialMap - Lengths are different");
-
-            int i = 0;
-            foreach (var key in ReadonlyMaterialMap.Keys)
-            {
-                Assert.AreEqual(key, m_MeshRenderer.sharedMaterials[i].name, "ReadonlyMaterialMap - Order has changed");
-                ++i;
-            }
-
-            m_RollbackMaterials = new Material[ReadonlyMaterialMap.count];
-            m_MeshRenderer.sharedMaterials.CopyTo(m_RollbackMaterials, 0);
         }
 
         [TearDown]
         public void Teardown()
         {
-            if (m_MeshRenderer != null)
-                m_MeshRenderer.sharedMaterials = m_RollbackMaterials;
+            if (!string.IsNullOrEmpty(m_CurrentTestAssetPath))
+            {
+                // Delete the specific prefab file
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(m_CurrentTestAssetPath) != null)
+                {
+                    AssetDatabase.DeleteAsset(m_CurrentTestAssetPath);
+                }
+            }
+            m_CurrentTestAssetPath = null;
         }
 
-        private void CheckMaterials(Material[] actual)
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
         {
-            int i = 0;
-            foreach (var key in ReadonlyMaterialMap.Keys)
+            // Clean up the entire test folder
+            if (AssetDatabase.IsValidFolder(k_BasePrefabPath.TrimEnd('/')))
             {
-                Assert.IsTrue(ReadonlyMaterialMap.TryGetMappingMaterial(m_RollbackMaterials[i], out var expected));
-                CheckMaterials(expected, actual[i]);
+                AssetDatabase.DeleteAsset(k_BasePrefabPath.TrimEnd('/'));
+            }
+        }
+
+        private void SetupTestForConverter(ReadonlyMaterialConverter converter, string testName)
+        {
+            var materials = converter.mappings.GetBuiltInMaterials();
+            Assume.That(materials.Length > 0, "There are no mapping materials");
+
+            // Create unique asset path for this specific test
+            m_CurrentTestAssetPath = k_BasePrefabPath + testName + ".prefab";
+
+            m_GO = CreatePrefabWithMeshRenderer(materials, m_CurrentTestAssetPath);
+            m_MeshRenderer = m_GO.GetComponent<MeshRenderer>();
+
+            Assert.AreEqual(converter.mappings.count, m_MeshRenderer.sharedMaterials.Length,
+                "ReadonlyMaterialMap - Lengths are different");
+
+            int i = 0;
+            foreach (var key in converter.mappings.Keys)
+            {
+                Assert.AreEqual(key, m_MeshRenderer.sharedMaterials[i].name,
+                    "ReadonlyMaterialMap - Order has changed");
                 ++i;
             }
         }
 
-        private void CheckMaterials(Material expected, Material actual)
+        private void CheckMaterialsAfterConversion(ReadonlyMaterialConverter converter, Material[] actual)
         {
-            Assert.AreEqual(expected, actual, "The material was not changed");
+            int i = 0;
+            var materials = converter.mappings.GetBuiltInMaterials();
+            foreach (var key in converter.mappings.Keys)
+            {
+                Assert.IsTrue(converter.mappings.TryGetMappingMaterial(materials[i], out var expected));
+                Assert.AreEqual(expected, actual[i], "The material was not changed");
+                ++i;
+            }
+        }
+
+        private void RunConverterTest(ReadonlyMaterialConverter converter, string testName)
+        {
+            SetupTestForConverter(converter, testName);
+
+            var gid = GlobalObjectId.GetGlobalObjectIdSlow(m_GO);
+            var assetItem = new RenderPipelineConverterAssetItem(gid, AssetDatabase.GetAssetPath(m_GO));
+            converter.assets.Add(assetItem);
+
+            Assert.IsNull(converter.m_MaterialReferenceChanger,
+                "MaterialReferenceChanger should be null before BeforeConvert");
+
+            converter.BeforeConvert();
+
+            Assert.IsNotNull(converter.m_MaterialReferenceChanger,
+                "MaterialReferenceChanger should NOT be null after BeforeConvert");
+
+            var status = converter.Convert(assetItem, out var message);
+
+            converter.AfterConvert();
+
+            Assert.IsNull(converter.m_MaterialReferenceChanger,
+                "MaterialReferenceChanger should be null after AfterConvert");
+
+            Assert.AreEqual(Status.Success, status);
+            Assert.IsTrue(string.IsNullOrEmpty(message), $"Message should be empty. Message: {message}");
+
+            CheckMaterialsAfterConversion(converter, m_MeshRenderer.sharedMaterials);
         }
 
         [Test]
-        [Timeout(5 * 60 * 1000)]
-        public void ReassignGameObjectMaterials_Succeeds_WhenMaterialCanBeSet()
+        public void BuiltInToURP3D_ReassignMaterials_Succeeds()
         {
-            var materialConverter = new ReadonlyMaterialConverter();
-            var gid = GlobalObjectId.GetGlobalObjectIdSlow(m_GO);
-            materialConverter.Add(gid.ToString(), k_PrefabPath);
+            var urpAsset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            if (urpAsset.scriptableRenderer is not UniversalRenderer)
+                Assert.Ignore("Requires UniversalRenderer. Skipping test");
 
-            RunItemContext runItemContext = new RunItemContext(new ConverterItemInfo
+            var converter = new BuiltInToURP3DReadonlyMaterialConverter();
+            RunConverterTest(converter, nameof(BuiltInToURP3D_ReassignMaterials_Succeeds));
+        }
+
+        [Test]
+        public void BuiltInToURP3D_ProjectMaterialWithBuiltInName_IsIgnored()
+        {
+            const string materialName = "Default-Particle";
+            var builtInMaterial = AssetDatabase.GetBuiltinExtraResource<Material>(materialName + ".mat");
+            Assume.That(builtInMaterial, Is.Not.Null);
+
+            var materialPath = k_BasePrefabPath + materialName + ".mat";
+            CoreUtils.EnsureFolderTreeInAssetFilePath(materialPath);
+            var projectMaterial = new Material(builtInMaterial);
+            AssetDatabase.CreateAsset(projectMaterial, materialPath);
+
+            try
             {
-                descriptor = new ConverterItemDescriptor()
-                {
-                    name = m_GO.name
-                },
-                index = 0,
-            });
+                Assume.That(projectMaterial.name, Is.EqualTo(materialName));
 
-            Assert.IsNull(materialConverter.m_MaterialReferenceChanger, "MaterialReferenceChanger should be null before OnPreRun");
-            materialConverter.OnPreRun();
-            Assert.IsNotNull(materialConverter.m_MaterialReferenceChanger, "MaterialReferenceChanger should NOT be null after OnPreRun");
-            materialConverter.OnRun(ref runItemContext);
-            materialConverter.OnPostRun();
-            Assert.IsNull(materialConverter.m_MaterialReferenceChanger, "MaterialReferenceChanger should be null after OnPostRun");
+                var converter = new BuiltInToURP3DReadonlyMaterialConverter();
+                var builtInMaterials = converter.mappings.GetBuiltInMaterials();
 
-            Assert.IsFalse(runItemContext.didFail, runItemContext.info);
-            CheckMaterials(m_MeshRenderer.sharedMaterials);
+                CollectionAssert.Contains(builtInMaterials, builtInMaterial,
+                    "The built-in material must be searched for, not the project material sharing its name");
+                CollectionAssert.DoesNotContain(builtInMaterials, projectMaterial);
+
+                Assert.IsTrue(converter.mappings.TryGetMappingMaterial(projectMaterial, out var mappedProjectMaterial));
+                Assert.AreSame(projectMaterial, mappedProjectMaterial, "A project material must not be replaced");
+
+                Assert.IsTrue(converter.mappings.TryGetMappingMaterial(builtInMaterial, out var mappedBuiltInMaterial));
+                Assert.AreNotSame(builtInMaterial, mappedBuiltInMaterial, "The built-in material must be replaced");
+            }
+            finally
+            {
+                AssetDatabase.DeleteAsset(materialPath);
+            }
+        }
+
+        [Test]
+        public void URP3DToURP2D_ReassignMaterials_Succeeds()
+        {
+            var urpAsset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            if (urpAsset.scriptableRenderer is not Renderer2D)
+                Assert.Ignore("Requires Renderer2D. Skipping test");
+
+            var converter = new URP3DToURP2DReadonlyMaterialConverter();
+            RunConverterTest(converter, nameof(URP3DToURP2D_ReassignMaterials_Succeeds));
+        }
+
+        [Test]
+        public void BuiltInToURP2D_ReassignMaterials_Succeeds()
+        {
+            var urpAsset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            if (urpAsset.scriptableRenderer is not Renderer2D)
+                Assert.Ignore("Requires Renderer2D. Skipping test");
+
+            var converter = new BuiltInToURP2DReadonlyMaterialConverter();
+            RunConverterTest(converter, nameof(BuiltInToURP2D_ReassignMaterials_Succeeds));
         }
     }
-
 }

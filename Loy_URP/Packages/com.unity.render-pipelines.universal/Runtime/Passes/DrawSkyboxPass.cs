@@ -12,6 +12,9 @@ namespace UnityEngine.Rendering.Universal
     /// </summary>
     public partial class DrawSkyboxPass : ScriptableRenderPass
     {
+        // Pre-exposes the built-in skybox shaders (see Skybox*.shader in DefaultResourcesExtra).
+        private const string k_PreExposeSkyKeyword = "PRE_EXPOSE_SKY";
+
         /// <summary>
         /// Creates a new <c>DrawSkyboxPass</c> instance.
         /// </summary>
@@ -19,59 +22,9 @@ namespace UnityEngine.Rendering.Universal
         /// <seealso cref="RenderPassEvent"/>
         public DrawSkyboxPass(RenderPassEvent evt)
         {
-            profilingSampler = ProfilingSampler.Get(URPProfileId.DrawSkybox);
+            profilingSampler = URPProfilingSamplers.DrawSkybox;
             renderPassEvent = evt;
         }
-
-#if URP_COMPATIBILITY_MODE
-        /// <inheritdoc/>
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            UniversalCameraData cameraData = renderingData.frameData.Get<UniversalCameraData>();
-            var activeDebugHandler = GetActiveDebugHandler(cameraData);
-            if (activeDebugHandler != null)
-            {
-                // TODO: The skybox needs to work the same as the other shaders, but until it does we'll not render it
-                // when certain debug modes are active (e.g. wireframe/overdraw modes)
-                if (activeDebugHandler.IsScreenClearNeeded)
-                {
-                    return;
-                }
-            }
-
-            var skyRendererList = CreateSkyboxRendererList(context, cameraData);
-            ExecutePass(CommandBufferHelpers.GetRasterCommandBuffer(renderingData.commandBuffer), cameraData.xr, skyRendererList);
-        }
-
-        private RendererList CreateSkyboxRendererList(ScriptableRenderContext context, UniversalCameraData cameraData)
-        {
-            var skyRendererList = new RendererList();
-
-#if ENABLE_VR && ENABLE_XR_MODULE
-            if (cameraData.xr.enabled)
-            {
-                // Setup Legacy XR buffer states
-                if (cameraData.xr.singlePassEnabled)
-                {
-                    skyRendererList = context.CreateSkyboxRendererList(cameraData.camera,
-                        cameraData.GetProjectionMatrix(0), cameraData.GetViewMatrix(0),
-                        cameraData.GetProjectionMatrix(1), cameraData.GetViewMatrix(1));
-                }
-                else
-                {
-                    skyRendererList = context.CreateSkyboxRendererList(cameraData.camera, cameraData.GetProjectionMatrix(0), cameraData.GetViewMatrix(0));
-                }
-            }
-            else
-#endif
-            {
-                skyRendererList = context.CreateSkyboxRendererList(cameraData.camera);
-            }
-
-            return skyRendererList;
-        }
-#endif
 
         private RendererListHandle CreateSkyBoxRendererList(RenderGraph renderGraph, UniversalCameraData cameraData)
         {
@@ -101,8 +54,9 @@ namespace UnityEngine.Rendering.Universal
             return skyRendererListHandle;
         }
 
-        private static void ExecutePass(RasterCommandBuffer cmd, XRPass xr, RendererList rendererList)
+        private static void ExecutePass(RasterCommandBuffer cmd, XRPass xr, RendererList rendererList, bool renderExposure)
         {
+            CoreUtils.SetKeyword(cmd, k_PreExposeSkyKeyword, renderExposure);
 #if ENABLE_VR && ENABLE_XR_MODULE
             if (xr.enabled && xr.singlePassEnabled)
                 cmd.SetSinglePassStereo(SystemInfo.supportsMultiview ? SinglePassStereoMode.Multiview : SinglePassStereoMode.Instancing);
@@ -113,6 +67,7 @@ namespace UnityEngine.Rendering.Universal
             if (xr.enabled && xr.singlePassEnabled)
                 cmd.SetSinglePassStereo(SinglePassStereoMode.None);
 #endif
+            CoreUtils.SetKeyword(cmd, k_PreExposeSkyKeyword, false);
         }
 
         private class PassData
@@ -120,6 +75,7 @@ namespace UnityEngine.Rendering.Universal
             internal XRPass xr;
             internal RendererListHandle skyRendererListHandle;
             internal Material material;
+            internal bool applyExposure; // Off while capturing the environment reflection from the skybox, so the capture stays un-exposed.
         }
 
         private void InitPassData(ref PassData passData, in XRPass xr, in RendererListHandle handle)
@@ -128,7 +84,7 @@ namespace UnityEngine.Rendering.Universal
             passData.skyRendererListHandle = handle;
         }
 
-        internal void Render(RenderGraph renderGraph, ContextContainer frameData, ScriptableRenderContext context, TextureHandle colorTarget, TextureHandle depthTarget, Material skyboxMaterial)
+        internal void Render(RenderGraph renderGraph, ContextContainer frameData, ScriptableRenderContext context, in TextureHandle colorTarget, in TextureHandle depthTarget, Material skyboxMaterial)
         {
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
             UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
@@ -149,21 +105,33 @@ namespace UnityEngine.Rendering.Universal
                 var skyRendererListHandle = CreateSkyBoxRendererList(renderGraph, cameraData);
                 InitPassData(ref passData, cameraData.xr, skyRendererListHandle);
                 passData.material = skyboxMaterial;
+
+                passData.applyExposure = GraphicsSettings.TryGetRenderPipelineSettings<URPExposureSettings>(out var exposureSetting) && exposureSetting.UseExposure &&
+                    !(cameraData.cameraType == CameraType.Reflection && cameraData.camera.reflectionProbeRendered == null);
+
+                if (resourceData.exposureMultiplier.IsValid())
+                {
+                    builder.UseTexture(resourceData.exposureMultiplier, AccessFlags.Read);
+                }
                 builder.UseRendererList(skyRendererListHandle);
                 builder.SetRenderAttachment(colorTarget, 0, AccessFlags.Write);
-                builder.SetRenderAttachmentDepth(depthTarget, AccessFlags.Write);
+                builder.SetRenderAttachmentDepth(depthTarget, AccessFlags.ReadWrite);
 
                 builder.AllowPassCulling(false);
                 if (cameraData.xr.enabled)
                 {
                     bool passSupportsFoveation = cameraData.xrUniversal.canFoveateIntermediatePasses || resourceData.isActiveTargetBackBuffer;
                     builder.EnableFoveatedRasterization(cameraData.xr.supportsFoveatedRendering && passSupportsFoveation);
-                    builder.SetExtendedFeatureFlags(ExtendedFeatureFlags.MultiviewRenderRegionsCompatible);
+                    // Multiview render regions are incompatible with the inner (foveal) pass in Quad View
+                    if (!cameraData.xr.isQuadViewInnerPass)
+                    {
+                        builder.SetExtendedFeatureFlags(ExtendedFeatureFlags.MultiviewRenderRegionsCompatible);
+                    }
                 }
 
-                builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext context) =>
                 {
-                    ExecutePass(context.cmd, data.xr, data.skyRendererListHandle);
+                    ExecutePass(context.cmd, data.xr, data.skyRendererListHandle, data.applyExposure);
                 });
             }
         }

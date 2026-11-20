@@ -20,10 +20,6 @@ namespace UnityEngine.Rendering.Universal
         private DecalScreenSpaceSettings m_Settings;
         private bool m_DecalLayers;
 
-#if URP_COMPATIBILITY_MODE
-        private PassData m_PassData;
-#endif
-
         public DecalScreenSpaceRenderPass(DecalScreenSpaceSettings settings, DecalDrawScreenSpaceSystem drawSystem, bool decalLayers)
         {
             renderPassEvent = RenderPassEvent.AfterRenderingSkybox;
@@ -43,10 +39,6 @@ namespace UnityEngine.Rendering.Universal
                 m_ShaderTagIdList.Add(new ShaderTagId(DecalShaderPassNames.DecalScreenSpaceProjector));
             else
                 m_ShaderTagIdList.Add(new ShaderTagId(DecalShaderPassNames.DecalScreenSpaceMesh));
-
-#if URP_COMPATIBILITY_MODE
-            m_PassData = new PassData();
-#endif
         }
 
         private RendererListParams CreateRenderListParams(UniversalRenderingData renderingData, UniversalCameraData cameraData, UniversalLightData lightData)
@@ -55,25 +47,6 @@ namespace UnityEngine.Rendering.Universal
             DrawingSettings drawingSettings = RenderingUtils.CreateDrawingSettings(m_ShaderTagIdList, renderingData, cameraData, lightData, sortingCriteria);
             return new RendererListParams(renderingData.cullResults, drawingSettings, m_FilteringSettings);
         }
-
-#if URP_COMPATIBILITY_MODE
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            UniversalCameraData cameraData = renderingData.frameData.Get<UniversalCameraData>();
-
-            InitPassData(cameraData, ref m_PassData);
-            RenderingUtils.SetScaleBiasRt(CommandBufferHelpers.GetRasterCommandBuffer(renderingData.commandBuffer), in renderingData);
-            UniversalRenderingData universalRenderingData = renderingData.frameData.Get<UniversalRenderingData>();
-            UniversalLightData lightData = renderingData.frameData.Get<UniversalLightData>();
-            var param = CreateRenderListParams(universalRenderingData, cameraData, lightData);
-            var rendererList = context.CreateRendererList(ref param);
-            using (new ProfilingScope(renderingData.commandBuffer, profilingSampler))
-            {
-                ExecutePass(CommandBufferHelpers.GetRasterCommandBuffer(renderingData.commandBuffer), m_PassData, rendererList);
-            }
-        }
-#endif
 
         private class PassData
         {
@@ -131,7 +104,11 @@ namespace UnityEngine.Rendering.Universal
 
                 if (cameraData.xr.enabled)
                 {
-                    builder.SetExtendedFeatureFlags(ExtendedFeatureFlags.MultiviewRenderRegionsCompatible);
+                    // Multiview render regions are incompatible with the inner (foveal) pass in Quad View
+                    if (!cameraData.xr.isQuadViewInnerPass)
+                    {
+                        builder.SetExtendedFeatureFlags(ExtendedFeatureFlags.MultiviewRenderRegionsCompatible);
+                    }
                 }
 
                 var param = CreateRenderListParams(renderingData, passData.cameraData, lightData);
@@ -144,9 +121,14 @@ namespace UnityEngine.Rendering.Universal
                 if (passData.decalLayers && renderingLayersTexture.IsValid())
                     builder.UseTexture(renderingLayersTexture, AccessFlags.Read);
 
+                if (resourceData.exposureMultiplier.IsValid())
+                {
+                    builder.UseTexture(resourceData.exposureMultiplier, AccessFlags.Read);
+                }
+
                 builder.AllowGlobalStateModification(true);
 
-                builder.SetRenderFunc((PassData data, RasterGraphContext rgContext) =>
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext rgContext) =>
                 {
                     RenderingUtils.SetScaleBiasRt(rgContext.cmd, in data.cameraData, data.colorTarget);
                     ExecutePass(rgContext.cmd, data, data.rendererList);

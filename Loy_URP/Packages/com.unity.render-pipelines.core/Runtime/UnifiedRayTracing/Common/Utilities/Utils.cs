@@ -1,7 +1,6 @@
 
 using System;
 using System.Diagnostics;
-using UnityEngine.UIElements;
 
 namespace UnityEngine.Rendering.UnifiedRayTracing
 {
@@ -22,6 +21,17 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             }
         }
 
+#if UNITY_EDITOR
+        public static void EnsureMeshHasRawBufferTarget(Mesh mesh)
+        {
+            if (UnityEditor.Rendering.EditorGraphicsSettings.defaultMeshBufferTarget != UnityEditor.Rendering.DefaultMeshBufferTarget.Raw)
+            {
+                mesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
+                mesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
+            }
+        }
+#endif
+
         [Conditional("UNITY_ASSERTIONS")]
         public static void CheckArgIsNotNull(System.Object obj, string argName)
         {
@@ -37,12 +47,21 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         }
 
         [Conditional("UNITY_ASSERTIONS")]
-        public static void CheckArgRange<T>(T value, T minIncluded, T maxExcluded, string argName) where T: IComparable
+        public static void CheckArgRange<T>(T value, T minIncluded, T maxExcluded, string argName) where T: IComparable<T>
         {
             if (value.CompareTo(minIncluded) < 0 || value.CompareTo(maxExcluded) >= 0)
             {
                 var message = $"{argName}={value}, it must be in the range [{minIncluded}, {maxExcluded}[";
                 throw new ArgumentOutOfRangeException(argName, message);
+            }
+        }
+
+        [Conditional("UNITY_ASSERTIONS")]
+        public static void CheckSupport(bool value, string message)
+        {
+            if (!value)
+            {
+                throw new InvalidOperationException(message);
             }
         }
     }

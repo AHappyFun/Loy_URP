@@ -92,6 +92,16 @@ namespace UnityEditor.Rendering
             set => m_Text.text = value;
         }
 
+        /// <summary>Property to get the tooltip</summary>
+        public new string tooltip
+        {
+            get => m_Text.tooltip;
+            set => m_Text.tooltip = value;
+        }
+
+        bool m_IsHoveringLabel;
+        Rect m_TooltipRect;
+
         /// <summary>Constructor</summary>
         public HeaderFoldout() : base()
         {
@@ -102,7 +112,33 @@ namespace UnityEditor.Rendering
             RegisterCallback<AttachToPanelEvent>(DelayedInit);
 
             var line = hierarchy[0][0]; //pass by herarchy to ignore content redirection
-            
+            line.RegisterCallback<PointerEnterEvent>(e =>
+            {
+                m_IsHoveringLabel = true;
+
+                const float tipWidth = 200f;
+                const float tipHeight = 24f;
+
+                m_TooltipRect = new Rect(
+                    e.position.x,
+                    e.position.y,
+                    tipWidth,
+                    tipHeight
+                );
+            });
+            line.RegisterCallback<PointerLeaveEvent>(e =>
+            {
+                m_IsHoveringLabel = false;
+            });
+            line.RegisterCallback<TooltipEvent>(evt =>
+            {
+                if (!m_IsHoveringLabel)
+                    return;
+
+                evt.rect = m_TooltipRect;
+                evt.StopPropagation();
+            });
+
             m_IconElement = new Image()
             {
                 style =

@@ -47,7 +47,13 @@ namespace UnityEngine.Rendering
     /// </example>
     public class BufferedRTHandleSystem : IDisposable
     {
-        Dictionary<int, RTHandle[]> m_RTHandles = new Dictionary<int, RTHandle[]>();
+        struct RTEntry
+        {
+            public RTHandle handle;
+            public int stableIndex;
+        }
+
+        Dictionary<int, RTEntry[]> m_RTEntries = new Dictionary<int, RTEntry[]>();
 
         RTHandleSystem m_RTHandleSystem = new RTHandleSystem();
         bool m_DisposedValue = false;
@@ -65,6 +71,21 @@ namespace UnityEngine.Rendering
         /// </summary>
         public RTHandleProperties rtHandleProperties { get { return m_RTHandleSystem.rtHandleProperties; } }
 
+        bool TryGetFrameRenderTarget(int bufferId, int frameIndex, out RTEntry rt)
+        {
+            if (!m_RTEntries.ContainsKey(bufferId))
+            {
+                rt.handle = null;
+                rt.stableIndex = -1;
+                return false;
+            }
+
+            Assert.IsTrue(frameIndex >= 0 && frameIndex < m_RTEntries[bufferId].Length);
+
+            rt = m_RTEntries[bufferId][frameIndex];
+            return true;
+        }
+
         /// <summary>
         /// Return the frame RT or null.
         /// </summary>
@@ -73,12 +94,25 @@ namespace UnityEngine.Rendering
         /// <returns>The frame RT or null when the <paramref name="bufferId"/> was not previously allocated (<see cref="BufferedRTHandleSystem.AllocBuffer(int, Func{RTHandleSystem, int, RTHandle}, int)" />).</returns>
         public RTHandle GetFrameRT(int bufferId, int frameIndex)
         {
-            if (!m_RTHandles.ContainsKey(bufferId))
-                return null;
+            if (TryGetFrameRenderTarget(bufferId, frameIndex, out var rt))
+                return rt.handle;
 
-            Assert.IsTrue(frameIndex >= 0 && frameIndex < m_RTHandles[bufferId].Length);
+            return null;
+        }
 
-            return m_RTHandles[bufferId][frameIndex];
+        /// <summary>
+        /// Return the frame RT's stable index or -1.
+        /// A stable index can be used to index into an array of user data assigned to each RT.
+        /// </summary>
+        /// <param name="bufferId">Defines the buffer to use.</param>
+        /// <param name="frameIndex">Defines which frame to access within the buffer.</param>
+        /// <returns>The frame RT stable index or -1 when the <paramref name="bufferId"/> was not previously allocated (<see cref="BufferedRTHandleSystem.AllocBuffer(int, Func{RTHandleSystem, int, RTHandle}, int)" />).</returns>
+        public int GetFrameRTStableIndex(int bufferId, int frameIndex)
+        {
+            if (TryGetFrameRenderTarget(bufferId, frameIndex, out var rt))
+                return rt.stableIndex;
+
+            return -1;
         }
 
         /// <summary>
@@ -88,11 +122,11 @@ namespace UnityEngine.Rendering
 
         public void ClearBuffers(CommandBuffer cmd)
         {
-            foreach (var rtHandle in m_RTHandles)
+            foreach (var rtEntry in m_RTEntries)
             {
-                for (int i = 0; i < rtHandle.Value.Length; ++i)
+                for (int i = 0; i < rtEntry.Value.Length; ++i)
                 {
-                    CoreUtils.SetRenderTarget(cmd, rtHandle.Value[i], clearFlag: ClearFlag.Color, clearColor: Color.black);
+                    CoreUtils.SetRenderTarget(cmd, rtEntry.Value[i].handle, clearFlag: ClearFlag.Color, clearColor: Color.black);
                 }
             }
         }
@@ -113,17 +147,19 @@ namespace UnityEngine.Rendering
             // If the caller provides a value of zero, they're likely doing something unintentional in the calling code.
             Debug.Assert(bufferCount > 0);
 
-            var buffer = new RTHandle[bufferCount];
-            m_RTHandles.Add(bufferId, buffer);
+            var buffer = new RTEntry[bufferCount];
+            m_RTEntries.Add(bufferId, buffer);
 
             // First is autoresized
-            buffer[0] = allocator(m_RTHandleSystem, 0);
+            buffer[0].handle = allocator(m_RTHandleSystem, 0);
+            buffer[0].stableIndex = 0;
 
             // Other are resized on demand
             for (int i = 1, c = buffer.Length; i < c; ++i)
             {
-                buffer[i] = allocator(m_RTHandleSystem, i);
-                m_RTHandleSystem.SwitchResizeMode(buffer[i], RTHandleSystem.ResizeMode.OnDemand);
+                buffer[i].handle = allocator(m_RTHandleSystem, i);
+                buffer[i].stableIndex = i;
+                m_RTHandleSystem.SwitchResizeMode(buffer[i].handle, RTHandleSystem.ResizeMode.OnDemand);
             }
         }
 
@@ -153,21 +189,22 @@ namespace UnityEngine.Rendering
             // If the caller provides a value of zero, they're likely doing something unintentional in the calling code.
             Debug.Assert(bufferCount > 0);
 
-            var buffer = new RTHandle[bufferCount];
-            m_RTHandles.Add(bufferId, buffer);
+            var buffer = new RTEntry[bufferCount];
+            m_RTEntries.Add(bufferId, buffer);
 
             RTHandleAllocInfo allocInfo = RTHandles.GetRTHandleAllocInfo(descriptor, filterMode,
                 wrapMode, anisoLevel, mipMapBias, name);
             allocInfo.isShadowMap = isShadowMap;
 
             // First is autoresized
-            buffer[0] = m_RTHandleSystem.Alloc(descriptor.width, descriptor.height, allocInfo);
+            buffer[0].handle = m_RTHandleSystem.Alloc(descriptor.width, descriptor.height, allocInfo);
+            buffer[0].stableIndex = 0;
 
             // Other are resized on demand
             for (int i = 1, c = buffer.Length; i < c; ++i)
             {
-                buffer[i] = m_RTHandleSystem.Alloc(descriptor.width, descriptor.height, allocInfo);
-                m_RTHandleSystem.SwitchResizeMode(buffer[i], RTHandleSystem.ResizeMode.OnDemand);
+                buffer[i].handle = m_RTHandleSystem.Alloc(descriptor.width, descriptor.height, allocInfo);
+                buffer[i].stableIndex = i;
             }
         }
 
@@ -177,13 +214,13 @@ namespace UnityEngine.Rendering
         /// <param name="bufferId">Id of the buffer that needs to be released.</param>
         public void ReleaseBuffer(int bufferId)
         {
-            if (m_RTHandles.TryGetValue(bufferId, out var buffers))
+            if (m_RTEntries.TryGetValue(bufferId, out var buffers))
             {
                 foreach (var rt in buffers)
-                    m_RTHandleSystem.Release(rt);
+                    m_RTHandleSystem.Release(rt.handle);
             }
 
-            m_RTHandles.Remove(bufferId);
+            m_RTEntries.Remove(bufferId);
         }
 
         /// <summary>
@@ -214,10 +251,10 @@ namespace UnityEngine.Rendering
         /// <returns>The num of frames allocated</returns>
         public int GetNumFramesAllocated(int bufferId)
         {
-            if (!m_RTHandles.ContainsKey(bufferId))
+            if (!m_RTEntries.ContainsKey(bufferId))
                 return 0;
 
-            return m_RTHandles[bufferId].Length;
+            return m_RTEntries[bufferId].Length;
         }
 
         /// <summary>
@@ -233,23 +270,23 @@ namespace UnityEngine.Rendering
 
         void Swap()
         {
-            foreach (var item in m_RTHandles)
+            foreach (var rtEntry in m_RTEntries)
             {
                 // Do not index out of bounds...
-                if (item.Value.Length > 1)
+                if (rtEntry.Value.Length > 1)
                 {
-                    var nextFirst = item.Value[item.Value.Length - 1];
-                    for (int i = 0, c = item.Value.Length - 1; i < c; ++i)
-                        item.Value[i + 1] = item.Value[i];
-                    item.Value[0] = nextFirst;
+                    var nextFirst = rtEntry.Value[rtEntry.Value.Length - 1];
+                    for (int i = rtEntry.Value.Length - 1; i > 0; --i)
+                        rtEntry.Value[i] = rtEntry.Value[i - 1];
+                    rtEntry.Value[0] = nextFirst;
 
                     // First is autoresize, other are on demand
-                    m_RTHandleSystem.SwitchResizeMode(item.Value[0], RTHandleSystem.ResizeMode.Auto);
-                    m_RTHandleSystem.SwitchResizeMode(item.Value[1], RTHandleSystem.ResizeMode.OnDemand);
+                    m_RTHandleSystem.SwitchResizeMode(rtEntry.Value[0].handle, RTHandleSystem.ResizeMode.Auto);
+                    m_RTHandleSystem.SwitchResizeMode(rtEntry.Value[1].handle, RTHandleSystem.ResizeMode.OnDemand);
                 }
                 else
                 {
-                    m_RTHandleSystem.SwitchResizeMode(item.Value[0], RTHandleSystem.ResizeMode.Auto);
+                    m_RTHandleSystem.SwitchResizeMode(rtEntry.Value[0].handle, RTHandleSystem.ResizeMode.Auto);
                 }
             }
         }
@@ -282,14 +319,14 @@ namespace UnityEngine.Rendering
         /// </summary>
         public void ReleaseAll()
         {
-            foreach (var item in m_RTHandles)
+            foreach (var rtEntry in m_RTEntries)
             {
-                for (int i = 0, c = item.Value.Length; i < c; ++i)
+                for (int i = 0, c = rtEntry.Value.Length; i < c; ++i)
                 {
-                    m_RTHandleSystem.Release(item.Value[i]);
+                    m_RTHandleSystem.Release(rtEntry.Value[i].handle);
                 }
             }
-            m_RTHandles.Clear();
+            m_RTEntries.Clear();
         }
     }
 }

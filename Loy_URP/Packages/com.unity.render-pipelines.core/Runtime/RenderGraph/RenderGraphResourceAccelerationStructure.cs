@@ -10,7 +10,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
     [MovedFrom(true, "UnityEngine.Experimental.Rendering.RenderGraphModule", "UnityEngine.Rendering.RenderGraphModule")]
     public readonly struct RayTracingAccelerationStructureHandle
     {
-        private static RayTracingAccelerationStructureHandle s_NullHandle = new RayTracingAccelerationStructureHandle();
+        private static readonly RayTracingAccelerationStructureHandle s_NullHandle = new RayTracingAccelerationStructureHandle();
 
         /// <summary>
         /// Returns a null ray tracing acceleration structure handle

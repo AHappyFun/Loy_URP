@@ -3,12 +3,12 @@ using System.IO;
 
 namespace UnityEditor.Rendering.UnifiedRayTracing
 {
-    [ScriptedImporter(1, "urtshader")]
+    [ScriptedImporter(1, "urtshader", AllowCaching = true)]
     internal class UnifiedRTShaderImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
-            string source = File.ReadAllText(ctx.assetPath);
+            string source = File.ReadAllText(FileUtil.PathToAbsolutePath(ctx.assetPath));
 
             var com = ShaderUtil.CreateComputeShaderAsset(ctx, computeShaderTemplate.Replace("SHADERCODE", source));
             var rt = ShaderUtil.CreateRayTracingShaderAsset(ctx,

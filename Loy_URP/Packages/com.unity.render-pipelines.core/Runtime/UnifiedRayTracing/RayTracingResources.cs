@@ -1,3 +1,6 @@
+#if INCLUDE_UNIFIED_RAYTRACING_COMPUTE_BACKEND || UNITY_EDITOR
+#define INCLUDE_COMPUTE_BACKEND
+#endif
 using System;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -37,6 +40,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         [SerializeField, ResourcePath("Runtime/UnifiedRayTracing/Common/Utilities/CopyBuffer.compute")]
         ComputeShader m_CopyBuffer;
 
+#if INCLUDE_COMPUTE_BACKEND
         [SerializeField, ResourcePath("Runtime/UnifiedRayTracing/Compute/RadeonRays/kernels/copyPositions.compute")]
         ComputeShader m_CopyPositions;
 
@@ -57,6 +61,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
 
         [SerializeField, ResourcePath("Runtime/UnifiedRayTracing/Compute/RadeonRays/kernels/scatter.compute")]
         ComputeShader m_Scatter;
+#endif
 
         /// <summary>
         /// Compute shader for geometry pool operations.
@@ -81,8 +86,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader CopyPositions
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_CopyPositions;
             set => this.SetValueAndNotify(ref m_CopyPositions, value, nameof(m_CopyPositions));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -90,8 +100,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader BitHistogram
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_BitHistogram;
             set => this.SetValueAndNotify(ref m_BitHistogram, value, nameof(m_BitHistogram));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -99,8 +114,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader BlockReducePart
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_BlockReducePart;
             set => this.SetValueAndNotify(ref m_BlockReducePart, value, nameof(m_BlockReducePart));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -108,8 +128,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader BlockScan
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_BlockScan;
             set => this.SetValueAndNotify(ref m_BlockScan, value, nameof(m_BlockScan));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -117,8 +142,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader BuildHlbvh
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_BuildHlbvh;
             set => this.SetValueAndNotify(ref m_BuildHlbvh, value, nameof(m_BuildHlbvh));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -129,8 +159,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </remarks>
         public ComputeShader RestructureBvh
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_RestructureBvh;
             set => this.SetValueAndNotify(ref m_RestructureBvh, value, nameof(m_RestructureBvh));
+#else
+            get => null;
+            set { }
+#endif
         }
 
         /// <summary>
@@ -138,8 +173,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </summary>
         public ComputeShader Scatter
         {
+#if INCLUDE_COMPUTE_BACKEND
             get => m_Scatter;
             set => this.SetValueAndNotify(ref m_Scatter, value, nameof(m_Scatter));
+#else
+            get => null;
+            set { }
+#endif
         }
     }
 
@@ -200,9 +240,6 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
         /// </remarks>
         public ComputeShader restructureBvh { get; set; }
 
-
-        
-
 #if UNITY_EDITOR
         /// <summary>
         /// Intializes the RayTracingResources.
@@ -242,6 +279,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             geometryPoolKernels = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Common/GeometryPool/GeometryPoolKernels.compute");
             copyBuffer = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Common/Utilities/CopyBuffer.compute");
 
+            #if INCLUDE_COMPUTE_BACKEND
             copyPositions = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/copyPositions.compute");
             bitHistogram = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/bit_histogram.compute");
             blockReducePart = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/block_reduce_part.compute");
@@ -249,6 +287,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             buildHlbvh = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/build_hlbvh.compute");
             restructureBvh = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/restructure_bvh.compute");
             scatter = assetBundle.LoadAsset<ComputeShader>(path + "UnifiedRayTracing/Compute/RadeonRays/kernels/scatter.compute");
+            #endif
         }
 #endif
 
@@ -266,6 +305,11 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
 
             Debug.Assert(rpResources.GeometryPoolKernels != null);
             Debug.Assert(rpResources.CopyBuffer != null);
+
+            geometryPoolKernels = rpResources.GeometryPoolKernels;
+            copyBuffer = rpResources.CopyBuffer;
+
+#if INCLUDE_COMPUTE_BACKEND
             Debug.Assert(rpResources.CopyPositions != null);
             Debug.Assert(rpResources.BitHistogram != null);
             Debug.Assert(rpResources.BlockReducePart != null);
@@ -274,9 +318,6 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             Debug.Assert(rpResources.RestructureBvh != null);
             Debug.Assert(rpResources.Scatter != null);
 
-            geometryPoolKernels = rpResources.GeometryPoolKernels;
-            copyBuffer = rpResources.CopyBuffer;
-
             copyPositions = rpResources.CopyPositions;
             bitHistogram = rpResources.BitHistogram;
             blockReducePart = rpResources.BlockReducePart;
@@ -284,6 +325,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             buildHlbvh = rpResources.BuildHlbvh;
             restructureBvh = rpResources.RestructureBvh;
             scatter = rpResources.Scatter;
+#endif
 
             return true;
         }

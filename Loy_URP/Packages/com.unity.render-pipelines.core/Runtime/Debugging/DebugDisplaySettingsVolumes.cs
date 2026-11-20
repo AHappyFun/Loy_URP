@@ -11,7 +11,8 @@ namespace UnityEngine.Rendering
     /// <summary>
     /// Debug Display Settings Volume
     /// </summary>
-    public class DebugDisplaySettingsVolume : IDebugDisplaySettingsData
+    [Serializable]
+    public class DebugDisplaySettingsVolume : IDebugDisplaySettingsData, ISerializedDebugDisplaySettings
     {
         /// <summary>Current volume debug settings.</summary>
         [Obsolete("This property has been obsoleted and will be removed in a future version. #from(6000.2)")]
@@ -176,7 +177,7 @@ namespace UnityEngine.Rendering
 
         void IDebugDisplaySettingsData.Reset()
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_ENABLE_CHECKS
             VolumeManager.instance.overrideVolumeStackData -= OnVolumeStackInterpolated;
             VolumeManager.instance.beginVolumeStackUpdate -= OnBeginVolumeStackUpdate;
             VolumeManager.instance.endVolumeStackUpdate -= OnEndVolumeStackUpdate;
@@ -203,7 +204,7 @@ namespace UnityEngine.Rendering
         /// </summary>
         public DebugDisplaySettingsVolume()
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_ENABLE_CHECKS
             VolumeManager.instance.overrideVolumeStackData += OnVolumeStackInterpolated;
             VolumeManager.instance.beginVolumeStackUpdate += OnBeginVolumeStackUpdate;
             VolumeManager.instance.endVolumeStackUpdate += OnEndVolumeStackUpdate;
@@ -283,12 +284,37 @@ namespace UnityEngine.Rendering
         const string k_PanelTitle = "Volume";
 
 #if UNITY_EDITOR
-        internal static void OpenInRenderingDebugger()
+        internal static void OpenInRenderingDebugger(VolumeComponent volumeComponent = null)
         {
             EditorApplication.ExecuteMenuItem("Window/Analysis/Rendering Debugger");
-            var idx = DebugManager.instance.FindPanelIndex(k_PanelTitle);
-            if (idx != -1)
-                DebugManager.instance.RequestEditorWindowPanelIndex(idx);
+            var panel = DebugManager.instance.GetPanel(k_PanelTitle);
+            if (panel == null)
+                return;
+
+            DebugManager.instance.RequestPanelSelection(k_PanelTitle);
+
+            // Try to select the given volume component in the component selector drop down
+            if (volumeComponent != null &&
+                VolumeManager.instance.TryGetVolumePathAndType(volumeComponent.GetType(), out var result) &&
+                panel.TryFindChild<DebugUI.EnumField>(Strings.component, out var componentSelector))
+            {
+                int selectedIndex = -1;
+                for (int i = 0; i < componentSelector.enumNames.Length; ++i)
+                {
+                    var current = componentSelector.enumNames[i];
+                    if (current.text.Equals(result.path))
+                    {
+                        selectedIndex = i;
+                        break;
+                    }
+                }
+
+                if (selectedIndex > -1)
+                    EditorApplication.delayCall = () =>
+                    {
+                        componentSelector.SetValue(selectedIndex);
+                    };
+            }
         }
 #endif
 
@@ -332,7 +358,7 @@ namespace UnityEngine.Rendering
 
             internal static DebugUI.Widget CreateVolumeParameterWidget(string name, bool isResultParameter, VolumeParameter param)
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_ENABLE_CHECKS
                 if (param != null)
                 {
                     Func<bool> isHiddenCallback = isResultParameter ?
@@ -344,9 +370,10 @@ namespace UnityEngine.Rendering
                         var p = (ColorParameter)param;
                         return new DebugUI.ColorField()
                         {
-                            displayName = name,
+                            displayName = "",
                             hdr = p.hdr,
                             showAlpha = p.showAlpha,
+                            showPicker = false,
                             getter = () => p.value,
                             setter = value => p.value = value,
                             isHiddenCallback = isHiddenCallback
@@ -362,7 +389,7 @@ namespace UnityEngine.Rendering
                         {
                             return new DebugUI.ObjectField()
                             {
-                                displayName = name,
+                                displayName = "",
                                 getter = () =>
                                 {
                                     var property = parameterType.GetProperty("value");
@@ -387,6 +414,8 @@ namespace UnityEngine.Rendering
                             displayName = name,
                             getter = () => (Object[])parameterType.GetProperty("value").GetValue(param, null),
                             type = parameterType,
+                            // Result column reads a pool-rented buffer whose tail is null-padded; hide it.
+                            trimTrailingNulls = isResultParameter,
                             isHiddenCallback = isHiddenCallback
                         };
                     }
@@ -402,7 +431,7 @@ namespace UnityEngine.Rendering
                 return new DebugUI.Value() { displayName = name, getter = () => Strings.parameterNotCalculated, };
             }
 
-            static DebugUI.Value s_EmptyDebugUIValue = new DebugUI.Value { getter = () => string.Empty };
+            static readonly DebugUI.Value s_EmptyDebugUIValue = new DebugUI.Value { getter = () => string.Empty };
 
             struct VolumeParameterChain
             {
@@ -542,7 +571,7 @@ namespace UnityEngine.Rendering
                 // Function for updating the attach state and also checking if the table should be visible
                 Func<bool> hiddenCallback = () =>
                 {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_ENABLE_CHECKS
                     VolumeManager.instance.renderingDebuggerAttached = data.selectedComponent > 0 && data.selectedCamera != null;
                     return !VolumeManager.instance.renderingDebuggerAttached;
 #else
@@ -553,6 +582,7 @@ namespace UnityEngine.Rendering
                 {
                     displayName = Strings.parameter,
                     isReadOnly = true,
+                    alternateRowColors = true,
                     isHiddenCallback = hiddenCallback,
                 };
 
@@ -625,55 +655,22 @@ namespace UnityEngine.Rendering
 
             private static void GenerateTableRows(DebugUI.Table table, List<VolumeParameterChain> resolutionChain)
             {
-                var volumeInfoRow = new DebugUI.Table.Row()
-                {
-                    displayName = Strings.volumeInfo,
-                    opened = true, // Open by default for the in-game view
-                };
-
-                table.children.Add(volumeInfoRow);
-
-                var gameObjectRow = new DebugUI.Table.Row()
-                {
-                    displayName = Strings.gameObject,
-                };
-
-                table.children.Add(gameObjectRow);
-
-                var priorityRow = new DebugUI.Table.Row()
-                {
-                    displayName = Strings.priority,
-                };
-
-                table.children.Add(priorityRow);
-
-                var volumeProfileRow = new DebugUI.Table.Row()
-                {
-                    displayName = Strings.volumeProfile,
-                };
-                table.children.Add(volumeProfileRow);
-
-
-                var separatorRow = new DebugUI.Table.Row()
-                {
-                    displayName =  string.Empty ,
-                };
-
-                table.children.Add(separatorRow);
+                table.children.Add(new DebugUI.Table.Row { displayName = Strings.volumeInfo });
+                table.children.Add(new DebugUI.Table.Row { displayName = Strings.gameObject });
+                table.children.Add(new DebugUI.Table.Row { displayName = Strings.priority });
+                table.children.Add(new DebugUI.Table.Row { displayName = Strings.volumeProfile });
+                table.children.Add(new DebugUI.Table.Row { displayName = string.Empty }); // Empty separator row
 
                 var results = resolutionChain[0].volumeComponent;
                 for (int i = 0; i < results.parameterList.Length; ++i)
                 {
                     var parameter = results.parameterList[i];
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                    string displayName = VolumeDebugData.GetVolumeParameterDebugId(parameter);// In the development player, just the debug id
+#if UNITY_ENABLE_CHECKS
+                    string displayName = VolumeDebugData.GetVolumeParameterDebugId(parameter); // In the Editor or in the Debug or Checked managed code variant, just the debug id
 #else
-                    string displayName = i.ToString(); // Everywhere else, just a dummy id ( TODO: The Volume panel code should be stripped completely in nom-development builds )
+                    string displayName = i.ToString(); // Everywhere else, just a dummy id ( TODO: The Volume panel code should be stripped completely in the Instrumented and Release managed code variants )
 #endif
-                    table.children.Add(new DebugUI.Table.Row()
-                    {
-                        displayName = displayName
-                    });
+                    table.children.Add(new DebugUI.Table.Row { displayName = displayName });
                 }
             }
         }
@@ -681,9 +678,6 @@ namespace UnityEngine.Rendering
         [DisplayInfo(name = k_PanelTitle, order = int.MaxValue)]
         internal class SettingsPanel : DebugDisplaySettingsPanel<DebugDisplaySettingsVolume>
         {
-            // When we are moving the scene camera, we want the editor window to be repainted too
-            public override DebugUI.Flags Flags => DebugUI.Flags.EditorForceUpdate;
-
             public override void Dispose()
             {
                 base.Dispose();
@@ -703,7 +697,9 @@ namespace UnityEngine.Rendering
                     data.selectedCamera = availableCameras[0];
 
                 AddWidget(cameraSelector);
-                AddWidget(WidgetFactory.CreateComponentSelector(this, (_, __) => Refresh()));
+                var componentSelector = WidgetFactory.CreateComponentSelector(this, (_, __) => Refresh());
+                componentSelector.isHiddenCallback = () => data.selectedCamera == null;
+                AddWidget(componentSelector);
 
                 Func<bool> hiddenCallback = () => data.selectedCamera == null || data.selectedComponent <= 0;
                 AddWidget(new DebugUI.MessageBox()
@@ -721,7 +717,6 @@ namespace UnityEngine.Rendering
             private void OnVolumeInfluenceChanged(ObservableList<Volume> sender, ListChangedEventArgs<Volume> e)
             {
                 Refresh();
-                DebugManager.instance.ReDrawOnScreenDebug();
             }
 
             DebugUI.Table m_VolumeTable = null;
@@ -731,10 +726,8 @@ namespace UnityEngine.Rendering
                 if (panel == null)
                     return;
 
-                bool needsRefresh = false;
                 if (m_Data.selectedComponent > 0 && m_Data.selectedCamera != null)
                 {
-                    needsRefresh = true;
                     var volumeTable = WidgetFactory.CreateVolumeTable(m_Data);
 
                     m_VolumeTable.children.Clear();
@@ -742,11 +735,6 @@ namespace UnityEngine.Rendering
                     {
                         m_VolumeTable.children.Add(row);
                     }
-                }
-
-                if (needsRefresh)
-                {
-                    DebugManager.instance.ReDrawOnScreenDebug();
                 }
             }
         }

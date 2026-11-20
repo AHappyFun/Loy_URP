@@ -14,9 +14,18 @@ namespace UnityEngine.Rendering
             internal IEnumerator<Action<RenderTargetIdentifier, CommandBuffer>> cachedEnumerator;
         }
 
-        private static Dictionary<Camera, CameraEntry> actionDict = new();
+        private static readonly Dictionary<Camera, CameraEntry> actionDict = new();
 
         private static bool _enabled;
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            actionDict.Clear();
+            _enabled = false;
+        }
+#endif
 
         /// <summary>
         /// Enable camera capture.

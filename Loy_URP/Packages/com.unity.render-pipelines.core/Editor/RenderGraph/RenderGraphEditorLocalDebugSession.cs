@@ -2,12 +2,14 @@
 
 namespace UnityEngine.Rendering.RenderGraphModule
 {
-    internal sealed class RenderGraphEditorLocalDebugSession : RenderGraphDebugSession
+    internal sealed class RenderGraphEditorLocalDebugSession : LiveRenderGraphDebugSession
     {
         public override bool isActive => true;
 
         public RenderGraphEditorLocalDebugSession() : base()
         {
+            connectionName = "Editor";
+
             RegisterAllLocallyKnownGraphsAndExecutions();
 
             var analyticsPayload = new DebugMessageHandler.AnalyticsPayload();

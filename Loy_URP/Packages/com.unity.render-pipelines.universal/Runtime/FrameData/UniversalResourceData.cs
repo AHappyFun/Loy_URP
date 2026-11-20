@@ -39,7 +39,7 @@ namespace UnityEngine.Rendering.Universal
         /// <summary>
         /// Switch the active color and depth texture to the backbuffer. Once switched, isActiveTargetBackBuffer will return true.
         /// The activeColorTexture and activeDepthTexture will then return the backbuffer. This should be called after a render pass
-        /// that blits/copies the cameraColor to the backbuffer is recorded in the render graph. The following passes will then 
+        /// that blits/copies the cameraColor to the backbuffer is recorded in the render graph. The following passes will then
         /// automatically use the backbuffer as active color and depth. URP will not add the final blit pass if this method is called before
         /// that render pass.
         /// </summary>
@@ -242,31 +242,20 @@ namespace UnityEngine.Rendering.Universal
         private TextureHandle _internalColorLut;
 
         /// <summary>
-        /// Color output of post-process passes (uberPost and finalPost) when HDR debug views are enabled. It replaces
-        /// the backbuffer color as standard output because the later cannot be sampled back (or may not be in HDR format).
-        /// If used, DebugHandler will perform the blit from DebugScreenTexture to BackBufferColor.
+        /// Bloom. A glow for very bright highlights. Written to by the Bloom pass. Additively composited in the Uber pass.
+        /// It does not contain bloom specific alpha information and can be considered as a premultiplied alpha texture for advanced compositing.
         /// </summary>
-        internal TextureHandle debugScreenColor
+        internal TextureHandle bloom
         {
-            get => CheckAndGetTextureHandle(ref _debugScreenColor);
-            set => CheckAndSetTextureHandle(ref _debugScreenColor, value);
+            get => CheckAndGetTextureHandle(ref _bloom);
+            set => CheckAndSetTextureHandle(ref _bloom, value);
         }
-        internal TextureHandle _debugScreenColor;
+        private TextureHandle _bloom;
 
         /// <summary>
-        /// Depth output of post-process passes (uberPost and finalPost) when HDR debug views are enabled. It replaces
-        /// the backbuffer depth as standard output because the later cannot be sampled back.
+        /// After Post Process Color is obsolete.
         /// </summary>
-        internal TextureHandle debugScreenDepth
-        {
-            get => CheckAndGetTextureHandle(ref _debugScreenDepth);
-            set => CheckAndSetTextureHandle(ref _debugScreenDepth, value);
-        }
-        internal TextureHandle _debugScreenDepth;
-
-        /// <summary>
-        /// After Post Process Color. Stores the contents of the main color target after the post processing passes.
-        /// </summary>
+        [Obsolete("AfterPostProcessColor has never been implemented. Use cameraColor instead.", false)]
         public TextureHandle afterPostProcessColor
         {
             get => CheckAndGetTextureHandle(ref _afterPostProcessColor);
@@ -339,6 +328,37 @@ namespace UnityEngine.Rendering.Universal
         private TextureHandle _irradianceTexture;
 
         /// <summary>
+        /// Screen Space reflection texture.
+        /// </summary>
+        internal TextureHandle ssrTexture
+        {
+            get => CheckAndGetTextureHandle(ref _ssrTexture);
+            set => CheckAndSetTextureHandle(ref _ssrTexture, value);
+        }
+        private TextureHandle _ssrTexture;
+
+        /// <summary>
+        /// Copy of camera color before post processing is executed.
+        /// </summary>
+        internal TextureHandle cameraColorBeforePP
+        {
+            get => CheckAndGetTextureHandle(ref _cameraColorBeforePP);
+            set => CheckAndSetTextureHandle(ref _cameraColorBeforePP, value);
+        }
+        private TextureHandle _cameraColorBeforePP;
+
+        /// <summary>
+        /// Screen Space reflection ray travel distances, blurred into a mip chain. Only valid when contact hardening
+        /// is enabled.
+        /// </summary>
+        internal TextureHandle ssrRayDistanceTexture
+        {
+            get => CheckAndGetTextureHandle(ref _ssrRayDistanceTexture);
+            set => CheckAndSetTextureHandle(ref _ssrRayDistanceTexture, value);
+        }
+        private TextureHandle _ssrRayDistanceTexture;
+
+        /// <summary>
         /// STP debug visualization written to by the STP upscaler.
         /// </summary>
         internal TextureHandle stpDebugView
@@ -347,6 +367,25 @@ namespace UnityEngine.Rendering.Universal
             set => CheckAndSetTextureHandle(ref _stpDebugView, value);
         }
         private TextureHandle _stpDebugView;
+
+        //Due to camera stacking, we sometimes need to set a specific (persistent) target texture as destination.
+        //We cannot create an RG managed texture for the destination in that case as output/destination.
+        //If we woulnd't have camera stacking, then the backbuffer would be the only other persistent destination.
+        //The usage of this destination is currently limited to the Uberpost processing pass.
+        internal TextureHandle destinationCameraColor
+        {
+            get => CheckAndGetTextureHandle(ref _destinationCameraColor);
+            set => CheckAndSetTextureHandle(ref _destinationCameraColor, value);
+        }
+        private TextureHandle _destinationCameraColor;
+
+        // A 1x1 texture used to hold the exposure value.
+        internal TextureHandle exposureMultiplier
+        {
+            get => CheckAndGetTextureHandle(ref _exposureMultiplier);
+            set => CheckAndSetTextureHandle(ref _exposureMultiplier, value);
+        }
+        private TextureHandle _exposureMultiplier;
 
         /// <inheritdoc />
         public override void Reset()
@@ -363,15 +402,19 @@ namespace UnityEngine.Rendering.Universal
             _motionVectorColor = TextureHandle.nullHandle;
             _motionVectorDepth = TextureHandle.nullHandle;
             _internalColorLut = TextureHandle.nullHandle;
-            _debugScreenColor = TextureHandle.nullHandle;
-            _debugScreenDepth = TextureHandle.nullHandle;
+            _bloom = TextureHandle.nullHandle;
             _afterPostProcessColor = TextureHandle.nullHandle;
             _overlayUITexture = TextureHandle.nullHandle;
             _renderingLayersTexture = TextureHandle.nullHandle;
             _dBufferDepth = TextureHandle.nullHandle;
             _ssaoTexture = TextureHandle.nullHandle;
             _irradianceTexture = TextureHandle.nullHandle;
+            _ssrTexture = TextureHandle.nullHandle;
+            _ssrRayDistanceTexture = TextureHandle.nullHandle;
+            _cameraColorBeforePP = TextureHandle.nullHandle;
             _stpDebugView = TextureHandle.nullHandle;
+            _destinationCameraColor = TextureHandle.nullHandle;
+            _exposureMultiplier = TextureHandle.nullHandle;
 
             for (int i = 0; i < _gBuffer.Length; i++)
                 _gBuffer[i] = TextureHandle.nullHandle;

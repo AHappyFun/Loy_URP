@@ -1,0 +1,224 @@
+#pragma only_renderers d3d11 playstation xboxone xboxseries vulkan metal glcore ps5 switch2
+#pragma kernel AllocateMono DISABLE_TEXTURE2D_X_ARRAY
+#pragma kernel AllocateSinglePassStereoInstancing
+#pragma multi_compile _ _EXPOSURE
+
+#define PATCH_UTIL_USE_RW_PATCH_IRRADIANCE_BUFFER
+#define PATCH_UTIL_USE_RW_CELL_PATCH_INDEX_BUFFER
+#define PATCH_UTIL_USE_RW_CELL_ALLOCATION_MARK_BUFFER
+
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/TextureXR.hlsl"
+#include "Packages/com.unity.render-pipelines.core/Runtime/Sampling/Hashes.hlsl"
+#include "Packages/com.unity.render-pipelines.core/Runtime/Lighting/SurfaceCache/VectorLogic.hlsl"
+#include "Packages/com.unity.render-pipelines.core/Runtime/Lighting/SurfaceCache/IrradianceCompression.hlsl"
+#include "Packages/com.unity.render-pipelines.core/Runtime/Lighting/SurfaceCache/PatchUtil.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ExposureFunctions.hlsl"
+
+Texture2D<float2> _ExposureMultiplier;
+RWStructuredBuffer<uint> _RingConfigBuffer;
+RWStructuredBuffer<PatchUtil::PatchGeometry> _PatchGeometries;
+RWStructuredBuffer<PatchUtil::PatchStatisticsSet> _PatchStatistics;
+RWStructuredBuffer<SphericalHarmonics::RGBL1> _PatchIrradiances0;
+RWStructuredBuffer<SphericalHarmonics::RGBL1> _PatchIrradiances1;
+RWStructuredBuffer<uint> _CellAllocationMarks;
+RWStructuredBuffer<uint> _CellPatchIndices;
+RWStructuredBuffer<uint> _PatchCellIndices;
+StructuredBuffer<int3> _VolumeCascadeOffsets;
+
+TYPED_TEXTURE2D_X(float, _CurrentFullResScreenDepths);
+TYPED_TEXTURE2D_X(float3, _CurrentFullResScreenFlatNormals);
+TYPED_TEXTURE2D_X(float2, _CurrentFullResScreenMotionVectors);
+TYPED_TEXTURE2D_X(float3, _PreviousLowResScreenIrradiancesL0);
+TYPED_TEXTURE2D_X(float3, _PreviousLowResScreenIrradiancesL10);
+TYPED_TEXTURE2D_X(float3, _PreviousLowResScreenIrradiancesL11);
+TYPED_TEXTURE2D_X(float3, _PreviousLowResScreenIrradiancesL12);
+TYPED_TEXTURE2D_X(float, _PreviousLowResScreenNdcDepths);
+
+uint _FrameIdx;
+uint _StereoEyeIndex;
+uint _VolumeSpatialResolution;
+float _VolumeVoxelMinSize;
+uint _VolumeCascadeCount;
+uint _RingConfigOffset;
+float4x4 _CurrentClipToWorldTransforms[2];
+float4x4 _PreviousClipToWorldTransforms[2];
+float3 _VolumeTargetPos;
+uint2 _LowResScreenSize;
+uint2 _FullResPixelOffset;
+int _PatchWarping;
+
+uint CountLeadingZeroes(uint x)
+{
+    // Note that this assumes firstbithigh(0) = -1.
+    return 31 - firstbithigh(x);
+}
+
+// https://andrew-helmer.github.io/permute/
+// https://graphics.pixar.com/library/MultiJitteredSampling/
+uint RandomPermute(uint idx, uint len, uint seed)
+{
+    const uint mask = 0xFFFFFFFF >> CountLeadingZeroes(len - 1);
+
+    // This max guard is required and it is not clear why.
+    // https://jira.unity3d.com/browse/GFXLIGHT-1616
+    const uint iterMax = 16;
+
+    uint iterCount = 0;
+    do {
+        idx ^= seed;
+        idx *= 0xe170893d;
+        idx ^= seed >> 16;
+        idx ^= (idx & mask) >> 4;
+        idx ^= seed >> 8;
+        idx *= 0x0929eb3f;
+        idx ^= seed >> 23;
+        idx ^= (idx & mask) >> 1;
+        idx *= 1 | seed >> 27;
+        idx *= 0x6935fa69;
+        idx ^= (idx & mask) >> 11;
+        idx *= 0x74dcb303;
+        idx ^= (idx & mask) >> 2;
+        idx *= 0x9e501cc3;
+        idx ^= (idx & mask) >> 2;
+        idx *= 0xc860a3df;
+        idx &= mask;
+        idx ^= idx >> 5;
+
+        iterCount++;
+    } while (idx >= len && iterCount < iterMax);
+
+    return idx;
+}
+
+#define GROUP_SIZE 8
+
+void Allocate(uint2 lowResPixelPos)
+{
+    if (any(lowResPixelPos >= _LowResScreenSize))
+        return;
+
+    const uint lowResThreadPosIndex = lowResPixelPos.y * _LowResScreenSize.x + lowResPixelPos.x;
+    const uint shuffleHash = LowBiasHash32(_FrameIdx, 1); // We pass a seed of 1 to avoid the degenerate zero case.
+    const uint shuffledLowResThreadPosIndex = RandomPermute(lowResThreadPosIndex, _LowResScreenSize.x * _LowResScreenSize.y, shuffleHash);
+    lowResPixelPos = uint2(shuffledLowResThreadPosIndex % _LowResScreenSize.x, shuffledLowResThreadPosIndex / _LowResScreenSize.x);
+
+    const uint2 fullResPixelPos = lowResPixelPos * lowResScreenScaling + _FullResPixelOffset;
+    uint2 fullResScreenSize;
+    GET_TEXTURE2D_X_SIZE(_CurrentFullResScreenDepths, fullResScreenSize.x, fullResScreenSize.y);
+
+    if (any(fullResPixelPos >= fullResScreenSize))
+        return;
+
+    const float ndcDepth = LoadNdcDepth(_CurrentFullResScreenDepths, fullResPixelPos);
+    if (ndcDepth == invalidNdcDepth)
+        return;
+
+    const float2 rcpFullResScreenSize = rcp(float2(fullResScreenSize));
+
+    const float2 sourceUvPos = PixelPosToUvPos(fullResPixelPos, rcpFullResScreenSize);
+    const float3 sourceWorldPosition = ComputeWorldSpacePosition(sourceUvPos, ndcDepth, _CurrentClipToWorldTransforms[unity_StereoEyeIndex]);
+    const float3 sourceWorldFlatNormal = _CurrentFullResScreenFlatNormals[COORD_TEXTURE2D_X(fullResPixelPos)];
+
+    PatchUtil::VolumeParamSet volumeParams;
+    volumeParams.targetPos = _VolumeTargetPos;
+    volumeParams.spatialResolution = _VolumeSpatialResolution;
+    volumeParams.voxelMinSize = _VolumeVoxelMinSize;
+    volumeParams.cascadeOffsets = _VolumeCascadeOffsets;
+    volumeParams.cascadeCount = _VolumeCascadeCount;
+    volumeParams.patchWarping = _PatchWarping != 0;
+
+    PatchUtil::VolumePositionResolution patchPosResolution = PatchUtil::ResolveVolumePosition(sourceWorldPosition, volumeParams);
+
+    if (patchPosResolution.isValid())
+    {
+        const uint directionIdx = PatchUtil::GetDirectionIndex(sourceWorldFlatNormal, PatchUtil::volumeAngularResolution);
+        const uint3 positionStorageSpace = PatchUtil::ConvertVolumeSpaceToStorageSpace(patchPosResolution.positionVolumeSpace, _VolumeSpatialResolution, _VolumeCascadeOffsets[patchPosResolution.cascadeIdx]);
+        const uint cellIdx = PatchUtil::GetCellIndex(patchPosResolution.cascadeIdx, positionStorageSpace, directionIdx, _VolumeSpatialResolution, PatchUtil::volumeAngularResolution);
+
+        PatchUtil::PatchIndexResolutionResult resolutionResult = PatchUtil::ResolvePatchIndex(
+            _RingConfigBuffer,
+            _RingConfigOffset,
+            _CellPatchIndices,
+            _PatchCellIndices,
+            _CellAllocationMarks,
+            cellIdx);
+
+        if (resolutionResult.code != PatchUtil::patchIndexResolutionCodeAllocationFailure)
+        {
+            PatchUtil::PatchGeometry geo;
+            geo.position = sourceWorldPosition;
+            geo.normal = sourceWorldFlatNormal;
+            _PatchGeometries[resolutionResult.patchIdx] = geo;
+        }
+
+        if (resolutionResult.code == PatchUtil::patchIndexResolutionCodeLookup)
+        {
+            // Visible this frame: refresh keep-alive and force rank 0 so bounce-spawned patches can trigger bounce alloc.
+            PatchUtil::PatchRequestState reqState = _PatchStatistics[resolutionResult.patchIdx].requestState;
+            PatchUtil::SetRank(reqState, 0);
+            PatchUtil::SetHeartbeat(reqState, _FrameIdx);
+            _PatchStatistics[resolutionResult.patchIdx].requestState = reqState;
+        }
+        else if (resolutionResult.code == PatchUtil::patchIndexResolutionCodeAllocationSuccess)
+        {
+            uint patchUpdateCount = 0;
+            SphericalHarmonics::RGBL1 irradianceSeed = (SphericalHarmonics::RGBL1)0;
+
+            if (_FrameIdx != 0)
+            {
+                const float2 threadUvPos = PixelPosToUvPos(fullResPixelPos, rcpFullResScreenSize);
+                float2 reprojectedThreadUvPos = threadUvPos - _CurrentFullResScreenMotionVectors[COORD_TEXTURE2D_X(fullResPixelPos)];
+                if (all(VECTOR_LOGIC_AND(0.0f < reprojectedThreadUvPos, reprojectedThreadUvPos < 1.0f)))
+                {
+                    const uint2 reprojectedThreadPixelPos = reprojectedThreadUvPos * fullResScreenSize;
+                    const uint2 seedLowResPixelPos = reprojectedThreadPixelPos / lowResScreenScaling;
+                    const float seedNdcDepth = _PreviousLowResScreenNdcDepths[COORD_TEXTURE2D_X(seedLowResPixelPos)];
+
+                    if (seedNdcDepth != invalidNdcDepth)
+                    {
+                        const float2 seedFullResUvPos = PixelPosToUvPos(seedLowResPixelPos * lowResScreenScaling, rcpFullResScreenSize);
+                        const float3 seedWorldPosition = ComputeWorldSpacePosition(seedFullResUvPos, seedNdcDepth, _PreviousClipToWorldTransforms[unity_StereoEyeIndex]);
+                        const float voxelSize = PatchUtil::GetVoxelSize(_VolumeVoxelMinSize, patchPosResolution.cascadeIdx);
+                        const float patchPlaneToSeedPositionDistance = dot(sourceWorldFlatNormal, seedWorldPosition - sourceWorldPosition);
+                        if (patchPlaneToSeedPositionDistance < voxelSize)
+                        {
+                            irradianceSeed = IrradianceCompression::LoadAndDecompress(
+                                _PreviousLowResScreenIrradiancesL0,
+                                _PreviousLowResScreenIrradiancesL10,
+                                _PreviousLowResScreenIrradiancesL11,
+                                _PreviousLowResScreenIrradiancesL12,
+                                seedLowResPixelPos);
+
+                            if (PatchUtil::IsValid(irradianceSeed))
+                            {
+                                // Screen irradiances are pre-exposed, patch irradiances are not.
+                                SphericalHarmonics::MulMut(irradianceSeed, GetInvPreExposureMultiplier(_ExposureMultiplier));
+                                patchUpdateCount = PatchUtil::updateMax / 2;
+                            }
+                        }
+                    }
+                }
+            }
+
+            _PatchIrradiances0[resolutionResult.patchIdx] = irradianceSeed;
+            _PatchIrradiances1[resolutionResult.patchIdx] = irradianceSeed;
+            PatchUtil::PatchStatisticsSet stats = PatchUtil::InitPatchStatistics(irradianceSeed.l0, _FrameIdx, 0);
+            PatchUtil::SetUpdateCount(stats.irradianceState, patchUpdateCount);
+            _PatchStatistics[resolutionResult.patchIdx] = stats;
+        }
+    }
+}
+
+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
+void AllocateMono(uint2 lowResPixelPos : SV_DispatchThreadID)
+{
+    Allocate(lowResPixelPos);
+}
+
+[numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
+void AllocateSinglePassStereoInstancing(uint2 lowResPixelPos : SV_DispatchThreadID)
+{
+    UNITY_XR_ASSIGN_VIEW_INDEX(_StereoEyeIndex);
+    Allocate(lowResPixelPos);
+}

@@ -34,16 +34,6 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             return new AsyncTerrainToMeshRequest(job, jobHandle);
         }
 
-        static public AsyncTerrainToMeshRequest ConvertAsync(Terrain terrain)
-        {
-            TerrainData terrainData = terrain.terrainData;
-            int width = terrainData.heightmapTexture.width;
-            int height = terrainData.heightmapTexture.height;
-            float[,] heightmap = terrain.terrainData.GetHeights(0, 0, width, height);
-            bool[,] holes = terrain.terrainData.GetHoles(0, 0, width - 1, height - 1);
-            return MakeAsyncTerrainToMeshRequest(width, height, terrainData.heightmapScale, heightmap, holes);
-        }
-
         static public AsyncTerrainToMeshRequest ConvertAsync(int heightmapWidth, int heightmapHeight, short[] heightmapData, Vector3 heightmapScale, int holeWidth, int holeHeight, byte[] holedata)
         {
             float[,] heightmap = new float[heightmapWidth,heightmapHeight];
@@ -66,12 +56,6 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             }
             return MakeAsyncTerrainToMeshRequest(heightmapWidth, heightmapHeight, heightmapScale, heightmap, holes);
         }
-        static public Mesh Convert(Terrain terrain)
-        {
-            var request = ConvertAsync(terrain);
-            request.WaitForCompletion();
-            return request.GetMesh();
-        }
 
         static public Mesh Convert(int heightmapWidth, int heightmapHeight, short[] heightmapData, Vector3 heightmapScale, int holeWidth, int holeHeight, byte[] holedata)
         {
@@ -79,6 +63,25 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             request.WaitForCompletion();
             return request.GetMesh();
         }
+
+#if ENABLE_TERRAIN_MODULE
+        static public AsyncTerrainToMeshRequest ConvertAsync(Terrain terrain)
+        {
+            TerrainData terrainData = terrain.terrainData;
+            int width = terrainData.heightmapTexture.width;
+            int height = terrainData.heightmapTexture.height;
+            float[,] heightmap = terrain.terrainData.GetHeights(0, 0, width, height);
+            bool[,] holes = terrain.terrainData.GetHoles(0, 0, width - 1, height - 1);
+            return MakeAsyncTerrainToMeshRequest(width, height, terrainData.heightmapScale, heightmap, holes);
+        }
+
+        static public Mesh Convert(Terrain terrain)
+        {
+            var request = ConvertAsync(terrain);
+            request.WaitForCompletion();
+            return request.GetMesh();
+        }
+#endif
     }
 
     internal struct AsyncTerrainToMeshRequest
@@ -99,6 +102,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             mesh.indexFormat = IndexFormat.UInt32;
             mesh.SetVertices(m_Job.positions);
             mesh.SetUVs(0, m_Job.uvs);
+            mesh.SetUVs(1, m_Job.uvs);
             mesh.SetNormals(m_Job.normals);
             mesh.SetIndices(TriangleIndicesWithoutHoles().ToArray(), MeshTopology.Triangles, 0);
 
@@ -121,7 +125,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
                 int i2 = m_Job.indices[i + 1];
                 int i3 = m_Job.indices[i + 2];
 
-                if (i1 != 0 && i2 != 0 && i3 != 0)
+                if (i1 != i2 || i2 != i3)
                 {
                     trianglesWithoutHoles.Add(i1);
                     trianglesWithoutHoles.Add(i2);
@@ -182,7 +186,10 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             float3 v = new float3(x, heightmap[y*width +x], y);
 
             positions[vertexIndex] = v * heightmapScale;
-            uvs[vertexIndex] = v.xz / new float2(width, height);
+            // Extent convention: vertex.xz / (W-1) spans [0, 1] across the terrain extent.
+            // Matches Progressive GPU's HeightmapJobData.cpp:83 so the lightmap atlas region
+            // is fully covered (no ~1/W unbaked strip at the right/top edges).
+            uvs[vertexIndex] = v.xz / new float2(width - 1, height - 1);
             normals[vertexIndex] = CalculateTerrainNormal(heightmap, x, y, width, height, heightmapScale);
 
             if (x < width - 1 && y < height - 1)

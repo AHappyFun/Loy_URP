@@ -11,6 +11,36 @@ namespace UnityEngine.Experimental.Rendering
         readonly List<(Camera, XRPass)> m_ActivePasses = new List<(Camera, XRPass)>();
 
         /// <summary>
+        /// State container for Quad View rendering, used to cache data across render passes.
+        /// </summary>
+        public QuadViewState quadView;
+
+        /// <summary>
+        /// Contains cached state for Quad View XR rendering.
+        /// Quad View is an XR rendering mode where peripheral (outer) and foveal (inner) views are rendered separately.
+        /// </summary>
+        public struct QuadViewState
+        {
+            /// <summary>
+            /// Cached vignette center from the peripheral (outer) view pass.
+            /// Used by the inner view pass to ensure vignette effect is consistent across both views.
+            /// </summary>
+            public Vector4 cachedPeripheralVignetteCenter;
+
+            /// <summary>
+            /// The inner view's rect within the periphery frustum, as a bottom-left-origin fraction of the periphery viewport (x=left, y=bottom, z=width, w=height).
+            /// Used by <see cref="XRQuadViewPrepass"/> to viewport-scope the inset depth occluder during the periphery pass and reset every frame.
+            /// </summary>
+            public Vector4 peripheryInsetViewport;
+
+            /// <summary>
+            /// Per-axis inward safety margin from the inset edges, as a fraction of the periphery viewport.
+            /// Shrinks the occluder viewport so the device compositor's inset blend band is never rejected, preventing a black border at the inset/periphery boundary.
+            /// </summary>
+            public Vector2 peripheryInsetFeather;
+        }
+
+        /// <summary>
         /// Configure the layout to render from the specified camera by generating passes from the the connected XR device.
         /// </summary>
         /// <param name="camera"> Camera that has XR device connected to. </param>
@@ -24,6 +54,10 @@ namespace UnityEngine.Experimental.Rendering
             bool isGameCamera = (camera.cameraType == CameraType.Game || camera.cameraType == CameraType.VR);
             bool xrSupported = isGameCamera && camera.targetTexture == null && enableXR;
 
+            // Sync the native camera's stereo target eye with the pipeline's XR toggle
+            if (isGameCamera)
+                SyncStereoTargetEye(camera, enableXR);
+
             if (XRSystem.displayActive && xrSupported)
             {
                 XRSystem.SetDisplayZRange(camera.nearClipPlane, camera.farClipPlane);
@@ -33,6 +67,22 @@ namespace UnityEngine.Experimental.Rendering
             {
                 AddPass(camera, XRSystem.emptyPass);
             }
+        }
+
+        static void SyncStereoTargetEye(Camera camera, bool enableXR)
+        {
+            StereoTargetEyeMask current = camera.stereoTargetEyeInternal;
+            StereoTargetEyeMask target;
+
+            if (!enableXR)
+                target = StereoTargetEyeMask.None;
+            else if (current == StereoTargetEyeMask.None)
+                target = StereoTargetEyeMask.Both;
+            else
+                target = current; // Preserve an explicit Left/Right/Both choice when XR is allowed.
+
+            if (target != current)
+                camera.stereoTargetEyeInternal = target;
         }
 
         /// <summary>
@@ -76,6 +126,7 @@ namespace UnityEngine.Experimental.Rendering
             }
 
             m_ActivePasses.Clear();
+            quadView = default;
         }
 
         internal void LogDebugInfo()

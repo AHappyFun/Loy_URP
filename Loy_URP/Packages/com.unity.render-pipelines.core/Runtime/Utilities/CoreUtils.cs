@@ -4,6 +4,10 @@ using System.IO;
 using System.Collections.Generic;
 using UnityEngine.Experimental.Rendering;
 using System.Runtime.CompilerServices;
+using Unity.Scripting.LifecycleManagement;
+#if UNITY_6000_5_OR_NEWER
+using UnityEngine.Assemblies;
+#endif
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -12,7 +16,6 @@ using System.Reflection;
 
 namespace UnityEngine.Rendering
 {
-    using static UnityEngine.Rendering.HableCurve;
     using UnityObject = UnityEngine.Object;
 
     /// <summary>
@@ -136,6 +139,7 @@ namespace UnityEngine.Rendering
         [Obsolete(obsoletePriorityMessage)]
         public const int gameObjectMenuPriority = 10;
 
+        [NoAutoStaticsCleanup]
         static Cubemap m_BlackCubeTexture;
         /// <summary>
         /// Black cubemap texture.
@@ -156,6 +160,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static Cubemap m_MagentaCubeTexture;
         /// <summary>
         /// Magenta cubemap texture.
@@ -176,6 +181,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static CubemapArray m_MagentaCubeTextureArray;
         /// <summary>
         /// Black cubemap array texture.
@@ -199,6 +205,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static Cubemap m_WhiteCubeTexture;
         /// <summary>
         /// White cubemap texture.
@@ -219,6 +226,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static RenderTexture m_EmptyUAV;
         /// <summary>
         /// Empty 1x1 texture usable as a dummy UAV.
@@ -238,6 +246,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static GraphicsBuffer m_EmptyBuffer;
         /// <summary>
         /// Empty 4-Byte buffer resource usable as a dummy.
@@ -255,6 +264,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         static Texture3D m_BlackVolumeTexture;
         /// <summary>
         /// Black 3D texture.
@@ -275,6 +285,7 @@ namespace UnityEngine.Rendering
             }
         }
 
+        [NoAutoStaticsCleanup]
         internal static Texture3D m_WhiteVolumeTexture;
 
         /// <summary>
@@ -427,7 +438,7 @@ namespace UnityEngine.Rendering
         {
             SetRenderTarget(cmd, colorBuffers, depthBuffer, clearFlag, Color.clear);
         }
-        
+
         /// <summary>
         /// Set the current multiple render texture.
         /// </summary>
@@ -690,7 +701,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -717,7 +728,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, ClearFlag clearFlag, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -745,7 +756,7 @@ namespace UnityEngine.Rendering
         /// <param name="depthSlice">Depth slice that should be bound as a render texture if applicable.</param>
         public static void SetRenderTarget(CommandBuffer cmd, RTHandle colorBuffer, RTHandle depthBuffer, ClearFlag clearFlag, Color clearColor, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -799,7 +810,7 @@ namespace UnityEngine.Rendering
             RTHandle depthBuffer, RenderBufferLoadAction depthLoadAction, RenderBufferStoreAction depthStoreAction,
             ClearFlag clearFlag, Color clearColor, int miplevel = 0, CubemapFace cubemapFace = CubemapFace.Unknown, int depthSlice = -1)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (colorBuffer.rt != null && depthBuffer.rt != null)
             {
                 int cw = colorBuffer.rt.width;
@@ -1345,11 +1356,15 @@ namespace UnityEngine.Rendering
         /// <returns>The list of all assembly types of the current domain.</returns>
         public static IEnumerable<Type> GetAllAssemblyTypes()
         {
-            if (s_AssemblyTypes != null) 
+            if (s_AssemblyTypes != null)
                 return s_AssemblyTypes;
-            
+
             var typeList = new List<Type>();
+#if UNITY_6000_5_OR_NEWER
+            foreach (var assembly in CurrentAssemblies.GetLoadedAssemblies())
+#else
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+#endif
             {
                 try
                 {
@@ -1369,14 +1384,14 @@ namespace UnityEngine.Rendering
         /// <returns>A list of types that inherit from the provided type.</returns>
         public static IEnumerable<Type> GetAllTypesDerivedFrom<T>()
         {
-#if UNITY_EDITOR && UNITY_2019_2_OR_NEWER
+#if UNITY_EDITOR
             return UnityEditor.TypeCache.GetTypesDerivedFrom<T>();
 #else
             var derivedTypes = new List<Type>();
             var baseType = typeof(T);
             foreach (var type in GetAllAssemblyTypes())
             {
-                if (type.IsSubclassOf(baseType)) 
+                if (type.IsSubclassOf(baseType))
                     derivedTypes.Add(type);
             }
             return derivedTypes;
@@ -1499,11 +1514,7 @@ namespace UnityEngine.Rendering
                 for (int i = 0; i < UnityEditor.SceneView.sceneViews.Count; i++) // Using a foreach on an ArrayList generates garbage ...
                 {
                     var sv = UnityEditor.SceneView.sceneViews[i] as UnityEditor.SceneView;
-#if UNITY_2020_2_OR_NEWER
                     if (sv.camera == camera && sv.sceneViewState.alwaysRefreshEnabled)
-#else
-                    if (sv.camera == camera && sv.sceneViewState.materialUpdateEnabled)
-#endif
                     {
                         animateMaterials = true;
                         break;
@@ -1677,7 +1688,7 @@ namespace UnityEngine.Rendering
         [Obsolete("Use DrawRendererList(CommandBuffer cmd, UnityEngine.Rendering.RendererList rendererList) instead. #from(6000.3) (UnityUpgradable) -> !0")]
         public static void DrawRendererList(ScriptableRenderContext renderContext, CommandBuffer cmd, UnityEngine.Rendering.RendererList rendererList)
         {
-#if UNITY_ENABLE_CHECKS || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (!rendererList.isValid)
                 throw new ArgumentException("Invalid renderer list provided to DrawRendererList");
 #endif
@@ -1691,7 +1702,7 @@ namespace UnityEngine.Rendering
         /// <param name="rendererList">Renderer List to render.</param>
         public static void DrawRendererList(CommandBuffer cmd, UnityEngine.Rendering.RendererList rendererList)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (!rendererList.isValid)
                 throw new ArgumentException("Invalid renderer list provided to DrawRendererList");
 #endif
@@ -1705,7 +1716,7 @@ namespace UnityEngine.Rendering
         /// <param name="rendererList">Renderer List to render.</param>
         public static void DrawRendererList(IRasterCommandBuffer cmd, UnityEngine.Rendering.RendererList rendererList)
         {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             if (!rendererList.isValid)
                 throw new ArgumentException("Invalid renderer list provided to DrawRendererList");
 #endif
@@ -1726,7 +1737,7 @@ namespace UnityEngine.Rendering
 #if UNITY_EDITOR
                 hash = 23 * hash + texture.imageContentsHash.GetHashCode();
 #endif
-                hash = 23 * hash + texture.GetInstanceID().GetHashCode();
+                hash = 23 * hash + texture.GetEntityId().GetHashCode();
                 hash = 23 * hash + texture.graphicsFormat.GetHashCode();
                 hash = 23 * hash + texture.wrapMode.GetHashCode();
                 hash = 23 * hash + texture.width.GetHashCode();
@@ -1842,31 +1853,47 @@ namespace UnityEngine.Rendering
             }
         }
 
+        const char k_DirectorySeparatorChar = '/';
+
         /// <summary>
         /// Create any missing folders in the file path given.
         /// </summary>
-        /// <param name="filePath">File or folder (ending with '/') path to ensure existence of each subfolder in. </param>
+        /// <param name="filePath">File or folder (ending with '/') path to ensure existence of each subfolder in.</param>
         public static void EnsureFolderTreeInAssetFilePath(string filePath)
         {
-            var path = filePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-            if (!path.StartsWith("Assets" + Path.DirectorySeparatorChar, StringComparison.CurrentCultureIgnoreCase))
-                throw new ArgumentException($"Path should start with \"Assets/\". Got {filePath}.", filePath);
+            if (string.IsNullOrEmpty(filePath))
+                return;
+
+            // Normalize to forward slashes (Unity standard)
+            var path = filePath.Replace('\\', k_DirectorySeparatorChar);
+
+            if (!path.StartsWith("Assets/", StringComparison.Ordinal))
+                throw new ArgumentException($"Path should start with \"Assets/\". Got {filePath}.", nameof(filePath));
 
             var folderPath = Path.GetDirectoryName(path);
 
-            if (!UnityEditor.AssetDatabase.IsValidFolder(folderPath))
+            if (string.IsNullOrEmpty(folderPath))
+                return;
+
+            // GetDirectoryName may reintroduce backslashes on Windows
+            folderPath = folderPath.Replace('\\', k_DirectorySeparatorChar);
+
+            // Early exit if folder already exists
+            if (AssetDatabase.IsValidFolder(folderPath))
+                return;
+
+            var folderNames = folderPath.Split(k_DirectorySeparatorChar);
+            string currentPath = "Assets";
+
+            for (int i = 1; i < folderNames.Length; ++i)
             {
-                var folderNames = folderPath.Split(Path.DirectorySeparatorChar);
-                string rootPath = "";
-                foreach (var folderName in folderNames)
-                {
-                    var newPath = rootPath + folderName;
-                    if (!UnityEditor.AssetDatabase.IsValidFolder(newPath))
-                        UnityEditor.AssetDatabase.CreateFolder(rootPath.TrimEnd(Path.DirectorySeparatorChar), folderName);
-                    rootPath = newPath + Path.DirectorySeparatorChar;
-                }
+                string nextPath = currentPath + k_DirectorySeparatorChar + folderNames[i];
+                if (!UnityEditor.AssetDatabase.IsValidFolder(nextPath))
+                    UnityEditor.AssetDatabase.CreateFolder(currentPath, folderNames[i]);
+                currentPath = nextPath;
             }
         }
+
 
         /// <summary>
         /// Returns the icon for the given type if it has an IconAttribute.
@@ -1950,7 +1977,7 @@ namespace UnityEngine.Rendering
             return DepthBits.Depth32;
 #endif
         }
-        
+
         /// <summary>
         /// Indicates whether the combined camera viewports fully cover the screen area.
         /// </summary>
@@ -1962,7 +1989,7 @@ namespace UnityEngine.Rendering
                 return false;
 
             bool isScreenFullyCovered = false;
-            using (ListPool<Rect>.Get(out var cameraRects))
+            using (UnityEngine.Pool.ListPool<Rect>.Get(out var cameraRects))
             {
                 // We don't need to exclude stacked cameras for the input camera list because the overlay camera have the same viewport with its base camera.
                 foreach (var camera in cameras)
@@ -1996,12 +2023,12 @@ namespace UnityEngine.Rendering
         /// The target object to populate with values from the source object. This cannot be null.
         /// </param>
         /// <remarks>
-        /// This method copies non-null field values or collection elements from the source object to the target object. 
-        /// Both objects must be of the same type, and derived or base types are not allowed. Fields are updated only if they 
-        /// are null in the target. If a field is a collection implementing `IList`, the method attempts to copy elements that 
+        /// This method copies non-null field values or collection elements from the source object to the target object.
+        /// Both objects must be of the same type, and derived or base types are not allowed. Fields are updated only if they
+        /// are null in the target. If a field is a collection implementing `IList`, the method attempts to copy elements that
         /// are null in the target collection.
         ///
-        /// **Type restrictions**:  
+        /// **Type restrictions**:
         /// - `T` must be a reference type.
         /// - `source` and `target` must be of the exact same type, not derived or base types.
         /// - Collections must implement `IList` and have the same length in both source and target for element-by-element copying.
@@ -2014,7 +2041,7 @@ namespace UnityEngine.Rendering
 
             if (target == null)
                 throw new ArgumentNullException(nameof(target));
-            
+
             if (source.GetType() != typeof(T) || target.GetType() != typeof(T))
             {
                 throw new ArgumentException("Source and target must be of the exact same type. Derived or base types are not allowed.");
@@ -2037,14 +2064,14 @@ namespace UnityEngine.Rendering
                 else
                 {
                     // Handle individual field population
-                    if (targetValue == null) 
+                    if (targetValue == null)
                         field.SetValue(target, sourceValue); // Copy if target is null
                 }
             }
             // Generic method to populate arrays
             static void PopulateIListFields(ref object source, ref object target)
             {
-                if (source is not IList sourceCollection) 
+                if (source is not IList sourceCollection)
                     return;
 
                 if (target is not IList targetCollection)

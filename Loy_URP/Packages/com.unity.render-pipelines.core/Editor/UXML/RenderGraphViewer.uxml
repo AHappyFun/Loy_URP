@@ -11,7 +11,7 @@
             <r:ToggleDropdown name="view-options-field" />
         </ui:VisualElement>
         <ui:VisualElement name="header-container-right">
-            <uie:ToolbarSearchField name="search-field" class="panel-search-field"/>
+            <uie:ToolbarSearchField name="search-field"/>
         </ui:VisualElement>
     </ui:VisualElement>
     <ui:TwoPaneSplitView name="content-container" orientation="Horizontal">
@@ -39,8 +39,9 @@
             </r:HeaderFoldout>
         </ui:TwoPaneSplitView>
     </ui:TwoPaneSplitView>
-    <ui:VisualElement name="empty-state-message">
+    <ui:VisualElement name="empty-state-message" style="flex-direction:column;">
         <ui:TextElement/>
+        <ui:Label name="empty-state-message-learn-more"/>
     </ui:VisualElement>
     <ui:VisualElement name="footer-container">
         <ui:Label text="Label" name="status-label"/>

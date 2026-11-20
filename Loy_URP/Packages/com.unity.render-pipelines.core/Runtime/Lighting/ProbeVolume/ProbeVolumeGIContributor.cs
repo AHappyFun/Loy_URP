@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Unity.Profiling;
+using Unity.Profiling.LowLevel;
 using UnityEngine.SceneManagement;
 
 #if UNITY_EDITOR
@@ -11,6 +13,70 @@ namespace UnityEngine.Rendering
     struct GIContributors
     {
 #if UNITY_EDITOR
+        /// <summary>
+        /// Collects all GI-contributing renderers and terrains from the scene (or selection).
+        /// For terrains, also resolves tree prototype meshes and computes per-instance bounds.
+        /// Cost scales with total scene renderer and terrain count.
+        /// </summary>
+        static readonly ProfilerMarker k_FindGIContributors =
+            new ProfilerMarker(ProfilerCategory.Render, "GIContributors.Find", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Iterates all scene renderers returned by <c>FindObjectsByType</c>, filtering to
+        /// those that are active, LOD0, have a <c>MeshFilter</c>, and contribute GI.
+        /// </summary>
+        static readonly ProfilerMarker k_FindRenderers =
+            new ProfilerMarker(ProfilerCategory.Render, "Find Renderers", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Iterates all scene terrains returned by <c>FindObjectsByType</c>, filtering to
+        /// those that are active and have valid terrain data, and resolves their tree prototypes.
+        /// </summary>
+        static readonly ProfilerMarker k_FindTerrains =
+            new ProfilerMarker(ProfilerCategory.Render, "Find Terrains", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Filters the full GI contributor lists to those overlapping a given baking cell and
+        /// at least one probe volume, applying both spatial bounds and per-probe-volume size and
+        /// layer mask rules.
+        /// </summary>
+        static readonly ProfilerMarker k_FilterGIContributors =
+            new ProfilerMarker(ProfilerCategory.Render, "Filter GIContributors", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Tests each renderer's bounds against the cell AABB and all probe volumes, keeping
+        /// only those that pass the OBB-AABB intersection and the minimum bounding-volume-size
+        /// filter.
+        /// </summary>
+        static readonly ProfilerMarker k_FilterRenderers =
+            new ProfilerMarker(ProfilerCategory.Render, "Filter Renderers", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Tests each terrain's bounds against the cell AABB and probe volumes, then culls
+        /// individual tree instances for each prototype. Cost scales with terrain tree instance count
+        /// when trees are present.
+        /// </summary>
+        static readonly ProfilerMarker k_FilterTerrains =
+            new ProfilerMarker(ProfilerCategory.Render, "Filter Terrains", MarkerFlags.VerbosityAdvanced);
+
+        /// <summary>
+        /// Filters the full GI contributor lists by layer mask only, without spatial bounds
+        /// checks. Used when per-cell spatial culling is not required.
+        /// </summary>
+        static readonly ProfilerMarker k_FilterGIContributorsLayerMask =
+            new ProfilerMarker(ProfilerCategory.Render, "Filter GIContributors LayerMask", MarkerFlags.VerbosityAdvanced);
+
+        static GIContributors Create()
+        {
+            GIContributors contributors;
+            contributors.renderers = new();
+#if ENABLE_TERRAIN_MODULE
+            contributors.terrains = new();
+#endif
+            return contributors;
+        }
+
+#if ENABLE_TERRAIN_MODULE
         public struct TerrainContributor
         {
             public struct TreePrototype
@@ -28,36 +94,46 @@ namespace UnityEngine.Rendering
             public TreePrototype[] treePrototypes;
         }
 
-        public List<(Renderer component, Bounds bounds)> renderers;
         public List<TerrainContributor> terrains;
+#endif
 
-        public int Count => renderers.Count + terrains.Count;
+        public List<(Renderer component, Bounds bounds)> renderers;
+
+        public int Count =>
+#if ENABLE_TERRAIN_MODULE
+            renderers.Count + terrains.Count;
+#else
+            renderers.Count;
+#endif
 
         internal enum ContributorFilter { All, Scene, Selection };
 
         internal static bool ContributesGI(GameObject go) =>
             (GameObjectUtility.GetStaticEditorFlags(go) & StaticEditorFlags.ContributeGI) != 0;
 
-        internal static Vector3[] m_Vertices = new Vector3[8];
+        // Scratch buffer reused across calls to avoid per-call allocation. Every code path fully
+        // writes all 8 elements before reading, so no per-Play-Mode reset is needed (a readonly
+        // array of unmanaged elements is exempt from the statics-cleanup analyzer).
+        static readonly Vector3[] s_Vertices = new Vector3[8];
 
         static Bounds TransformBounds(Bounds bounds, Matrix4x4 transform)
         {
             Vector3 boundsMin = bounds.min, boundsMax = bounds.max;
-            m_Vertices[0] = new Vector3(boundsMin.x, boundsMin.y, boundsMin.z);
-            m_Vertices[1] = new Vector3(boundsMax.x, boundsMin.y, boundsMin.z);
-            m_Vertices[2] = new Vector3(boundsMax.x, boundsMax.y, boundsMin.z);
-            m_Vertices[3] = new Vector3(boundsMin.x, boundsMax.y, boundsMin.z);
-            m_Vertices[4] = new Vector3(boundsMin.x, boundsMin.y, boundsMax.z);
-            m_Vertices[5] = new Vector3(boundsMax.x, boundsMin.y, boundsMax.z);
-            m_Vertices[6] = new Vector3(boundsMax.x, boundsMax.y, boundsMax.z);
-            m_Vertices[7] = new Vector3(boundsMin.x, boundsMax.y, boundsMax.z);
+            s_Vertices[0] = new Vector3(boundsMin.x, boundsMin.y, boundsMin.z);
+            s_Vertices[1] = new Vector3(boundsMax.x, boundsMin.y, boundsMin.z);
+            s_Vertices[2] = new Vector3(boundsMax.x, boundsMax.y, boundsMin.z);
+            s_Vertices[3] = new Vector3(boundsMin.x, boundsMax.y, boundsMin.z);
+            s_Vertices[4] = new Vector3(boundsMin.x, boundsMin.y, boundsMax.z);
+            s_Vertices[5] = new Vector3(boundsMax.x, boundsMin.y, boundsMax.z);
+            s_Vertices[6] = new Vector3(boundsMax.x, boundsMax.y, boundsMax.z);
+            s_Vertices[7] = new Vector3(boundsMin.x, boundsMax.y, boundsMax.z);
 
-            Vector3 min = transform.MultiplyPoint(m_Vertices[0]);
+            Vector3 min = transform.MultiplyPoint(s_Vertices[0]);
             Vector3 max = min;
 
             for (int i = 1; i < 8; i++)
             {
-                var point = transform.MultiplyPoint(m_Vertices[i]);
+                var point = transform.MultiplyPoint(s_Vertices[i]);
                 min = Vector3.Min(min, point);
                 max = Vector3.Max(max, point);
             }
@@ -67,6 +143,7 @@ namespace UnityEngine.Rendering
             return result;
         }
 
+#if ENABLE_TERRAIN_MODULE
         static internal Matrix4x4 GetTreeInstanceTransform(Terrain terrain, TreeInstance tree)
         {
             var position = terrain.GetPosition() + Vector3.Scale(tree.position, terrain.terrainData.size);
@@ -75,19 +152,16 @@ namespace UnityEngine.Rendering
 
             return Matrix4x4.TRS(position, rotation, scale);
         }
+#endif
 
         public static GIContributors Find(ContributorFilter filter, Scene? scene = null)
         {
             if (filter == ContributorFilter.Scene && scene == null)
                 return default;
 
-            Profiling.Profiler.BeginSample("GIContributors.Find");
+            using var _ = k_FindGIContributors.Auto();
 
-            var contributors = new GIContributors()
-            {
-                renderers = new(),
-                terrains = new(),
-            };
+            var contributors = GIContributors.Create();
 
             void PushRenderer(Renderer renderer)
             {
@@ -99,6 +173,7 @@ namespace UnityEngine.Rendering
                 contributors.renderers.Add((renderer, bounds));
             }
 
+#if ENABLE_TERRAIN_MODULE
             void PushTerrain(Terrain terrain)
             {
                 if (!ContributesGI(terrain.gameObject) || !terrain.gameObject.activeInHierarchy || !terrain.enabled || terrain.terrainData == null)
@@ -139,7 +214,7 @@ namespace UnityEngine.Rendering
                         // and to approximate the bounds of tree instances for culling during voxelization.
                         var prefabBounds = TransformBounds(renderer.localBounds, transform);
 
-                        treePrototypes[i] = new TerrainContributor.TreePrototype()
+                        treePrototypes[i] = new TerrainContributor.TreePrototype
                         {
                             component = renderer,
                             transform = transform,
@@ -170,7 +245,7 @@ namespace UnityEngine.Rendering
                 var totalBounds = new Bounds();
                 totalBounds.SetMinMax(terrainBounds.min, totalMax);
 
-                contributors.terrains.Add(new TerrainContributor()
+                contributors.terrains.Add(new TerrainContributor
                 {
                     component = terrain,
                     boundsWithTrees = totalBounds,
@@ -178,6 +253,7 @@ namespace UnityEngine.Rendering
                     treePrototypes = treePrototypes,
                 });
             }
+#endif
 
             if (filter == ContributorFilter.Selection)
             {
@@ -189,33 +265,42 @@ namespace UnityEngine.Rendering
                     {
                         if (children.gameObject.TryGetComponent(out Renderer renderer))
                             PushRenderer(renderer);
+#if ENABLE_TERRAIN_MODULE
                         else if (children.gameObject.TryGetComponent(out Terrain terrain))
                             PushTerrain(terrain);
+#endif
                     }
                 }
             }
             else
             {
+#pragma warning disable CS0618 // Type or member is obsolete
                 var renderers = Object.FindObjectsByType<Renderer>(FindObjectsSortMode.InstanceID);
-                Profiling.Profiler.BeginSample($"Find Renderers ({renderers.Length})");
-                foreach (var renderer in renderers)
+#pragma warning restore CS0618 // Type or member is obsolete
+                using (k_FindRenderers.Auto())
                 {
-                    if (filter != ContributorFilter.Scene || renderer.gameObject.scene == scene)
-                        PushRenderer(renderer);
+                    foreach (var renderer in renderers)
+                    {
+                        if (filter != ContributorFilter.Scene || renderer.gameObject.scene == scene)
+                            PushRenderer(renderer);
+                    }
                 }
-                Profiling.Profiler.EndSample();
 
+#if ENABLE_TERRAIN_MODULE
+#pragma warning disable CS0618 // Type or member is obsolete
                 var terrains = Object.FindObjectsByType<Terrain>(FindObjectsSortMode.InstanceID);
-                Profiling.Profiler.BeginSample($"Find Terrains ({terrains.Length})");
-                foreach (var terrain in terrains)
+#pragma warning restore CS0618 // Type or member is obsolete
+                using (k_FindTerrains.Auto())
                 {
-                    if (filter != ContributorFilter.Scene || terrain.gameObject.scene == scene)
-                        PushTerrain(terrain);
+                    foreach (var terrain in terrains)
+                    {
+                        if (filter != ContributorFilter.Scene || terrain.gameObject.scene == scene)
+                            PushTerrain(terrain);
+                    }
                 }
-                Profiling.Profiler.EndSample();
+#endif
             }
 
-            Profiling.Profiler.EndSample();
             return contributors;
         }
 
@@ -239,15 +324,11 @@ namespace UnityEngine.Rendering
 
         public GIContributors Filter(ProbeVolumeBakingSet bakingSet, Bounds cellBounds, ProbeVolumeWithBoundsList probeVolumes)
         {
-            Profiling.Profiler.BeginSample("Filter GIContributors");
+            k_FilterGIContributors.Begin();
 
-            var contributors = new GIContributors()
-            {
-                renderers = new(),
-                terrains = new(),
-            };
+            var contributors = GIContributors.Create();
 
-            Profiling.Profiler.BeginSample($"Filter Renderers ({renderers.Count})");
+            k_FilterRenderers.Begin();
             foreach (var renderer in renderers)
             {
                 if (!cellBounds.Intersects(renderer.bounds))
@@ -267,9 +348,10 @@ namespace UnityEngine.Rendering
                     break;
                 }
             }
-            Profiling.Profiler.EndSample();
+            k_FilterRenderers.End();
 
-            Profiling.Profiler.BeginSample($"Filter Terrains ({terrains.Count})");
+#if ENABLE_TERRAIN_MODULE
+            k_FilterTerrains.Begin();
             foreach (var terrain in terrains)
             {
                 if (!cellBounds.Intersects(terrain.boundsWithTrees))
@@ -318,7 +400,7 @@ namespace UnityEngine.Rendering
                     if (probeVolumesForProto.Count == 0)
                         continue;
 
-                    treePrototypes[i] = new TerrainContributor.TreePrototype()
+                    treePrototypes[i] = new TerrainContributor.TreePrototype
                     {
                         component = srcProto.component,
                         transform = srcProto.transform,
@@ -349,7 +431,7 @@ namespace UnityEngine.Rendering
                 var totalBounds = new Bounds();
                 totalBounds.SetMinMax(terrain.boundsTerrainOnly.min, totalMax);
 
-                var terrainContrib = new TerrainContributor()
+                var terrainContrib = new TerrainContributor
                 {
                     component = terrain.component,
                     boundsWithTrees = totalBounds,
@@ -358,21 +440,18 @@ namespace UnityEngine.Rendering
                 };
                 contributors.terrains.Add(terrainContrib);
             }
-            Profiling.Profiler.EndSample();
+            k_FilterTerrains.End();
+#endif
 
-            Profiling.Profiler.EndSample();
+            k_FilterGIContributors.End();
             return contributors;
         }
 
         public GIContributors FilterLayerMaskOnly(LayerMask layerMask)
         {
-            Profiling.Profiler.BeginSample("Filter GIContributors LayerMask");
+            k_FilterGIContributorsLayerMask.Begin();
 
-            var contributors = new GIContributors()
-            {
-                renderers = new(),
-                terrains = new(),
-            };
+            var contributors = GIContributors.Create();
 
             foreach (var renderer in renderers)
             {
@@ -381,6 +460,7 @@ namespace UnityEngine.Rendering
                     contributors.renderers.Add(renderer);
             }
 
+#if ENABLE_TERRAIN_MODULE
             foreach (var terrain in terrains)
             {
                 int terrainLayerMask = 1 << terrain.component.gameObject.layer;
@@ -400,7 +480,7 @@ namespace UnityEngine.Rendering
                         }
                     }
 
-                    var terrainContrib = new TerrainContributor()
+                    var terrainContrib = new TerrainContributor
                     {
                         component = terrain.component,
                         boundsWithTrees = terrain.boundsWithTrees,
@@ -411,8 +491,9 @@ namespace UnityEngine.Rendering
                     contributors.terrains.Add(terrainContrib);
                 }
             }
+#endif
 
-            Profiling.Profiler.EndSample();
+            k_FilterGIContributorsLayerMask.End();
             return contributors;
         }
 #endif

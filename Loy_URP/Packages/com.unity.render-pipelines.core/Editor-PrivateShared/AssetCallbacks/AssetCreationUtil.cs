@@ -92,15 +92,15 @@ namespace UnityEditor.RenderPipelines.Core
             assetCreationCallback.extension = extension;
 
             var icon = AssetPreview.GetMiniTypeThumbnail(type);
-            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(0, assetCreationCallback, name, icon, null, false);
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(EntityId.None, assetCreationCallback, name, icon, null, false);
         }
 
-        class AssetCreationCallback : ProjectWindowCallback.EndNameEditAction
+        class AssetCreationCallback : ProjectWindowCallback.AssetCreationEndAction
         {
             public Action<string> callback;
             public string extension;
 
-            public override void Action(int instanceId, string pathName, string resourceFile)
+            public override void Action(EntityId entityId, string pathName, string resourceFile)
             {
                 string path = AssetDatabase.GenerateUniqueAssetPath(pathName + $".{extension}");
                 callback?.Invoke(path);

@@ -1,4 +1,16 @@
+#if ENABLE_UIELEMENTS_MODULE && UNITY_ENABLE_CHECKS
+#define ENABLE_RENDERING_DEBUGGER_UI
+#endif
+
 using System;
+
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
+#if ENABLE_RENDERING_DEBUGGER_UI
+using UnityEngine.UIElements;
+#endif
 
 namespace UnityEngine.Rendering
 {
@@ -11,6 +23,58 @@ namespace UnityEngine.Rendering
         /// </summary>
         public class Panel : IContainer, IComparable<Panel>
         {
+#if ENABLE_RENDERING_DEBUGGER_UI
+            private VisualElement m_HelpButton;
+
+            /// <inheritdoc/>
+            public VisualElement Create(DebugUI.Context context)
+            {
+                VisualElement container = new GroupBox()
+                {
+                    text = displayName,
+                    name = displayName + "_Content"
+                };
+
+                var label = container.Q<Label>(className: "unity-group-box__label");
+                label.AddToClassList("debug-window-header-title");
+                label.AddToClassList("debug-window-search-filter-target");
+                label.AddToClassList("debug-window-header-row");
+
+#if UNITY_EDITOR
+                if (EditorGUIUtility.isProSkin)
+                {
+                    container.AddToClassList("dark");
+                }
+
+                m_HelpButton = new UIElements.Button(() => Help.BrowseURL(documentationUrl));
+                m_HelpButton.tooltip = $"Open Reference for {displayName} debugger panel.";
+                m_HelpButton.SetEnabled(!string.IsNullOrEmpty(documentationUrl));
+                m_HelpButton.AddToClassList("debug-window-help-button");
+                label.Add(m_HelpButton);
+#endif
+                container.AddToClassList("debug-window-tab-content");
+                container.AddToClassList("unity-inspector-element");
+
+                var content = new VisualElement();
+
+                foreach (var child in children)
+                {
+                    if (context == Context.Editor && child.isRuntimeOnly)
+                        continue;
+                    if (context.IsAnyRuntimeContext() && child.isEditorOnly)
+                        continue;
+
+                    var childUIElement = child.ToVisualElement(context);
+                    if (childUIElement != null)
+                        content.Add(childUIElement);
+                }
+
+                container.Add(content);
+
+                return container;
+            }
+#endif
+
             /// <summary>
             /// Widget flags for this panel.
             /// </summary>
@@ -43,7 +107,8 @@ namespace UnityEngine.Rendering
             /// <summary>
             /// Returns true if the panel should always be updated.
             /// </summary>
-            public bool editorForceUpdate { get { return (flags & Flags.EditorForceUpdate) != 0; } }
+            [Obsolete("This is no longer used. #from(6000.5)")]
+            public bool editorForceUpdate => false;
 
             /// <summary>
             /// List of children.
@@ -53,9 +118,23 @@ namespace UnityEngine.Rendering
             /// Callback used when the panel is set dirty.
             /// </summary>
             public event Action<Panel> onSetDirty = delegate { };
-            
+
 #if UNITY_EDITOR
-            public string documentationUrl { get; set; }
+            private string m_DocumentationURL;
+
+            public string documentationUrl {
+                get => m_DocumentationURL;
+                set
+                {
+                    if (m_DocumentationURL == value)
+                        return;
+
+                    m_DocumentationURL = value;
+#if ENABLE_RENDERING_DEBUGGER_UI
+                    m_HelpButton?.SetEnabled(!string.IsNullOrEmpty(m_DocumentationURL));
+#endif
+                }
+            }
 #endif
 
             /// <summary>
@@ -113,28 +192,30 @@ namespace UnityEngine.Rendering
             }
 
             /// <summary>
-            /// Returns the hash code of the panel.
-            /// </summary>
-            /// <returns>Hash code of the panel.</returns>
-            public override int GetHashCode()
-            {
-                int hash = 17;
-                hash = hash * 23 + displayName.GetHashCode();
-
-
-                int numChildren = children.Count;
-                for (int i = 0; i < numChildren; i++)
-                    hash = hash * 23 + children[i].GetHashCode();
-
-                return hash;
-            }
-
-            /// <summary>
             /// Comparison function.
             /// </summary>
             /// <param name="other">Panel to compare to.</param>
             /// <returns>True if the panels share the same group index.</returns>
             int IComparable<Panel>.CompareTo(Panel other) => other == null ? 1 : groupIndex.CompareTo(other.groupIndex);
+
+            internal bool TryFindChild<T>(string childDisplayName, out T foundChild)
+                where T : DebugUI.Widget
+            {
+                foundChild = null;
+                if (!string.IsNullOrEmpty(childDisplayName))
+                {
+                    foreach (var child in children)
+                    {
+                        if (child.displayName.Equals(childDisplayName) && child is T castedChild)
+                        {
+                            foundChild = castedChild;
+                            break;
+                        }
+                    }
+                }
+
+                return foundChild != null;
+            }
         }
     }
 }

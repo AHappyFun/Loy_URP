@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  version: 10
+  version: 11
 --- !u!21 &2100000
 Material:
   serializedVersion: 8
@@ -122,6 +122,8 @@ Material:
     - Vector1_2EE2CB80: 0.01
     - _QueueControl: 0
     - _QueueOffset: 0
+    - _ScreenSpaceReflections: 1
+    - _ScreenSpaceReflectionsContributeTransparent: 1
     m_Colors:
     - Color_23C9B10D: {r: 0, g: 0.61, b: 0.85, a: 0}
     - Color_A2AAE5B5: {r: 0.78999996, g: 0.8399999, b: 0.96999997, a: 0}

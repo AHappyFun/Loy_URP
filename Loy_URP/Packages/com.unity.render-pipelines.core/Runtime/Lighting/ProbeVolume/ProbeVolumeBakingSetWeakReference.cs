@@ -12,7 +12,7 @@ namespace UnityEngine.Rendering
 
     internal class ProbeVolumeBakingSetWeakReference
     {
-        public int m_InstanceID;
+        public EntityId m_EntityId;
 
         public ProbeVolumeBakingSetWeakReference(ProbeVolumeBakingSet bakingSet)
         {
@@ -21,28 +21,28 @@ namespace UnityEngine.Rendering
 
         public ProbeVolumeBakingSetWeakReference()
         {
-            m_InstanceID = 0;
+            m_EntityId = EntityId.None;
         }
 
         // Change which baking set the references points to.
         public void Set(ProbeVolumeBakingSet bakingSet)
         {
             if (bakingSet == null)
-                m_InstanceID = 0;
+                m_EntityId = EntityId.None;
             else
-                m_InstanceID = bakingSet.GetInstanceID();
+                m_EntityId = bakingSet.GetEntityId();
         }
 
         // Get the referenced baking set, loading it into memory if necessary.
         public ProbeVolumeBakingSet Get()
         {
-            return Resources.EntityIdToObject(m_InstanceID) as ProbeVolumeBakingSet;
+            return Resources.EntityIdToObject(m_EntityId) as ProbeVolumeBakingSet;
         }
 
         // Is the referenced baking set in memory?
         public bool IsLoaded()
         {
-            return Resources.EntityIdIsValid(m_InstanceID);
+            return Resources.EntityIdIsValid(m_EntityId);
         }
 
         // Force the referenced baking set to be unloaded from memory.
@@ -56,7 +56,7 @@ namespace UnityEngine.Rendering
 
             // These assets would get garbage collected, but we clean them up immediately to free memory earlier.
             // Only do this in editor, where the assets are never needed, so we don't unload assets that may still be in use.
-            #if UNITY_EDITOR
+#if UNITY_EDITOR
             Resources.UnloadAsset(bakingSet.cellBricksDataAsset?.asset);
             Resources.UnloadAsset(bakingSet.cellSharedDataAsset?.asset);
             Resources.UnloadAsset(bakingSet.cellSupportDataAsset?.asset);
@@ -66,7 +66,7 @@ namespace UnityEngine.Rendering
                 Resources.UnloadAsset(scenario.Value.cellOptionalDataAsset?.asset);
                 Resources.UnloadAsset(scenario.Value.cellProbeOcclusionDataAsset?.asset);
             }
-            #endif
+#endif
 
             // Unload the baking set itself.
             Resources.UnloadAsset(bakingSet);

@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
-using UnityEditor.Networking.PlayerConnection;
 using UnityEditor.Rendering.Analytics;
-using UnityEditor.Toolbars;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.Networking.PlayerConnection;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Scripting.APIUpdating;
@@ -17,7 +16,7 @@ namespace UnityEditor.Rendering
     /// </summary>
     [MovedFrom("")]
     [CoreRPHelpURL(packageName: "com.unity.render-pipelines.universal", pageName: "render-graph-view")]
-    public partial class RenderGraphViewer : EditorWindowWithHelpButton
+    public partial class RenderGraphViewer : EditorWindowWithHelpButton, IHasCustomMenu
     {
         internal static partial class Names
         {
@@ -38,6 +37,7 @@ namespace UnityEditor.Rendering
             public const string kGridlineContainer = "grid-line-container";
             public const string kHoverOverlay = "hover-overlay";
             public const string kEmptyStateMessage = "empty-state-message";
+            public const string kEmptyStateMessageLearnMore = "empty-state-message-learn-more";
             public const string kPassListCornerOccluder = "pass-list-corner-occluder";
             public const string kStatusLabel = "status-label";
         }
@@ -104,6 +104,9 @@ namespace UnityEditor.Rendering
         const string k_PassListIconPath = "Packages/com.unity.render-pipelines.core/Editor/Icons/RenderGraphViewer/{0}PassInspector@2x.png";
         const string k_EditorName ="Editor";
 
+        static readonly string k_AutoUpdateText = L10n.Tr("Auto Update", null);
+        static readonly string k_PauseText = L10n.Tr("Pause", null);
+
         // keep in sync with .uss
         const int kPassWidthPx = 26;
         const int kResourceRowHeightPx = 30;
@@ -122,12 +125,22 @@ namespace UnityEditor.Rendering
 
         PlayerConnection m_PlayerConnection;
 
-        bool m_Paused = false;
+        // Store the paused state so it can be restored when reconnecting sessions (e.g., during play mode changes)
+        [SerializeField]
+        bool m_StoredPausedState;
 
-        static int s_EditorWindowInstanceId;
-        DateTime m_LastDataCaptureTime = DateTime.MinValue;
-        string m_ConnectedDeviceName = "Local Editor";
-        bool m_IsDeviceConnected = true;
+        internal bool isPaused
+        {
+            get => RenderGraphDebugSessionManager.currentDebugSession?.isPaused ?? m_StoredPausedState;
+            set
+            {
+                m_StoredPausedState = value;
+                if (RenderGraphDebugSessionManager.currentDebugSession != null)
+                    RenderGraphDebugSessionManager.currentDebugSession.isPaused = value;
+            }
+        }
+
+        static EntityId s_EditorWindowEntityId;
 
         bool HasValidDebugData => m_CurrentDebugData != null && m_CurrentDebugData.valid;
 
@@ -146,7 +159,6 @@ namespace UnityEditor.Rendering
         int m_CurrentHoveredVisibleResourceIndex = -1;
         int m_CurrentSelectedVisiblePassIndex = -1;
 
-        const string kPassFilterLegacyEditorPrefsKey = "RenderGraphViewer.PassFilterLegacy";
         const string kPassFilterEditorPrefsKey = "RenderGraphViewer.PassFilter";
         const string kResourceFilterEditorPrefsKey = "RenderGraphViewer.ResourceFilter";
         const string kSelectedExecutionEditorPrefsKey = "RenderGraphViewer.SelectedExecution";
@@ -156,7 +168,6 @@ namespace UnityEditor.Rendering
         IVisualElementScheduledItem m_RefreshUIDelayed;
 
         PassFilter m_PassFilter = PassFilter.CulledPasses | PassFilter.RasterPasses | PassFilter.UnsafePasses | PassFilter.ComputePasses;
-        PassFilterLegacy m_PassFilterLegacy = PassFilterLegacy.CulledPasses;
 
         ResourceFilter m_ResourceFilter =
             ResourceFilter.ImportedResources |  ResourceFilter.Textures |
@@ -175,37 +186,39 @@ namespace UnityEditor.Rendering
             WaitingForCameraRender,
             EmptyPassFilterResult,
             EmptyResourceFilterResult,
-            IncompatibleDataReceived
+            IncompatibleDataReceived,
+            NoDataFromPlayer
         };
 
         static readonly string[] kEmptyStateMessages =
         {
             "",
-            L10n.Tr("No Render Graph has been registered. The Render Graph Viewer is only functional when Render Graph API is in use."),
-            L10n.Tr("Waiting for the selected camera to render. Depending on the camera, you may need to trigger rendering by selecting the Scene or Game view.\n\nEnsure Render Graph is not disabled in Project Settings > Graphics."),
-            L10n.Tr("No passes to display. Select a different Pass Filter to display contents."),
-            L10n.Tr("No resources to display. Select a different Resource Filter to display contents."),
-            L10n.Tr("Editor received incompatible data. Rebuild the player with this version of the editor, or switch to an older version of the editor."),
+            L10n.Tr("No Render Graph has been registered. The Render Graph Viewer is only functional when Render Graph API is in use.", null),
+            L10n.Tr("Waiting for the selected camera to render. Depending on the camera, you may need to trigger rendering by selecting the Scene or Game view.\n\nEnsure Render Graph is not disabled in Project Settings > Graphics.", null),
+            L10n.Tr("No passes to display. Select a different Pass Filter to display contents.", null),
+            L10n.Tr("No resources to display. Select a different Resource Filter to display contents.", null),
+            L10n.Tr("Editor received incompatible data. Rebuild the player with this version of the editor, or switch to an older version of the editor.", null),
+            L10n.Tr("No Render Graph data received from the connected player.\n\nThe Render Graph Viewer requires a player built with Managed Code Variant set to Debug or Checked.\n", null),
         };
 
         private static readonly string[] kLoadActionNames =
         {
             "",
-            L10n.Tr("Load"),
-            L10n.Tr("Clear"),
-            L10n.Tr("Don't Care"),
+            L10n.Tr("Load", null),
+            L10n.Tr("Clear", null),
+            L10n.Tr("Don't Care", null),
         };
 
         private static readonly string[] kStoreActionNames =
         {
             "",
-            L10n.Tr("Store"),
-            L10n.Tr("Resolve"),
-            L10n.Tr("Store and Resolve"),
-            L10n.Tr("Don't Care"),
+            L10n.Tr("Store", null),
+            L10n.Tr("Resolve", null),
+            L10n.Tr("Store and Resolve", null),
+            L10n.Tr("Don't Care", null),
         };
 
-        static readonly string kOpenInCSharpEditorTooltip = L10n.Tr("Click to open <b>{0}</b> definition in C# editor.");
+        static readonly string kOpenInCSharpEditorTooltip = L10n.Tr("Click to open <b>{0}</b> definition in C# editor.", null);
 
         [MenuItem("Window/Analysis/Render Graph Viewer", false, 10006)]
         static void Init()
@@ -213,12 +226,6 @@ namespace UnityEditor.Rendering
             var window = GetWindow<RenderGraphViewer>();
             window.titleContent = new GUIContent("Render Graph Viewer");
             window.minSize = new Vector2(880f, 300f);
-        }
-
-        [Flags]
-        enum PassFilterLegacy
-        {
-            CulledPasses = 1 << 0,
         }
 
         [Flags]
@@ -312,7 +319,6 @@ namespace UnityEditor.Rendering
             public readonly List<ResourceRWBlock> resourceBlocks = new();
 
             public VisualElement leftGridLine;
-            public VisualElement rightGridLine;
 
             public bool hasPassCompatibilityTooltip;
             public bool isPassCompatibleToMerge;
@@ -376,34 +382,31 @@ namespace UnityEditor.Rendering
                 var pass = m_CurrentDebugData.passList[passIdInGroup];
 
                 // Native pass compatibility
-                if (m_CurrentDebugData.isNRPCompiler)
+                if (pass.nrpInfo.nativePassInfo != null && pass.nrpInfo.nativePassInfo.passCompatibility.Count > 0)
                 {
-                    if (pass.nrpInfo.nativePassInfo != null && pass.nrpInfo.nativePassInfo.passCompatibility.Count > 0)
+                    foreach (var msg in pass.nrpInfo.nativePassInfo.passCompatibility)
                     {
-                        foreach (var msg in pass.nrpInfo.nativePassInfo.passCompatibility)
+                        int linkedPassId = msg.Key;
+                        string compatibilityMessage = msg.Value.message;
+                        var linkedPassGroup = GetGroupedPassIds(linkedPassId);
+                        foreach (var passIdInLinkedPassGroup in linkedPassGroup)
                         {
-                            int linkedPassId = msg.Key;
-                            string compatibilityMessage = msg.Value.message;
-                            var linkedPassGroup = GetGroupedPassIds(linkedPassId);
-                            foreach (var passIdInLinkedPassGroup in linkedPassGroup)
-                            {
-                                if (selectedPassIds.Contains(passIdInLinkedPassGroup))
-                                    continue; // Don't show compatibility info among passes that are merged
+                            if (selectedPassIds.Contains(passIdInLinkedPassGroup))
+                                continue; // Don't show compatibility info among passes that are merged
 
-                                if (m_PassIdToVisiblePassIndex.TryGetValue(passIdInLinkedPassGroup,
-                                        out int visiblePassIndexInLinkedPassGroup))
-                                {
-                                    var info = m_PassElementsInfo[visiblePassIndexInLinkedPassGroup];
-                                    info.hasPassCompatibilityTooltip = true;
-                                    info.isPassCompatibleToMerge = msg.Value.isCompatible;
-                                    info.passBlock.tooltip = compatibilityMessage;
-                                }
+                            if (m_PassIdToVisiblePassIndex.TryGetValue(passIdInLinkedPassGroup,
+                                    out int visiblePassIndexInLinkedPassGroup))
+                            {
+                                var info = m_PassElementsInfo[visiblePassIndexInLinkedPassGroup];
+                                info.hasPassCompatibilityTooltip = true;
+                                info.isPassCompatibleToMerge = msg.Value.isCompatible;
+                                info.passBlock.tooltip = compatibilityMessage;
                             }
                         }
-
-                        // Each native pass has compatibility messages, it's enough to process the first one
-                        break;
                     }
+
+                    // Each native pass has compatibility messages, it's enough to process the first one
+                    break;
                 }
 
                 // Async compute dependencies
@@ -885,23 +888,59 @@ namespace UnityEditor.Rendering
             rootVisualElement.Q<VisualElement>(Names.kEmptyStateMessage).style.display = DisplayStyle.None;
         }
 
-        void SetEmptyStateMessage(EmptyStateReason reason)
+        void SetEmptyStateMessage(EmptyStateReason reason, bool showLearnMore = false)
         {
             rootVisualElement.Q<VisualElement>(Names.kContentContainer).style.display = DisplayStyle.None;
 
             var emptyStateElement = rootVisualElement.Q<VisualElement>(Names.kEmptyStateMessage);
             emptyStateElement.style.display = DisplayStyle.Flex;
             if (emptyStateElement[0] is TextElement emptyStateText)
-                emptyStateText.text = $"{kEmptyStateMessages[(int) reason]}";
+                emptyStateText.text = $"{kEmptyStateMessages[(int)reason]}";
+
+            var learnMore = rootVisualElement.Q<Label>(Names.kEmptyStateMessageLearnMore);
+            if (learnMore != null)
+            {
+                string helpURLForObject = Help.GetHelpURLForObject(this);
+                if (showLearnMore && !string.IsNullOrEmpty(helpURLForObject))
+                {
+                    learnMore.style.display = DisplayStyle.Flex;
+                    learnMore.text = $"<a href={helpURLForObject}>{L10n.Tr("Learn More", null)}</a>";
+                }
+                else
+                {
+                    learnMore.style.display = DisplayStyle.None;
+                }
+            }
         }
 
-        void OnAutoPlayStatusChanged(ChangeEvent<bool> evt)
+        internal void OnAutoPlayStatusChanged(ChangeEvent<bool> evt)
         {
-            var autoPlayToggle = rootVisualElement.Q<ToolbarToggle>(Names.kAutoPauseToggle);
-            autoPlayToggle.text = evt.newValue ? L10n.Tr("Auto Update") : L10n.Tr("Pause");
-            m_Paused = evt.newValue;
+            if (RenderGraphDebugSessionManager.currentDebugSession == null)
+                ReconnectDebugSession();
 
-            if (!m_Paused && !m_IsDeviceConnected && m_ConnectedDeviceName != k_EditorName)
+            // Setting isPaused will trigger OnPausedStateChanged via the session event
+            isPaused = evt.newValue;
+        }
+
+        void OnPausedStateChanged(bool paused)
+        {
+            // Update the toggle UI to reflect the new pause state
+            var autoPlayToggle = rootVisualElement?.Q<ToolbarToggle>(Names.kAutoPauseToggle);
+            if (autoPlayToggle != null)
+            {
+                autoPlayToggle.SetValueWithoutNotify(paused);
+                autoPlayToggle.text = paused ? k_AutoUpdateText : k_PauseText;
+            }
+
+            // A play mode transition can reset the session while paused (reconnect was deferred); restore it on unpause.
+            if (!paused && RenderGraphDebugSessionManager.currentDebugSession == null)
+                ReconnectDebugSession();
+
+            // When enabling Auto Update, if the current debug data is from a player that is no longer connected,
+            // switch back to Editor target.
+            if (!paused &&
+                RenderGraphDebugSessionManager.currentDebugSession is RenderGraphEditorRemoteDebugSession &&
+                m_PlayerConnection.connectionState.connectedToTarget != ConnectionTarget.Player)
             {
                 ConnectDebugSession<RenderGraphEditorLocalDebugSession>();
             }
@@ -909,7 +948,7 @@ namespace UnityEditor.Rendering
             UpdateStatusLabel();
 
             // Force update when unpausing
-            if (!m_Paused)
+            if (!paused)
                 UpdateCurrentDebugData();
         }
 
@@ -1018,7 +1057,7 @@ namespace UnityEditor.Rendering
 
         void UpdateFilterEnabledState(string prefsKey, bool enabled)
         {
-            if (prefsKey == kPassFilterEditorPrefsKey || prefsKey == kPassFilterLegacyEditorPrefsKey)
+            if (prefsKey == kPassFilterEditorPrefsKey)
                 m_PassFilterEnabled = enabled;
             else if (prefsKey == kResourceFilterEditorPrefsKey)
                 m_ResourceFilterEnabled = enabled;
@@ -1030,28 +1069,23 @@ namespace UnityEditor.Rendering
         {
             var viewOptions = rootVisualElement.Q<ToggleDropdown>(Names.kViewOptionsField);
             BuildEnumFlagsToggleDropdown(viewOptions, m_ViewOptions, kViewOptionsEditorPrefsKey, val => m_ViewOptions = val, false);
-            viewOptions.text = L10n.Tr("View Options");
+            viewOptions.text = L10n.Tr("View Options", null);
         }
 
         void RebuildResourceFilterUI()
         {
             var resourceFilter = rootVisualElement.Q<ToggleDropdown>(Names.kResourceFilterField);
             BuildEnumFlagsToggleDropdown(resourceFilter, m_ResourceFilter, kResourceFilterEditorPrefsKey, val => m_ResourceFilter = val, true);
-            resourceFilter.text = L10n.Tr("Resource Filter");
+            resourceFilter.text = L10n.Tr("Resource Filter", null);
         }
 
         void RebuildPassFilterUI()
         {
             var passFilter = rootVisualElement.Q<ToggleDropdown>(Names.kPassFilterField);
-            if (m_CurrentDebugData?.isNRPCompiler ?? false)
-            {
-                BuildEnumFlagsToggleDropdown(passFilter, m_PassFilter, kPassFilterEditorPrefsKey, val => m_PassFilter = val, true);
-            }
-            else
-            {
-                BuildEnumFlagsToggleDropdown(passFilter, m_PassFilterLegacy, kPassFilterLegacyEditorPrefsKey, val => m_PassFilterLegacy = val, true);
-            }
-            passFilter.text = L10n.Tr("Pass Filter");
+
+            BuildEnumFlagsToggleDropdown(passFilter, m_PassFilter, kPassFilterEditorPrefsKey, val => m_PassFilter = val, true);
+
+            passFilter.text = L10n.Tr("Pass Filter", null);
         }
 
         void RebuildAutoPlayUI()
@@ -1059,26 +1093,24 @@ namespace UnityEditor.Rendering
             var autoPlayToggle = rootVisualElement.Q<ToolbarToggle>(Names.kAutoPauseToggle);
             autoPlayToggle.UnregisterCallback<ChangeEvent<bool>>(OnAutoPlayStatusChanged);
             autoPlayToggle.RegisterCallback<ChangeEvent<bool>>(OnAutoPlayStatusChanged);
-            autoPlayToggle.value = m_Paused;
-            autoPlayToggle.text = m_Paused ? L10n.Tr("Auto Update") : L10n.Tr("Pause");
+            autoPlayToggle.value = isPaused;
+            autoPlayToggle.text = isPaused ? k_AutoUpdateText : k_PauseText;
         }
 
         void UpdateSelectedGraphAndExecution()
         {
-            m_ExecutionItems = RenderGraphDebugSession.GetExecutions(m_SelectedRenderGraph);
-
+            var graphs = RenderGraphDebugSessionManager.GetRegisteredGraphs();
             var renderGraphDropdownField = rootVisualElement.Q<DropdownField>(Names.kCurrentGraphDropdown);
-
-            // Update selected render graph
-            var graphs = RenderGraphDebugSession.GetRegisteredGraphs();
             if (graphs.Count == 0 || renderGraphDropdownField == null)
             {
                 m_SelectedRenderGraph = null;
+                m_ExecutionItems = RenderGraphDebugSessionManager.GetExecutions(m_SelectedRenderGraph); // will return a valid reference but with 0 elements
                 SetSelectedExecutionIndex(-1);
                 return;
             }
 
-            m_SelectedRenderGraph = graphs[0];
+            m_SelectedRenderGraph = graphs.Contains(m_SelectedRenderGraph) ? m_SelectedRenderGraph : graphs[0];
+            m_ExecutionItems = RenderGraphDebugSessionManager.GetExecutions(m_SelectedRenderGraph);
             renderGraphDropdownField.choices = graphs;
             renderGraphDropdownField.value = m_SelectedRenderGraph;
 
@@ -1190,7 +1222,7 @@ namespace UnityEditor.Rendering
 
             if (!m_ResourceFilterEnabled)
                 return true;
-            
+
             if (resource.imported && !m_ResourceFilter.HasFlag(ResourceFilter.ImportedResources))
                 return false;
             if (type == RenderGraphResourceType.Texture && !m_ResourceFilter.HasFlag(ResourceFilter.Textures))
@@ -1204,6 +1236,17 @@ namespace UnityEditor.Rendering
             return true;
         }
 
+        private bool IsPassTypeAllowed(RenderGraphPassType passType)
+        {
+            return passType switch
+            {
+                RenderGraphPassType.Compute => m_PassFilter.HasFlag(PassFilter.ComputePasses),
+                RenderGraphPassType.Raster => m_PassFilter.HasFlag(PassFilter.RasterPasses),
+                RenderGraphPassType.Unsafe => m_PassFilter.HasFlag(PassFilter.UnsafePasses),
+                _ => true // Allow unknown types by default
+            };
+        }
+
         bool IsPassVisible(RenderGraph.DebugData.PassData pass)
         {
             if (!pass.generateDebugData)
@@ -1212,24 +1255,10 @@ namespace UnityEditor.Rendering
             if (!m_PassFilterEnabled)
                 return true;
 
-            if (m_CurrentDebugData.isNRPCompiler)
-            {
-                if (pass.culled && !m_PassFilter.HasFlag(PassFilter.CulledPasses))
-                    return false;
-                if (pass.type == RenderGraphPassType.Compute && !m_PassFilter.HasFlag(PassFilter.ComputePasses))
-                    return false;
-                if (pass.type == RenderGraphPassType.Raster && !m_PassFilter.HasFlag(PassFilter.RasterPasses))
-                    return false;
-                if (pass.type == RenderGraphPassType.Unsafe && !m_PassFilter.HasFlag(PassFilter.UnsafePasses))
-                    return false;
-            }
-            else
-            {
-                if (pass.culled && !m_PassFilterLegacy.HasFlag(PassFilterLegacy.CulledPasses))
-                    return false;
-            }
+            if (pass.culled && !m_PassFilter.HasFlag(PassFilter.CulledPasses))
+                return false;
 
-            return true;
+            return IsPassTypeAllowed(pass.type);
         }
 
         static readonly string[] k_ResourceNames =
@@ -1308,14 +1337,26 @@ namespace UnityEditor.Rendering
             return asset;
         }
 
+        void OpenScriptInfo(RenderGraph.DebugData.ScriptInfo scriptInfo)
+        {
+            if (string.IsNullOrEmpty(scriptInfo.filePath))
+                return;
+
+            var scriptAsset = FindScriptAssetByScriptPath(scriptInfo.filePath);
+            if (scriptAsset != null)
+                AssetDatabase.OpenAsset(scriptAsset, scriptInfo.line);
+        }
+
         VisualElement CreatePassListItem(int passId, RenderGraph.DebugData.PassData pass, int visiblePassIndex)
         {
             var passListItem = new VisualElement();
+            passListItem.name = pass.name;
             passListItem.AddToClassList(Classes.kPassListItem);
             passListItem.pickingMode = PickingMode.Ignore;
             passListItem.style.left = visiblePassIndex * kPassWidthPx;
 
             var passTitle = new PassTitleLabel(pass.name);
+            passTitle.name = pass.name;
             passTitle.tooltip = pass.name;
             passTitle.AddToClassList(Classes.kPassTitle);
             passTitle.RegisterCallback<GeometryChangedEvent>(TruncatePassTitle);
@@ -1358,6 +1399,10 @@ namespace UnityEditor.Rendering
 
                 passMergeIndicator.style.width = width;
             }
+            else
+            {
+                passMergeIndicator.style.visibility = Visibility.Hidden;
+            }
 
             passListItem.Add(passMergeIndicator);
 
@@ -1375,10 +1420,7 @@ namespace UnityEditor.Rendering
             passBlock.RegisterCallback<ClickEvent>(evt =>
             {
                 if (evt.button == 0)
-                {
-                    var scriptAsset = FindScriptAssetByScriptPath(pass.scriptInfo.filePath);
-                    AssetDatabase.OpenAsset(scriptAsset, pass.scriptInfo.line);
-                }
+                    OpenScriptInfo(pass.scriptInfo);
                 evt.StopImmediatePropagation();
             });
 
@@ -1429,6 +1471,7 @@ namespace UnityEditor.Rendering
         {
             var resourceListItem = new VisualElement();
             resourceListItem.AddToClassList(Classes.kResourceListItem);
+            resourceListItem.name = res.name;
 
             var resourceTitleContainer = new VisualElement();
             resourceTitleContainer.Add(CreateResourceTypeIcon(type, res.memoryless));
@@ -1454,6 +1497,20 @@ namespace UnityEditor.Rendering
             resourceListItem.Add(resourceTitleContainer);
             resourceListItem.Add(iconContainer);
 
+            // Add context menu
+            resourceListItem.AddManipulator(new ContextualMenuManipulator(evt =>
+            {
+                evt.menu.AppendAction("Copy Resource Name", _ =>
+                {
+                    EditorGUIUtility.systemCopyBuffer = res.name;
+                });
+
+                var status = string.IsNullOrEmpty(res.scriptInfo.filePath)
+                    ? DropdownMenuAction.Status.Disabled
+                    : DropdownMenuAction.Status.Normal;
+                evt.menu.AppendAction("Open in C# editor", _ => OpenScriptInfo(res.scriptInfo), status);
+            }));
+
             m_GridResourceListTexts[resourceListItem] = new List<TextElement> { resourceLabel };
 
             return resourceListItem;
@@ -1471,7 +1528,7 @@ namespace UnityEditor.Rendering
             return -1;
         }
 
-        void CreateRWResourceBlockElement(int offsetPx, ResourceRWBlock block)
+        void CreateRWResourceBlockElement(int offsetPx, ResourceRWBlock block, string passName = null, string resourceName = null)
         {
             string accessType = null;
             if (block.read && block.write)
@@ -1497,6 +1554,12 @@ namespace UnityEditor.Rendering
                     block.element.AddToClassList(Classes.kResourceDependencyBlockWrite);
                     accessType = "Write";
                 }
+            }
+
+            // Tag element with pass and resource names for test automation
+            if (!string.IsNullOrEmpty(passName) && !string.IsNullOrEmpty(resourceName))
+            {
+                block.element.name = $"{passName}_{resourceName}_block";
             }
 
             string tooltip = string.Empty;
@@ -1763,7 +1826,8 @@ namespace UnityEditor.Rendering
                         continue; // No need to create a visual element
 
                     int offsetPx = visiblePassIndex * kPassWidthPx;
-                    CreateRWResourceBlockElement(offsetPx, block);
+                    var passName = m_CurrentDebugData.passList[passId].name;
+                    CreateRWResourceBlockElement(offsetPx, block, passName, res.name);
                     block.visibleResourceIndex = visibleResourceIndex;
                     row.Add(block.element);
                     m_PassElementsInfo[visiblePassIndex].resourceBlocks.Add(block);
@@ -1794,15 +1858,23 @@ namespace UnityEditor.Rendering
 
         void RebuildGraphViewerUI()
         {
-            if (rootVisualElement?.childCount == 0 || RenderGraphDebugSession.currentDebugSession == null)
+            if (rootVisualElement?.childCount == 0 || RenderGraphDebugSessionManager.currentDebugSession == null)
                 return;
 
             ClearGraphViewerUI();
             ClearEmptyStateMessage();
 
-            if (RenderGraphDebugSession.GetRegisteredGraphs().Count == 0)
+            if (RenderGraphDebugSessionManager.GetRegisteredGraphs().Count == 0)
             {
-                SetEmptyStateMessage(EmptyStateReason.NoGraphRegistered);
+                // If connected to remote player and Editor settings suggest no checks, show more helpful message
+                if (RenderGraphDebugSessionManager.currentDebugSession is RenderGraphEditorRemoteDebugSession)
+                {
+                    SetEmptyStateMessage(EmptyStateReason.NoDataFromPlayer, true);
+                }
+                else
+                {
+                    SetEmptyStateMessage(EmptyStateReason.NoGraphRegistered);
+                }
                 return;
             }
 
@@ -2025,36 +2097,40 @@ namespace UnityEditor.Rendering
             if (statusLabel == null || footerContainer == null)
                 return;
 
-            footerContainer.style.display = m_Paused ? DisplayStyle.Flex : DisplayStyle.None;
+            footerContainer.style.display = isPaused ? DisplayStyle.Flex : DisplayStyle.None;
 
-            if (!m_Paused)
+            if (!isPaused)
                 return;
 
-            string connectionStatus = m_IsDeviceConnected ? "Online" : "Offline";
-
-            bool isEditor = m_ConnectedDeviceName == k_EditorName;
-            string sourceLabel = isEditor ? "Source: Editor" : $"Source: {m_ConnectedDeviceName} ({connectionStatus})";
-
-            bool hasCapture = HasValidDebugData && m_LastDataCaptureTime != DateTime.MinValue;
-            string captureLabel = hasCapture ? $"Captured: {m_LastDataCaptureTime:HH:mm:ss}" : "No data captured";
-
-            string statusText = $"{sourceLabel} | {captureLabel}";
-
-            statusLabel.text = statusText;
+            if (!HasValidDebugData)
+            {
+                statusLabel.text = "No data captured";
+            }
+            else
+            {
+                string sourceLabel;
+                if (RenderGraphDebugSessionManager.currentDebugSession is RenderGraphEditorLocalDebugSession)
+                {
+                    sourceLabel = "Editor";
+                }
+                else
+                {
+                    bool isConnected = m_PlayerConnection.connectionState.connectedToTarget == ConnectionTarget.Player;
+                    string connectionStatus = isConnected ? "Online" : "Offline";
+                    sourceLabel = $"{m_CurrentDebugData.captureSourceString} ({connectionStatus})";
+                }
+                statusLabel.text = $"Source: {sourceLabel} | Captured: {m_CurrentDebugData.captureTimestamp}";
+            }
         }
 
         void UpdateCurrentDebugData(bool force = false)
         {
-            if (m_Paused && !force)
+            if (isPaused && !force)
                 return; // Don't update data when paused except for if we force the update
 
             if (selectedExecutionItem != null)
             {
-                m_CurrentDebugData = RenderGraphDebugSession.GetDebugData(m_SelectedRenderGraph, selectedExecutionItem.id);
-
-                // Update timestamp when we get valid data, or when forcing an update
-                if (HasValidDebugData || force)
-                    m_LastDataCaptureTime = DateTime.Now;
+                m_CurrentDebugData = RenderGraphDebugSessionManager.GetDebugData(m_SelectedRenderGraph, selectedExecutionItem.id);
             }
             else
             {
@@ -2067,8 +2143,6 @@ namespace UnityEditor.Rendering
                     currentGraphDropdown.style.display = DisplayStyle.None;
                 if (currentExecutionToolbarMenu != null)
                     currentExecutionToolbarMenu.style.display = DisplayStyle.None;
-
-                m_LastDataCaptureTime = DateTime.MinValue;
             }
 
             UpdateStatusLabel();
@@ -2090,10 +2164,8 @@ namespace UnityEditor.Rendering
 
         void CreateGUI()
         {
-            s_EditorWindowInstanceId = GetInstanceID();
+            s_EditorWindowEntityId = GetEntityId();
 
-            if (EditorPrefs.HasKey(kPassFilterLegacyEditorPrefsKey))
-                m_PassFilterLegacy = (PassFilterLegacy)EditorPrefs.GetInt(kPassFilterLegacyEditorPrefsKey);
             if (EditorPrefs.HasKey(kPassFilterEditorPrefsKey))
                 m_PassFilter = (PassFilter)EditorPrefs.GetInt(kPassFilterEditorPrefsKey);
             if (EditorPrefs.HasKey(kResourceFilterEditorPrefsKey))
@@ -2112,70 +2184,78 @@ namespace UnityEditor.Rendering
 
             InitializeUI();
 
-            if (m_PlayerConnection == null)
-            {
-                var connectionState = PlayerConnectionGUIUtility.GetConnectionState(this);
-                m_PlayerConnection = new PlayerConnection(connectionState, OnPlayerConnected, OnPlayerDisconnected);
-
-                // Initialize device connection state right here while we have it
-                if (!string.IsNullOrEmpty(connectionState.connectionName))
-                {
-                    m_ConnectedDeviceName = connectionState.connectionName;
-                    m_IsDeviceConnected = true;
-                }
-                else
-                {
-                    m_ConnectedDeviceName = k_EditorName;
-                    m_IsDeviceConnected = true;
-                }
-
-                connectionState.Dispose(); // Dispose it immediately after use
-            }
+            m_PlayerConnection ??= new PlayerConnection(this, OnPlayerConnected, OnPlayerDisconnected);
+            m_PlayerConnection.Connect();
 
             var connectionDropdown = rootVisualElement.Q<IMGUIContainer>(Names.kConnectionDropdown);
             connectionDropdown.onGUIHandler = m_PlayerConnection.OnConnectionDropdownIMGUI;
 
-            if (RenderGraphDebugSession.currentDebugSession == null)
+            if (RenderGraphDebugSessionManager.currentDebugSession == null)
                 ConnectDebugSession<RenderGraphEditorLocalDebugSession>();
+
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+
             UpdateStatusLabel();
         }
 
         void OnDisable()
         {
+            // Always dispose PlayerConnection to avoid resource leaks
+            m_PlayerConnection?.Dispose();
+            m_PlayerConnection = null;
+
             // NOTE: This is a workaround to deal with how Unity handles Maximize/Minimize. When the window gets
             // maximized, seemingly nothing happens. When it gets unmaximized, both OnEnable() and OnDisable() get called
             // on a new EditorWindow instance, which I guess was the maximized one? Anyway we need to ignore this event
             // because the DebugSession is static and we don't want to unsubscribe because the window is still open.
-            if (s_EditorWindowInstanceId != GetInstanceID())
+            if (s_EditorWindowEntityId != GetEntityId())
                 return;
 
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             m_CurrentDebugData?.Clear();
             DisconnectDebugSession();
-
-            m_PlayerConnection?.Dispose();
 
             GraphicsToolLifetimeAnalytic.WindowClosed<RenderGraphViewer>();
         }
 
+        internal void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            // The static debug session is reset on play mode changes and CreateGUI does not run again to reconnect this window.
+            if (state != PlayModeStateChange.EnteredPlayMode && state != PlayModeStateChange.EnteredEditMode)
+                return;
+            // While paused the viewer shows a frozen capture; defer reconnecting to unpause so it is not cleared.
+            if (isPaused)
+                return;
+            if (RenderGraphDebugSessionManager.currentDebugSession != null)
+                return;
+
+            ReconnectDebugSession();
+        }
+
+        void ReconnectDebugSession()
+        {
+            bool playerConnected = m_PlayerConnection != null && m_PlayerConnection.connectionState.connectedToTarget == ConnectionTarget.Player;
+            if (playerConnected)
+            {
+                ConnectDebugSession<RenderGraphEditorRemoteDebugSession>();
+                RenderGraphDebugSessionManager.currentDebugSession.connectionName = m_PlayerConnection.connectionState.connectionName;
+            }
+            else
+            {
+                ConnectDebugSession<RenderGraphEditorLocalDebugSession>();
+            }
+        }
+
         void OnPlayerConnected(int playerID)
         {
-            // Get device name fresh when needed
-            using (var connectionState = PlayerConnectionGUIUtility.GetConnectionState(this))
-            {
-                m_ConnectedDeviceName = connectionState?.connectionName ?? $"Remote Device {playerID}";
-            }
-            m_IsDeviceConnected = true;
-
-
             ConnectDebugSession<RenderGraphEditorRemoteDebugSession>();
+            RenderGraphDebugSessionManager.currentDebugSession.connectionName = m_PlayerConnection.connectionState.connectionName;
         }
 
         void OnPlayerDisconnected(int playerID)
         {
-            m_IsDeviceConnected = false;
-            m_ConnectedDeviceName = k_EditorName;
-
-            if (!m_Paused)
+            if (!isPaused)
             {
                 var autoPlayToggle = rootVisualElement.Q<ToolbarToggle>(Names.kAutoPauseToggle);
                 if (autoPlayToggle != null)
@@ -2184,7 +2264,7 @@ namespace UnityEditor.Rendering
                 }
             }
 
-            if (!m_Paused)
+            if (!isPaused)
             {
                 ConnectDebugSession<RenderGraphEditorLocalDebugSession>();
             }
@@ -2195,47 +2275,95 @@ namespace UnityEditor.Rendering
         }
 
         internal void ConnectDebugSession<TSession>()
-            where TSession : RenderGraphDebugSession, new()
+            where TSession : IRenderGraphDebugSession, new()
         {
-            if (typeof(TSession) == typeof(RenderGraphEditorLocalDebugSession))
-            {
-                if (m_ConnectedDeviceName == "Unknown" || m_ConnectedDeviceName == k_EditorName)
-                {
-                    m_ConnectedDeviceName = k_EditorName;
-                    m_IsDeviceConnected = true;
-                }
-            }
-
-            //If we are paused, we need to force update the current debug data once to ensure that the UI is up to date when the
-            //connection changes
-            if (m_Paused)
-                OnRegisteredGraphsChangedInternal(true);
-
-            if (RenderGraphDebugSession.currentDebugSession?.GetType() == typeof(TSession))
-                return;
+            // If we are paused, we need to force update the current debug data once to ensure that the UI is up to date when the
+            // connection changes
+            OnRegisteredGraphsChangedInternal(isPaused);
 
             DisconnectDebugSession();
 
-            RenderGraphDebugSession.Create<TSession>();
-            RenderGraphDebugSession.onRegisteredGraphsChanged += OnRegisteredGraphsChanged;
-            RenderGraphDebugSession.onDebugDataUpdated += OnDebugDataUpdated;
+            RenderGraphDebugSessionManager.BeginSession<TSession>();
+            RenderGraphDebugSessionManager.currentDebugSession.onRegisteredGraphsChanged += OnRegisteredGraphsChanged;
+            RenderGraphDebugSessionManager.currentDebugSession.onDebugDataUpdated += OnDebugDataUpdated;
+            RenderGraphDebugSessionManager.currentDebugSession.onPausedStateChanged += OnPausedStateChanged;
 
+            // Restore the paused state to the new session
+            RenderGraphDebugSessionManager.currentDebugSession.isPaused = m_StoredPausedState;
+
+            OnRegisteredGraphsChanged();
+        }
+
+        internal void ConnectDebugSession(IRenderGraphDebugSession session)
+        {
+            // If we are paused, we need to force update the current debug data once to ensure that the UI is up to date when the connection changes
+            OnRegisteredGraphsChangedInternal(session?.isPaused ?? false);
+
+            DisconnectDebugSession();
+
+            RenderGraphDebugSessionManager.BeginSession(session);
+            RenderGraphDebugSessionManager.currentDebugSession.onRegisteredGraphsChanged += OnRegisteredGraphsChanged;
+            RenderGraphDebugSessionManager.currentDebugSession.onDebugDataUpdated += OnDebugDataUpdated;
+            RenderGraphDebugSessionManager.currentDebugSession.onPausedStateChanged += OnPausedStateChanged;
+
+            // Restore the paused state to the new session
+            RenderGraphDebugSessionManager.currentDebugSession.isPaused = m_StoredPausedState;
+            
             OnRegisteredGraphsChanged();
         }
 
         void DisconnectDebugSession()
         {
-            if (RenderGraphDebugSession.currentDebugSession == null)
+            if (RenderGraphDebugSessionManager.currentDebugSession == null)
                 return;
 
-            RenderGraphDebugSession.EndSession();
-            RenderGraphDebugSession.onRegisteredGraphsChanged -= OnRegisteredGraphsChanged;
-            RenderGraphDebugSession.onDebugDataUpdated -= OnDebugDataUpdated;
+            // Store the paused state before disconnecting so it can be restored later
+            m_StoredPausedState = RenderGraphDebugSessionManager.currentDebugSession.isPaused;
 
-            m_IsDeviceConnected = false;
+            RenderGraphDebugSessionManager.currentDebugSession.onRegisteredGraphsChanged -= OnRegisteredGraphsChanged;
+            RenderGraphDebugSessionManager.currentDebugSession.onDebugDataUpdated -= OnDebugDataUpdated;
+            RenderGraphDebugSessionManager.currentDebugSession.onPausedStateChanged -= OnPausedStateChanged;
+            RenderGraphDebugSessionManager.EndSession();
+
             UpdateStatusLabel();
-
             ClearGraphViewerUI();
+        }
+
+        void IHasCustomMenu.AddItemsToMenu(GenericMenu menu)
+        {
+            if (Unsupported.IsDeveloperMode())
+            {
+                menu.AddItem(new GUIContent("Export Debug Session..."), false, ExportDebugSessionForTests);
+            }
+        }
+
+        void ExportDebugSessionForTests()
+        {
+            if (!RenderGraphDebugSessionManager.hasActiveDebugSession)
+            {
+                Debug.LogWarning("No active debug session found. Please render a frame first.");
+                return;
+            }
+
+            string defaultPath = System.IO.Path.Combine(Application.dataPath, $"{nameof(RenderGraphDebugSessionManager)}_{System.DateTime.Now.ToString("yyyy_MM_dd_HH_mm_ss")}.json");
+            string path = EditorUtility.SaveFilePanel("Export Debug Session",
+                System.IO.Path.GetDirectoryName(defaultPath),
+                System.IO.Path.GetFileName(defaultPath),
+                "json");
+
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                SerializedRenderGraphDebugSession.Export(RenderGraphDebugSessionManager.currentDebugSession, path);
+                Debug.Log($"Debug session exported successfully to: {path}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"Failed to export debug session: {ex.Message}");
+                Debug.LogException(ex);
+            }
         }
     }
 
@@ -2257,6 +2385,7 @@ namespace UnityEditor.Rendering
                 var painter = ctx.painter2D;
                 var resolvedStyle = ctx.visualElement.resolvedStyle;
                 var color = useStyle ? resolvedStyle.color : this.color;
+                color *= EditorUtility.activePlayModeTint;
                 var width = useStyle ? resolvedStyle.width : this.width;
                 var height = useStyle ? resolvedStyle.height : this.height;
 

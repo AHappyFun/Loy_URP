@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using UnityEngine.Assertions;
 using UnityEngine.Rendering;
 using Unity.Mathematics;
+using Unity.Mathematics.Geometry;
+using Unity.Collections;
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -14,16 +17,48 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
     {
         private IRayTracingAccelStruct _accelStruct;
         AccelStructInstances _instances;
+        Texture2DArray _terrainTextureArray;
+        readonly List<GraphicsBuffer> _aabbBuffers = new();
+        int _terrainCount;
+        // Width (and height) of the heightmap atlas in texels — the running max of every added
+        // terrain's resolution. Smaller terrains are padded into the upper-left of their slice.
+        int _maxTerrainResolution;
+        static RenderTexture s_EmptyTerrainTexture;
+        internal static readonly int _terrainTileWidth = 8;
+        static readonly int s_TerrainTextureId = Shader.PropertyToID("_TerrainTexture");
+        static readonly int s_TerrainTextureInvWidthId = Shader.PropertyToID("_TerrainTextureInvWidth");
 
-        internal AccelStructInstances Instances { get => _instances; }
-
-        struct InstanceIDs
+        static RenderTexture GetEmptyTerrainTexture()
         {
-            public int InstanceID;
-            public int AccelStructID;
+            if (s_EmptyTerrainTexture == null)
+            {
+                s_EmptyTerrainTexture = new RenderTexture(new RenderTextureDescriptor(1, 1)
+                {
+                    dimension = TextureDimension.Tex2DArray,
+                    depthBufferBits = 0,
+                    volumeDepth = 1,
+                    msaaSamples = 1,
+                    graphicsFormat = Experimental.Rendering.GraphicsFormat.R16_SNorm,
+                    enableRandomWrite = true,
+                });
+                s_EmptyTerrainTexture.Create();
+            }
+            return s_EmptyTerrainTexture;
         }
 
-        private readonly Dictionary<int, InstanceIDs[]> _objectHandleToInstances = new();
+        internal AccelStructInstances Instances { get => _instances; }
+        internal Texture2DArray TerrainTextureArray { get => _terrainTextureArray; }
+        internal int TerrainCount { get => _terrainCount; }
+
+        struct IdsOfInstances
+        {
+            public int IdOfInstance;
+            public int AccelStructID;
+            public Mesh OwnedMesh;
+        }
+
+        private readonly Dictionary<UInt64, IdsOfInstances[]> _objectHandleToInstances = new();
+        private readonly Dictionary<int, Stack<IdsOfInstances[]>> _freeInstanceArrays = new();
 
         public AccelStructAdapter(IRayTracingAccelStruct accelStruct, GeometryPool geometryPool)
         {
@@ -48,17 +83,47 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             _instances.Bind(cmd, shader);
         }
 
+        public void BindTerrainResources(CommandBuffer cmd, IRayTracingShader shader)
+        {
+            // Always bind something — Unity's ray tracing dispatch validates that all
+            // declared shader textures/buffers are bound, even if not accessed at runtime.
+            shader.SetTextureParam(cmd, s_TerrainTextureId, _terrainTextureArray != null ? _terrainTextureArray : GetEmptyTerrainTexture());
+            // Inverse of the heightmap atlas width in texels. Shaders use it to convert per-
+            // terrain texel indices into atlas-normalized UVs — the divisor differs from a
+            // terrain's own resolution when smaller terrains share the atlas with larger ones.
+            // Defaults to 1.0 against the 1×1 fallback texture above.
+            int atlasW = _maxTerrainResolution > 0 ? _maxTerrainResolution : 1;
+            shader.SetFloatParam(cmd, s_TerrainTextureInvWidthId, 1.0f / atlasW);
+        }
+
         public void Dispose()
         {
             _instances?.Dispose();
             _instances = null;
             _accelStruct?.Dispose();
             _accelStruct = null;
+
+            foreach (var instances in _objectHandleToInstances.Values)
+                foreach (var instance in instances)
+                    CoreUtils.Destroy(instance.OwnedMesh);
             _objectHandleToInstances.Clear();
+            _freeInstanceArrays.Clear();
+
+            foreach (var buf in _aabbBuffers)
+                buf?.Dispose();
+            _aabbBuffers.Clear();
+            _terrainCount = 0;
+            _maxTerrainResolution = 0;
+            if (_terrainTextureArray != null)
+            {
+                Object.DestroyImmediate(_terrainTextureArray);
+                _terrainTextureArray = null;
+            }
         }
 
-        public void AddInstance(int objectHandle, Component meshRendererOrTerrain, Span<uint> perSubMeshMask, Span<uint> perSubMeshMaterialIDs, Span<bool> perSubMeshIsOpaque, uint renderingLayerMask)
+        public void AddInstance(UInt64 objectHandle, Component meshRendererOrTerrain, Span<uint> perSubMeshMask, Span<uint> perSubMeshMaterialIDs, Span<bool> perSubMeshIsOpaque, uint renderingLayerMask)
         {
+#if ENABLE_TERRAIN_MODULE
             if (meshRendererOrTerrain is Terrain terrain)
             {
                 Debug.Assert(terrain.enabled, "Terrains are expected to be enabled.");
@@ -73,6 +138,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
                 AddInstance(objectHandle, terrainDesc);
             }
             else
+#endif
             {
                 var meshRenderer = (MeshRenderer)meshRendererOrTerrain;
                 Debug.Assert(meshRenderer.enabled, "Mesh renderers are expected to be enabled.");
@@ -82,11 +148,11 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             }
         }
 
-        public void AddInstance(int objectHandle, Mesh mesh, Matrix4x4 localToWorldMatrix, Span<uint> perSubMeshMask, Span<uint> perSubMeshMaterialIDs, Span<bool> perSubMeshIsOpaque, uint renderingLayerMask)
+        public void AddInstance(UInt64 objectHandle, Mesh mesh, Matrix4x4 localToWorldMatrix, Span<uint> perSubMeshMask, Span<uint> perSubMeshMaterialIDs, Span<bool> perSubMeshIsOpaque, uint renderingLayerMask)
         {
             int subMeshCount = mesh.subMeshCount;
 
-            var instances = new InstanceIDs[subMeshCount];
+            var instances = ReuseOrCreateInstanceArray(subMeshCount);
             for (int i = 0; i < subMeshCount; ++i)
             {
                 var instanceDesc = new MeshInstanceDesc(mesh, i)
@@ -96,26 +162,36 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
                     opaqueGeometry = perSubMeshIsOpaque[i]
                 };
 
-                instances[i].InstanceID = _instances.AddInstance(instanceDesc, perSubMeshMaterialIDs[i], renderingLayerMask);
-                instanceDesc.instanceID = (uint)instances[i].InstanceID;
+                instances[i].IdOfInstance = _instances.AddInstance(instanceDesc, perSubMeshMaterialIDs[i], renderingLayerMask);
+                instanceDesc.instanceID = (uint)instances[i].IdOfInstance;
                 instances[i].AccelStructID = _accelStruct.AddInstance(instanceDesc);
             }
 
             _objectHandleToInstances.Add(objectHandle, instances);
         }
 
-        private void AddInstance(int objectHandle, TerrainDesc terrainDesc)
+#if ENABLE_TERRAIN_MODULE
+        private void AddInstance(UInt64 objectHandle, TerrainDesc terrainDesc)
         {
-            List<InstanceIDs> instanceHandles = new List<InstanceIDs>();
+            List<IdsOfInstances> instanceHandles = new List<IdsOfInstances>();
 
-            AddHeightmap(terrainDesc, ref instanceHandles);
-            AddTrees(terrainDesc, ref instanceHandles);
+            try
+            {
+                AddHeightmap(terrainDesc, ref instanceHandles);
+                AddTrees(terrainDesc, ref instanceHandles);
+            }
+            catch
+            {
+                foreach (var instance in instanceHandles)
+                    CoreUtils.Destroy(instance.OwnedMesh);
+                throw;
+            }
 
             _objectHandleToInstances.Add(objectHandle, instanceHandles.ToArray());
 
         }
 
-        void AddHeightmap(TerrainDesc terrainDesc, ref List<InstanceIDs> instanceHandles)
+        void AddHeightmap(TerrainDesc terrainDesc, ref List<IdsOfInstances> instanceHandles)
         {
             var terrainMesh = TerrainToMesh.Convert(terrainDesc.terrain);
             var instanceDesc = new MeshInstanceDesc(terrainMesh);
@@ -124,11 +200,22 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             instanceDesc.enableTriangleCulling = terrainDesc.enableTriangleCulling;
             instanceDesc.frontTriangleCounterClockwise = terrainDesc.frontTriangleCounterClockwise;
 
-            instanceHandles.Add(AddInstance(instanceDesc, terrainDesc.materialID, terrainDesc.renderingLayerMask));
+            IdsOfInstances ids;
+            try
+            {
+                ids = AddInstance(instanceDesc, terrainDesc.materialID, terrainDesc.renderingLayerMask);
+            }
+            catch
+            {
+                CoreUtils.Destroy(terrainMesh);
+                throw;
+            }
 
+            ids.OwnedMesh = terrainMesh;
+            instanceHandles.Add(ids);
         }
 
-        void AddTrees(TerrainDesc terrainDesc, ref List<InstanceIDs> instanceHandles)
+        void AddTrees(TerrainDesc terrainDesc, ref List<IdsOfInstances> instanceHandles)
         {
             TerrainData terrainData = terrainDesc.terrain.terrainData;
             Matrix4x4 terrainLocalToWorld = terrainDesc.localToWorldMatrix;
@@ -166,45 +253,227 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
                 }
             }
         }
+#endif
 
-        InstanceIDs AddInstance(MeshInstanceDesc instanceDesc, uint materialID, uint renderingLayerMask)
+        static MinMaxAABB TileAabb(short[] heightData, int resolution, float3 heightmapScale, int2 topLeftCorner)
         {
-            InstanceIDs res = new InstanceIDs();
-            res.InstanceID = _instances.AddInstance(instanceDesc, materialID, renderingLayerMask);
-            instanceDesc.instanceID = (uint)res.InstanceID;
+            MinMaxAABB tileAabb = new MinMaxAABB(float.PositiveInfinity, float.NegativeInfinity);
+
+            for (int x = 0; x <= _terrainTileWidth; ++x)
+                for (int y = 0; y <= _terrainTileWidth; ++y)
+                {
+                    int2 coord = new int2(topLeftCorner.x + x, topLeftCorner.y + y);
+                    float h = (float)heightData[coord.y * resolution + coord.x] / 32767.0f;
+
+                    float3 pos = new float3(coord.x, h, coord.y) * heightmapScale;
+                    tileAabb.Encapsulate(pos);
+                }
+
+            return tileAabb;
+        }
+
+        static GraphicsBuffer CreateTerrainAabbBuffer(short[] heightData, int resolution, float3 heightmapScale)
+        {
+            int tilesPerAxis = (resolution - 1) / _terrainTileWidth;
+            int tileCount = tilesPerAxis * tilesPerAxis;
+            var aabbs = new MinMaxAABB[tileCount];
+
+            for (int i = 0; i < tileCount; ++i)
+            {
+                int x = i % tilesPerAxis;
+                int y = i / tilesPerAxis;
+                aabbs[i] = TileAabb(heightData, resolution, heightmapScale, new int2(x, y) * _terrainTileWidth);
+            }
+
+            var buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, tileCount, 6 * sizeof(float));
+            buffer.SetData(aabbs);
+            return buffer;
+        }
+
+        internal static Texture2D CreateTerrainTextureForTest(short[] heightData, int resolution, byte[] holeData, int holeResolution)
+            => CreateTerrainTexture(heightData, resolution, holeData, holeResolution);
+
+        static Texture2D CreateTerrainTexture(short[] heightData, int resolution, byte[] holeData, int holeResolution)
+        {
+            var texture = new Texture2D(resolution, resolution, Experimental.Rendering.GraphicsFormat.R16_SNorm, Experimental.Rendering.TextureCreationFlags.None);
+
+            // The Engine's terrain values are always in the range [0-32766].
+            // We store them in the range [1-32767] so the shader can uniformly subtract 1/32767
+            // to recover the original value. For holes, we negate the biased value.
+            // The +1 bias is always applied (even without holes) so that height=0 doesn't
+            // become negative after the shader's subtraction and get misdetected as a hole.
+            var biasedHeights = new NativeArray<short>(resolution * resolution, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            for (int i = 0; i < resolution * resolution; ++i)
+            {
+                short v = (short)(heightData[i] + 1);
+
+                if (holeData != null)
+                {
+                    int x = i % resolution;
+                    int y = i / resolution;
+                    bool isHole = x < holeResolution && y < holeResolution && holeData[y * holeResolution + x] == 0;
+
+                    if (isHole)
+                        v = (short)(-v);
+                }
+
+                biasedHeights[i] = v;
+            }
+
+            texture.SetPixelData(biasedHeights, 0);
+            texture.Apply();
+            biasedHeights.Dispose();
+
+            return texture;
+        }
+
+        // Append `newSlice` (sized newSliceResolution × newSliceResolution) into the heightmap
+        // atlas. The atlas is sized to _maxTerrainResolution; smaller slices live in the
+        // upper-left of their slot and the rest is zero-padded. If the atlas needs to grow,
+        // existing slices are partial-copied into the upper-left of correspondingly larger
+        // slots in a freshly allocated array.
+        void GrowTextureArray(Texture2D newSlice, int newSliceResolution, int previousAtlasWidth)
+        {
+            int atlasW = _maxTerrainResolution;
+            int newCount = _terrainCount + 1;
+            var newArray = new Texture2DArray(atlasW, atlasW, newCount,
+                Experimental.Rendering.GraphicsFormat.R16_SNorm, Experimental.Rendering.TextureCreationFlags.None);
+
+            // Zero-initialize every slot so padding regions are well-defined.
+            // Upload one zeroed slice from the CPU and broadcast it to every slot via
+            // GPU-local CopyTexture, avoiding an O(N) PCIe transfer per grow.
+            var zeroSlice = new Texture2D(atlasW, atlasW, Experimental.Rendering.GraphicsFormat.R16_SNorm, Experimental.Rendering.TextureCreationFlags.None);
+            var zeros = new NativeArray<short>(atlasW * atlasW, Allocator.Temp, NativeArrayOptions.ClearMemory);
+            zeroSlice.SetPixelData(zeros, 0);
+            zeroSlice.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+            zeros.Dispose();
+
+            for (int slot = 0; slot < newCount; slot++)
+                Graphics.CopyTexture(zeroSlice, 0, 0, newArray, slot, 0);
+
+            Object.DestroyImmediate(zeroSlice);
+
+            if (_terrainTextureArray != null)
+            {
+                for (int i = 0; i < _terrainCount; i++)
+                    Graphics.CopyTexture(_terrainTextureArray, i, 0, 0, 0, previousAtlasWidth, previousAtlasWidth, newArray, i, 0, 0, 0);
+                Object.DestroyImmediate(_terrainTextureArray);
+            }
+
+            Graphics.CopyTexture(newSlice, 0, 0, 0, 0, newSliceResolution, newSliceResolution, newArray, _terrainCount, 0, 0, 0);
+            _terrainTextureArray = newArray;
+        }
+
+        public void AddTerrainInstance(
+            UInt64 objectHandle,
+            short[] heightData,
+            int resolution,
+            float3 heightmapScale,
+            byte[] holeData,
+            int holeResolution,
+            Matrix4x4 localToWorldMatrix,
+            uint materialID,
+            uint renderingLayerMask,
+            uint instanceMask = 0xFFFFFFFF)
+        {
+            int previousAtlasWidth = _maxTerrainResolution;
+            _maxTerrainResolution = math.max(_maxTerrainResolution, resolution);
+
+            var aabbBuffer = CreateTerrainAabbBuffer(heightData, resolution, heightmapScale);
+            _aabbBuffers.Add(aabbBuffer);
+
+            var sliceTexture = CreateTerrainTexture(heightData, resolution, holeData, holeResolution);
+            GrowTextureArray(sliceTexture, resolution, previousAtlasWidth);
+            Object.DestroyImmediate(sliceTexture);
+
+            int tilesPerAxis = (resolution - 1) / _terrainTileWidth;
+            int log2TilesPerAxis = (int)math.log2(tilesPerAxis);
+
+            var terrainData = new AccelStructInstances.RTTerrain
+            {
+                terrainScale = heightmapScale,
+                heightmapWidthInTexels = resolution,
+                invTerrainScale = 1.0f / heightmapScale,
+                invHeightmapWidthInTexels = 1.0f / resolution,
+                pow2DivideTileCountX = log2TilesPerAxis,
+                pow2ModuloTileCountX = (1 << log2TilesPerAxis) - 1,
+                tileWidthInCells = _terrainTileWidth,
+                invTerrainWidthInCells = 1.0f / (resolution - 1),
+            };
+
+            var instanceDesc = new ProceduralInstanceDesc(aabbBuffer, (uint)aabbBuffer.count);
+            instanceDesc.localToWorldMatrix = localToWorldMatrix;
+            instanceDesc.mask = instanceMask;
+
+            var instances = new IdsOfInstances[1];
+            instances[0].IdOfInstance = _instances.AddInstance(instanceDesc, materialID, renderingLayerMask, terrainData);
+            instanceDesc.instanceID = (uint)instances[0].IdOfInstance;
+            instances[0].AccelStructID = _accelStruct.AddInstance(instanceDesc);
+
+            _objectHandleToInstances.Add(objectHandle, instances);
+            _terrainCount++;
+        }
+
+        IdsOfInstances AddInstance(MeshInstanceDesc instanceDesc, uint materialID, uint renderingLayerMask)
+        {
+            IdsOfInstances res = new IdsOfInstances();
+            res.IdOfInstance = _instances.AddInstance(instanceDesc, materialID, renderingLayerMask);
+            instanceDesc.instanceID = (uint)res.IdOfInstance;
             res.AccelStructID = _accelStruct.AddInstance(instanceDesc);
 
             return res;
         }
 
 
-        public void RemoveInstance(int objectHandle)
+        public void RemoveInstance(UInt64 objectHandle)
         {
             bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
             Assert.IsTrue(success);
 
             foreach (var instance in instances)
             {
-                _instances.RemoveInstance(instance.InstanceID);
+                _instances.RemoveInstance(instance.IdOfInstance);
                 _accelStruct.RemoveInstance(instance.AccelStructID);
+                CoreUtils.Destroy(instance.OwnedMesh);
             }
 
             _objectHandleToInstances.Remove(objectHandle);
+            RecycleInstanceArray(instances);
         }
 
-        public void UpdateInstanceTransform(int objectHandle, Matrix4x4 localToWorldMatrix)
+        IdsOfInstances[] ReuseOrCreateInstanceArray(int length)
+        {
+            if (_freeInstanceArrays.TryGetValue(length, out var freeArrays) && freeArrays.Count != 0)
+                return freeArrays.Pop();
+
+            return new IdsOfInstances[length];
+        }
+
+        void RecycleInstanceArray(IdsOfInstances[] instances)
+        {
+            if (!_freeInstanceArrays.TryGetValue(instances.Length, out var freeArrays))
+            {
+                freeArrays = new Stack<IdsOfInstances[]>();
+                _freeInstanceArrays.Add(instances.Length, freeArrays);
+            }
+
+            Array.Clear(instances, 0, instances.Length);
+            freeArrays.Push(instances);
+        }
+
+        public void UpdateInstanceTransform(UInt64 objectHandle, Matrix4x4 localToWorldMatrix)
         {
             bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
             Assert.IsTrue(success);
 
             foreach(var instance in instances)
             {
-                _instances.UpdateInstanceTransform(instance.InstanceID, localToWorldMatrix);
+                _instances.UpdateInstanceTransform(instance.IdOfInstance, localToWorldMatrix);
                 _accelStruct.UpdateInstanceTransform(instance.AccelStructID, localToWorldMatrix);
             }
         }
 
-        public void UpdateInstanceMaterialIDs(int objectHandle, Span<uint> perSubMeshMaterialIDs)
+        public void UpdateInstanceMaterialIDs(UInt64 objectHandle, Span<uint> perSubMeshMaterialIDs)
         {
             bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
             Assert.IsTrue(success);
@@ -212,11 +481,11 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             int i = 0;
             foreach (var instance in instances)
             {
-                _instances.UpdateInstanceMaterialID(instance.InstanceID, perSubMeshMaterialIDs[i++]);
+                _instances.UpdateInstanceMaterialID(instance.IdOfInstance, perSubMeshMaterialIDs[i++]);
             }
         }
 
-        public void UpdateInstanceMask(int objectHandle, Span<uint> perSubMeshMask)
+        public void UpdateInstanceMask(UInt64 objectHandle, Span<uint> perSubMeshMask)
         {
             bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
             Assert.IsTrue(success);
@@ -224,13 +493,13 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             int i = 0;
             foreach (var instance in instances)
             {
-                _instances.UpdateInstanceMask(instance.InstanceID, perSubMeshMask[i]);
+                _instances.UpdateInstanceMask(instance.IdOfInstance, perSubMeshMask[i]);
                 _accelStruct.UpdateInstanceMask(instance.AccelStructID, perSubMeshMask[i]);
                 i++;
             }
         }
 
-        public void UpdateInstanceMask(int objectHandle, uint mask)
+        public void UpdateInstanceMask(UInt64 objectHandle, uint mask)
         {
             bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
             Assert.IsTrue(success);
@@ -241,7 +510,7 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             int i = 0;
             foreach (var instance in instances)
             {
-                _instances.UpdateInstanceMask(instance.InstanceID, perSubMeshMask[i]);
+                _instances.UpdateInstanceMask(instance.IdOfInstance, perSubMeshMask[i]);
                 _accelStruct.UpdateInstanceMask(instance.AccelStructID, perSubMeshMask[i]);
                 i++;
             }
@@ -258,20 +527,28 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             _instances.NextFrame();
         }
 
-        public bool GetInstanceIDs(int rendererID, out int[] instanceIDs)
+        public bool GetInstanceIDs(UInt64 rendererID, out int[] instanceIDs)
         {
-            if (!_objectHandleToInstances.TryGetValue(rendererID, out InstanceIDs[] instIDs))
+            if (!_objectHandleToInstances.TryGetValue(rendererID, out IdsOfInstances[] instIDs))
             {
                 // This should never happen as long as the renderer was already added to the acceleration structure
                 instanceIDs = null;
                 return false;
             }
-            instanceIDs = Array.ConvertAll(instIDs, item => item.InstanceID);
+            instanceIDs = Array.ConvertAll(instIDs, item => item.IdOfInstance);
             return true;
+        }
+
+        public int GetInstanceID(UInt64 objectHandle, int subMeshIndex)
+        {
+            bool success = _objectHandleToInstances.TryGetValue(objectHandle, out var instances);
+            Assert.IsTrue(success);
+            return instances[subMeshIndex].IdOfInstance;
         }
 
     }
 
+#if ENABLE_TERRAIN_MODULE
     internal struct TerrainDesc
     {
         public Terrain terrain;
@@ -293,4 +570,5 @@ namespace UnityEngine.Rendering.UnifiedRayTracing
             frontTriangleCounterClockwise = false;
         }
     }
+#endif
 }

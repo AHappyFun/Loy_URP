@@ -9,12 +9,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
     /// </summary>
     public sealed class RenderGraphObjectPool
     {
-        // Only used to clear all existing pools at once from here when needed 
-        static DynamicArray<SharedObjectPoolBase> s_AllocatedPools = new DynamicArray<SharedObjectPoolBase>();
+        // Only used to clear all existing pools at once from here when needed
+        static readonly DynamicArray<SharedObjectPoolBase> s_AllocatedPools = new DynamicArray<SharedObjectPoolBase>();
 
         // Non abstract class instead of an interface to store it in a DynamicArray
         class SharedObjectPoolBase
-        {        
+        {
             public SharedObjectPoolBase() {}
             public virtual void Clear() {}
         }
@@ -22,7 +22,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         class SharedObjectPool<T> : SharedObjectPoolBase where T : class, new()
         {
             private static readonly Pool.ObjectPool<T> s_Pool = AllocatePool();
-            
+
             private static Pool.ObjectPool<T> AllocatePool()
             {
                 var newPool = new Pool.ObjectPool<T>(() => new T(), null, null);
@@ -39,7 +39,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
             {
                 s_Pool.Clear();
             }
-            
+
             /// <summary>
             /// Get a new instance from the pool.
             /// </summary>
@@ -110,12 +110,12 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
             m_AllocatedMaterialPropertyBlocks.Clear();
         }
-        
+
         internal bool IsEmpty()
         {
             return m_AllocatedArrays.Count == 0 && m_AllocatedMaterialPropertyBlocks.Count == 0;
         }
-        
+
         // Regular pooling API. Only internal use for now
         internal T Get<T>() where T : class, new()
         {
@@ -124,6 +124,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         internal void Release<T>(T value) where T : class, new()
         {
+            if (value is IRenderGraphPassData resettable)
+                resettable.Reset();
+
             SharedObjectPool<T>.Release(value);
         }
 
@@ -137,5 +140,17 @@ namespace UnityEngine.Rendering.RenderGraphModule
             foreach (var pool in s_AllocatedPools)
                 pool.Clear();
         }
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            foreach (var pool in s_AllocatedPools)
+                pool.Clear();
+
+            // s_AllocatedPools is populated by generic class instantiation of SharedObjectPool<T> when the static
+            // variable s_Pool is initialized, and won't re-register without domain reload, so it should not be cleared.
+        }
+#endif
     }
 }

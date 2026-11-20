@@ -41,9 +41,12 @@ namespace UnityEngine.Rendering.Universal
         /// <summary>
         /// Returns null if there isn't an active upscaler
         /// </summary>
-#if ENABLE_UPSCALER_FRAMEWORK
-        public IUpscaler activeUpscaler;
-#endif
+        internal IUpscaler activeUpscaler;
+
+        /// <summary>
+        /// True when the active upscaler is one of the built-in embedded upscalers.
+        /// </summary>
+        internal bool activeUpscalerIsEmbedded;
 
         /// <summary>
         /// Empty function added for the IDisposable interface.
@@ -56,6 +59,8 @@ namespace UnityEngine.Rendering.Universal
             useFastSRGBLinearConversion = false;
             supportScreenSpaceLensFlare = false;
             supportDataDrivenLensFlare = false;
+            activeUpscaler = null;
+            activeUpscalerIsEmbedded = false;
         }
     }
 }

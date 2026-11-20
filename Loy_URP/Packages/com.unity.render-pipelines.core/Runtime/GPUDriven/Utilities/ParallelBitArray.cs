@@ -1,13 +1,14 @@
+#if !UNITY_WEBGL_RENDERER_ONLY
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using UnityEngine.Assertions;
 
 namespace UnityEngine.Rendering
 {
-    internal struct ParallelBitArray
+    internal struct ParallelBitArray : IDisposable
     {
         private Allocator m_Allocator;
         private NativeArray<long> m_Bits;
@@ -77,7 +78,7 @@ namespace UnityEngine.Rendering
         {
             unsafe
             {
-                Debug.Assert(0 <= index && index < m_Length);
+                Assert.IsTrue(0 <= index && index < m_Length);
 
                 int entry_index = index >> 6;
                 long* entries = (long*)m_Bits.GetUnsafePtr();
@@ -99,7 +100,7 @@ namespace UnityEngine.Rendering
         {
             unsafe
             {
-                Debug.Assert(0 <= index && index < m_Length);
+                Assert.IsTrue(0 <= index && index < m_Length);
 
                 int entry_index = index >> 6;
                 long* entries = (long*)m_Bits.GetUnsafeReadOnlyPtr();
@@ -172,3 +173,5 @@ namespace UnityEngine.Rendering
         }
     }
 }
+
+#endif // !UNITY_WEBGL_RENDERER_ONLY

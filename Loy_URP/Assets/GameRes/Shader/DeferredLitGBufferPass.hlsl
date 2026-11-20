@@ -141,6 +141,12 @@ inline void InitInputData(Varyings input, half3 normalTS, out InputData inputDat
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.viewDirWS_fogFactor.w);
     inputData.vertexLighting = half3(0, 0, 0);
+    inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+
+#if defined(_SCREEN_SPACE_IRRADIANCE)
+    inputData.bakedGI = SampleScreenSpaceGI(input.positionCS.xy, GetInvPreExposureMultiplier());
+    inputData.shadowMask = 1.0h;
+#else
 
     //BakedGI
     half3 bakedGI = half3(0,0,0);
@@ -180,8 +186,7 @@ inline void InitInputData(Varyings input, half3 normalTS, out InputData inputDat
     #if defined(LIGHTMAP_ON) || !(defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
     inputData.shadowMask = shadowMask;
     #endif
-
-    inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+#endif
 }
 
 

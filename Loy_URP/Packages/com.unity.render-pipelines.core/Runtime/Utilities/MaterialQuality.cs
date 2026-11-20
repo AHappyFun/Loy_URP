@@ -27,7 +27,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Keywords strings for Material Quality levels.
         /// </summary>
-        public static string[] KeywordNames =
+        public static readonly string[] KeywordNames =
         {
             "MATERIAL_QUALITY_LOW",
             "MATERIAL_QUALITY_MEDIUM",
@@ -37,12 +37,12 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// String representation of the MaterialQuality enum.
         /// </summary>
-        public static string[] EnumNames = Enum.GetNames(typeof(MaterialQuality));
+        public static readonly string[] EnumNames = Enum.GetNames(typeof(MaterialQuality));
 
         /// <summary>
         /// Keywords for Material Quality levels.
         /// </summary>
-        public static ShaderKeyword[] Keywords =
+        public static readonly ShaderKeyword[] Keywords =
         {
             new ShaderKeyword(KeywordNames[0]),
             new ShaderKeyword(KeywordNames[1]),

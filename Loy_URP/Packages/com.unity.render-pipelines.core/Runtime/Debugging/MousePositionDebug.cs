@@ -16,6 +16,14 @@ namespace UnityEngine.Rendering
         // Singleton
         private static MousePositionDebug s_Instance = null;
 
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            s_Instance = null;
+        }
+#endif
+
         /// <summary>
         /// Singleton instance.
         /// </summary>

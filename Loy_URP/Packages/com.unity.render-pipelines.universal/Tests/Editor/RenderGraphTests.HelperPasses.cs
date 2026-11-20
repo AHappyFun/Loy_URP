@@ -1,18 +1,23 @@
 using NUnit.Framework;
 using UnityEngine.Experimental.Rendering;
 using Unity.Collections;
+using UnityEditor.Rendering.Tests;
 using UnityEngine.Rendering.RenderGraphModule.Util;
 using UnityEngine.Rendering.Universal;
 using static UnityEngine.Rendering.RenderGraphModule.Util.RenderGraphUtils;
-
-#if UNITY_EDITOR
 using UnityEditor.Rendering;
-#endif
 
 namespace UnityEngine.Rendering.Tests
 {
     internal partial class RenderGraphTests : RenderGraphTestsCore
     {
+        [OneTimeSetUp]
+        public void OneTimeSetup()
+        {
+            if (!(GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset))
+                Assert.Ignore("Current pipeline is not URP. Skipping tests...");
+        }
+
         static GraphicsFormat[] depthBlitTestFormats =
         {
             GraphicsFormat.D32_SFloat,

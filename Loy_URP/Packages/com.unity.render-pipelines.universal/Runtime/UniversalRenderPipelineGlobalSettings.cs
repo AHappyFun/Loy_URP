@@ -2,10 +2,12 @@ using System;
 using System.IO;
 using System.ComponentModel;
 using System.Collections.Generic;
+using Unity.RenderPipelines.Core.Runtime.Shared;
 using UnityEngine.Serialization;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.Rendering;
+using UnityEditorInternal;
 #endif
 
 namespace UnityEngine.Rendering.Universal
@@ -15,7 +17,7 @@ namespace UnityEngine.Rendering.Universal
     /// Global settings are unique per Render Pipeline type. In URP, Global Settings contain:
     /// - light layer names
     /// </summary>
-    [URPHelpURL("urp-global-settings")]
+    [URPHelpURL("urp/urp-global-settings")]
     [DisplayInfo(name = "URP Global Settings Asset", order = CoreUtils.Sections.section4 + 2)]
     [SupportedOnRenderPipeline(typeof(UniversalRenderPipelineAsset))]
     [DisplayName("URP")]
@@ -28,7 +30,7 @@ namespace UnityEngine.Rendering.Universal
 
         internal bool IsAtLastVersion() => k_LastVersion == m_AssetVersion;
 
-        internal const int k_LastVersion = 10;
+        internal const int k_LastVersion = 14;
 
 #pragma warning disable CS0414
         [SerializeField][FormerlySerializedAs("k_AssetVersion")]
@@ -62,8 +64,8 @@ namespace UnityEngine.Rendering.Universal
             if (asset.m_AssetVersion < 3)
             {
                 int index = 0;
-                asset.m_RenderingLayerNames = new string[8];
 #pragma warning disable 618 // Obsolete warning
+                asset.m_RenderingLayerNames = new string[8];
                 asset.m_RenderingLayerNames[index++] = asset.lightLayerName0;
                 asset.m_RenderingLayerNames[index++] = asset.lightLayerName1;
                 asset.m_RenderingLayerNames[index++] = asset.lightLayerName2;
@@ -102,9 +104,6 @@ namespace UnityEngine.Rendering.Universal
             if (asset.m_AssetVersion < 6)
             {
                 MigrateToRenderPipelineGraphicsSettings(asset);
-#pragma warning disable 618 // Type or member is obsolete
-                asset.m_EnableRenderGraph = false;
-#pragma warning restore 618 // Type or member is obsolete
                 asset.m_AssetVersion = 6;
             }
 
@@ -113,22 +112,9 @@ namespace UnityEngine.Rendering.Universal
 #pragma warning disable 618 // Type or member is obsolete
                 if (asset.m_RenderingLayerNames is { Length: > 0 })
                 {
-                    for (int i = 1; i < asset.m_RenderingLayerNames.Length; i++)
-                    {
-                        if (i >= RenderingLayerMask.GetRenderingLayerCount())
-                            RenderPipelineEditorUtility.TryAddRenderingLayerName("");
-
-                        var name = asset.m_RenderingLayerNames[i];
-                        if(string.IsNullOrWhiteSpace(name))
-                            continue;
-
-                        var currentLayerName = RenderingLayerMask.RenderingLayerToName(i);
-                        if (!string.IsNullOrWhiteSpace(currentLayerName))
-                            currentLayerName += $" - {name}";
-                        else
-                            currentLayerName = name;
-                        RenderPipelineEditorUtility.TrySetRenderingLayerName(i, currentLayerName);
-                    }
+                    // We can't output an error here because Inner migration could cause another migration due a Graphics Settings asset reimporting.
+                    InternalRenderPipelineGlobalSettingsUtils
+                        .TryMigrateRenderingLayersToTagManager<UniversalRenderPipeline>(asset.m_RenderingLayerNames);
                 }
 #pragma warning restore 618 // Type or member is obsolete
                 asset.m_AssetVersion = 7;
@@ -169,9 +155,88 @@ namespace UnityEngine.Rendering.Universal
                 asset.m_AssetVersion = 10;
             }
 
+            if (asset.m_AssetVersion < 11)
+            {
+                MigrateFilmGrainTextures();
+                asset.m_AssetVersion = 11;
+            }
+
+            if (asset.m_AssetVersion < 12)
+            {
+                var exposureSettings = GetOrCreateGraphicsSettings<URPExposureSettings>(asset);
+                exposureSettings.UseExposure = false;
+                asset.m_AssetVersion = 12;
+            }
+
+            if (asset.m_AssetVersion < 13)
+            {
+                var shadowBiasSettings = GetOrCreateGraphicsSettings<URPShadowBiasSettings>(asset);
+                shadowBiasSettings.depthBiasMode = ShadowDepthBiasMode.Legacy;
+                asset.m_AssetVersion = 13;
+            }
+
+            if (asset.m_AssetVersion < 14)
+            {
+                MigrateScreenSpaceAmbientOcclusionToVolumeProfiles(asset);
+                asset.m_AssetVersion = 14;
+            }
+
             // If the asset version has changed, means that a migration step has been executed
             if (assetVersionBeforeUpgrade != asset.m_AssetVersion)
                 EditorUtility.SetDirty(asset);
+        }
+
+        static void MigrateFilmGrainTextures()
+        {
+            // Film Grain textures have been moved from PostProcessData reference to Global Settings to allow stripping
+            // the textures when unused. This migration step logs a user warning if they had customized the film grain
+            // textures, and removes the deprecated texture references from PostProcessData.
+
+            GraphicsSettings.TryGetRenderPipelineSettings<UniversalRenderPipelineFilmGrainResources>(out var filmGrainResources);
+            var ppDataGuids = AssetDatabase.FindAssets("t:PostProcessData");
+            foreach (var ppDataGuid in ppDataGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(ppDataGuid);
+                if (!path.StartsWith("Assets"))
+                    continue; // We only care about mutable assets inside Assets
+
+                var postProcessData = AssetDatabase.LoadAssetAtPath<PostProcessData>(path);
+                ClearObsoleteFilmGrainTexturesAndLogWarnings(postProcessData, filmGrainResources);
+                EditorUtility.SetDirty(postProcessData);
+            }
+        }
+
+        internal static void ClearObsoleteFilmGrainTexturesAndLogWarnings(PostProcessData postProcessData, UniversalRenderPipelineFilmGrainResources filmGrainResources)
+        {
+#pragma warning disable 618
+            var oldFilmGrainTextureArray = postProcessData.textures?.filmGrainTex;
+            if (oldFilmGrainTextureArray != null && filmGrainResources != null)
+            {
+                List<string> unusedOldFilmGrainTexturePaths = new();
+                foreach (var oldTex in oldFilmGrainTextureArray)
+                {
+                    if (oldTex != null && Array.IndexOf(filmGrainResources.textures, oldTex) == -1)
+                    {
+                        var oldPath = AssetDatabase.GetAssetPath(oldTex);
+                        if (!string.IsNullOrEmpty(oldPath))
+                            unusedOldFilmGrainTexturePaths.Add(oldPath);
+                    }
+                }
+
+                if (unusedOldFilmGrainTexturePaths.Count > 0)
+                {
+                    Debug.LogWarning("Film Grain texture list has been moved from PostProcessData to URP " +
+                                     "Graphics Settings, and it can no longer be edited. Use " +
+                                     "`FilmGrain.type = FilmGrainLookup.Custom` instead. As a consequence, " +
+                                     "following custom film grain textures are no longer referenced:\n" +
+                                     $"{string.Join("\n", unusedOldFilmGrainTexturePaths)}.");
+                }
+            }
+
+            // Clear the references so they are no longer referenced in the deprecated field.
+            if (postProcessData.textures != null)
+                postProcessData.textures.filmGrainTex = null;
+#pragma warning restore 618
         }
 
         public static void MigrateToRenderPipelineGraphicsSettings(UniversalRenderPipelineGlobalSettings data)
@@ -179,7 +244,6 @@ namespace UnityEngine.Rendering.Universal
             MigrateToShaderStrippingSetting(data);
             MigrateToURPShaderStrippingSetting(data);
             MigrateDefaultVolumeProfile(data);
-            MigrateToRenderGraphSettings(data);
         }
 
         private static T GetOrCreateGraphicsSettings<T>(UniversalRenderPipelineGlobalSettings data)
@@ -208,15 +272,6 @@ namespace UnityEngine.Rendering.Universal
             shaderStrippingSetting.shaderVariantLogLevel    = data.m_ShaderStrippingSetting.shaderVariantLogLevel;
             shaderStrippingSetting.exportShaderVariants     = data.m_ShaderStrippingSetting.exportShaderVariants;
             shaderStrippingSetting.stripRuntimeDebugShaders = data.m_ShaderStrippingSetting.stripRuntimeDebugShaders;
-#pragma warning restore 618
-        }
-
-        static void MigrateToRenderGraphSettings(UniversalRenderPipelineGlobalSettings data)
-        {
-            var rgSettings = GetOrCreateGraphicsSettings<RenderGraphSettings>(data);
-
-#pragma warning disable 618 // Type or member is obsolete
-            rgSettings.SetCompatibilityModeFromUpgrade(!data.m_EnableRenderGraph);
 #pragma warning restore 618
         }
 
@@ -265,6 +320,164 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
+        static void MigrateScreenSpaceAmbientOcclusionToVolumeProfiles(UniversalRenderPipelineGlobalSettings data)
+        {
+            // SSAO is now driven by the volume stack, so the renderer feature settings are no longer read.
+            // The default profile goes first because a quality profile can reference that same asset.
+            MigrateScreenSpaceAmbientOcclusionToDefaultVolumeProfile(data);
+            MigrateScreenSpaceAmbientOcclusionToQualityVolumeProfiles();
+        }
+
+        static void MigrateScreenSpaceAmbientOcclusionToQualityVolumeProfiles()
+        {
+            var migratedProfiles = new Dictionary<VolumeProfile, UniversalRenderPipelineAsset>();
+            foreach (var urpAsset in EnumerateQualityLevelPipelineAssets())
+            {
+                var profile = urpAsset.volumeProfile;
+                if (profile == null || !TryGetActiveScreenSpaceAmbientOcclusionFeature(urpAsset, out var ssaoFeature))
+                    continue;
+
+                if (migratedProfiles.TryGetValue(profile, out var sourceAsset))
+                {
+                    Debug.LogWarning($"URP: The volume profile '{profile.name}' is shared by the pipeline assets '{sourceAsset.name}' and '{urpAsset.name}'. " +
+                        $"Its Screen Space Ambient Occlusion override uses the settings of '{sourceAsset.name}'.");
+                    continue;
+                }
+
+                // Authored by the user, or already migrated
+                if (profile.Has<ScreenSpaceAmbientOcclusionVolumeOverride>())
+                    continue;
+
+                var ssaoOverride = profile.Add<ScreenSpaceAmbientOcclusionVolumeOverride>(overrides: true);
+                CopyRendererFeatureSettingsToVolumeOverride(ssaoFeature, ssaoOverride);
+                PersistVolumeOverride(profile, ssaoOverride);
+                migratedProfiles.Add(profile, urpAsset);
+            }
+        }
+
+        static void MigrateScreenSpaceAmbientOcclusionToDefaultVolumeProfile(UniversalRenderPipelineGlobalSettings data)
+        {
+            // The default profile is shared by every quality level, so it can only hold the active pipeline's settings
+            var profile = GetOrCreateGraphicsSettings<URPDefaultVolumeProfileSettings>(data).volumeProfile;
+            if (profile == null)
+                return;
+
+            // Authored by the user, or already migrated
+            if (profile.Has<ScreenSpaceAmbientOcclusionVolumeOverride>())
+                return;
+
+            ScreenSpaceAmbientOcclusion ssaoFeature = null;
+            bool active = GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urpAsset
+                && TryGetActiveScreenSpaceAmbientOcclusionFeature(urpAsset, out ssaoFeature);
+
+            var ssaoOverride = profile.Add<ScreenSpaceAmbientOcclusionVolumeOverride>(overrides: active);
+
+            if (active)
+                CopyRendererFeatureSettingsToVolumeOverride(ssaoFeature, ssaoOverride);
+
+            PersistVolumeOverride(profile, ssaoOverride);
+        }
+
+        static IEnumerable<UniversalRenderPipelineAsset> EnumerateQualityLevelPipelineAssets()
+        {
+            var visited = new HashSet<UniversalRenderPipelineAsset>();
+            int qualityLevelCount = QualitySettings.names.Length;
+            for (int i = 0; i < qualityLevelCount; i++)
+            {
+                if (QualitySettings.GetRenderPipelineAssetAt(i) is UniversalRenderPipelineAsset urpAsset && visited.Add(urpAsset))
+                    yield return urpAsset;
+            }
+
+            // Quality levels without their own asset render with the default one
+            if (GraphicsSettings.defaultRenderPipeline is UniversalRenderPipelineAsset defaultAsset && visited.Add(defaultAsset))
+                yield return defaultAsset;
+        }
+
+        static bool TryGetActiveScreenSpaceAmbientOcclusionFeature(UniversalRenderPipelineAsset urpAsset, out ScreenSpaceAmbientOcclusion ssaoFeature)
+        {
+            ssaoFeature = null;
+            return urpAsset.TryGetRendererData(urpAsset.m_DefaultRendererIndex, out var rendererData)
+                && rendererData != null
+                && rendererData.TryGetRendererFeature<ScreenSpaceAmbientOcclusion>(out ssaoFeature)
+                && ssaoFeature.isActive;
+        }
+
+        static void PersistVolumeOverride(VolumeProfile profile, VolumeComponent volumeOverride)
+        {
+            // A profile that only lives in memory cannot hold the override as a sub-asset
+            if (!EditorUtility.IsPersistent(profile))
+                return;
+
+            // A read-only profile cannot store the override, and the version bump would hide the loss
+            if (!AssetDatabase.MakeEditable(AssetDatabase.GetAssetPath(profile)))
+            {
+                Debug.LogWarning($"URP: The volume profile '{profile.name}' is not editable, so its Screen Space Ambient Occlusion settings were not migrated. " +
+                    "Make the asset editable and add the override manually.");
+                return;
+            }
+
+            AssetDatabase.AddObjectToAsset(volumeOverride, profile);
+
+            // Ensure only saves the global settings asset, so the version bump would outlive the override
+            EditorUtility.SetDirty(volumeOverride);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssetIfDirty(profile);
+        }
+
+        static void CopyRendererFeatureSettingsToVolumeOverride(ScreenSpaceAmbientOcclusion feature, ScreenSpaceAmbientOcclusionVolumeOverride ssaoOverride)
+        {
+#pragma warning disable CS0618 // Type or member is obsolete
+            var settings = feature.settings;
+#pragma warning restore CS0618
+
+            // Custom quality keeps the copied values instead of applying a preset
+            ssaoOverride.mode = ScreenSpaceAmbientOcclusionMode.SSAO;
+            ssaoOverride.quality = ScreenSpaceAmbientOcclusionQuality.Custom;
+
+            ssaoOverride.intensity = settings.Intensity;
+            ssaoOverride.radius = settings.Radius;
+            ssaoOverride.falloffDistance = settings.Falloff;
+            ssaoOverride.directLightingStrength = settings.DirectLightingStrength;
+            ssaoOverride.downsample = settings.Downsample;
+            ssaoOverride.afterOpaque = settings.AfterOpaque;
+
+            // Note: sample count and blur quality run high to low on the feature, low to high on the volume
+            ssaoOverride.method = settings.AOMethod switch
+            {
+                ScreenSpaceAmbientOcclusionSettings.AOMethodOptions.BlueNoise => ScreenSpaceAmbientOcclusionNoiseMethod.BlueNoise,
+                _ => ScreenSpaceAmbientOcclusionNoiseMethod.InterleavedGradient
+            };
+
+            ssaoOverride.depthSource = settings.Source switch
+            {
+                ScreenSpaceAmbientOcclusionSettings.DepthSource.Depth => ScreenSpaceAmbientOcclusionDepthSource.Depth,
+                _ => ScreenSpaceAmbientOcclusionDepthSource.DepthNormals
+            };
+
+            ssaoOverride.normalQuality = settings.NormalSamples switch
+            {
+                ScreenSpaceAmbientOcclusionSettings.NormalQuality.High => ScreenSpaceAmbientOcclusionNormalQuality.High,
+                ScreenSpaceAmbientOcclusionSettings.NormalQuality.Medium => ScreenSpaceAmbientOcclusionNormalQuality.Medium,
+                _ => ScreenSpaceAmbientOcclusionNormalQuality.Low
+            };
+
+            ssaoOverride.blurQuality = settings.BlurQuality switch
+            {
+                ScreenSpaceAmbientOcclusionSettings.BlurQualityOptions.High => ScreenSpaceAmbientOcclusionBlurQuality.High,
+                ScreenSpaceAmbientOcclusionSettings.BlurQualityOptions.Medium => ScreenSpaceAmbientOcclusionBlurQuality.Medium,
+                _ => ScreenSpaceAmbientOcclusionBlurQuality.Low
+            };
+
+            ssaoOverride.sampleCount = settings.Samples switch
+            {
+                ScreenSpaceAmbientOcclusionSettings.AOSampleOption.High => ScreenSpaceAmbientOcclusionSampleCount.High,
+                ScreenSpaceAmbientOcclusionSettings.AOSampleOption.Medium => ScreenSpaceAmbientOcclusionSampleCount.Medium,
+                _ => ScreenSpaceAmbientOcclusionSampleCount.Low
+            };
+
+            // GTAO and temporal filtering have no feature equivalent and keep the override defaults
+        }
+
 #endif // #if UNITY_EDITOR
 
         #endregion
@@ -297,8 +510,10 @@ namespace UnityEngine.Rendering.Universal
 
         public override void Initialize(RenderPipelineGlobalSettings source = null)
         {
+#pragma warning disable 618 // Type or member is obsolete
             if (source is UniversalRenderPipelineGlobalSettings globalSettingsSource)
                 Array.Copy(globalSettingsSource.m_RenderingLayerNames, m_RenderingLayerNames, globalSettingsSource.m_RenderingLayerNames.Length);
+#pragma warning restore 618
 
             // Note: RenderPipelineGraphicsSettings are not populated yet when the global settings asset is being
             // initialized, so create the setting before using it
@@ -340,10 +555,11 @@ namespace UnityEngine.Rendering.Universal
         }
 
         [SerializeField, FormerlySerializedAs("m_DefaultVolumeProfile")]
-        [Obsolete("Kept For Migration. #from(2023.3)")]
+        [Obsolete("Kept For Migration. #from(2023.3)", false)]
         internal VolumeProfile m_ObsoleteDefaultVolumeProfile;
 
         [SerializeField]
+        [Obsolete("Kept For Migration. #from(2023.3)", false)]
         internal string[] m_RenderingLayerNames = new string[] { "Default" };
 
         [SerializeField]
@@ -353,7 +569,7 @@ namespace UnityEngine.Rendering.Universal
         /// Names used for display of light layers with Layer's index as prefix.
         /// For example: "0: Light Layer Default"
         /// </summary>
-        [Obsolete("This property is obsolete. Use RenderingLayerMask API and Tags & Layers project settings instead. #from(2022.2) #breackingFrom(2023.1)", true)]
+        [Obsolete("This property is obsolete. Use RenderingLayerMask API and Tags & Layers project settings instead. #from(2022.2) #breakingFrom(2023.1)", true)]
         public string[] prefixedLightLayerNames => new string[0];
 
 
@@ -389,12 +605,12 @@ namespace UnityEngine.Rendering.Universal
         /// </summary>
         [Obsolete("This is obsolete, please use renderingLayerMaskNames instead. #from(2022.2)")]
         public string[] lightLayerNames => new string[0];
-
+#pragma warning disable 618 // Type or member is obsolete
         internal void ResetRenderingLayerNames()
         {
             m_RenderingLayerNames = new string[] { "Default"};
         }
-
+#pragma warning restore 618
         #endregion
 
 #pragma warning disable 618

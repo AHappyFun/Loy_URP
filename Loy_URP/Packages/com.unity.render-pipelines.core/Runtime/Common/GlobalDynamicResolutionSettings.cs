@@ -69,10 +69,10 @@ namespace UnityEngine.Rendering
         /// </summary>
         [InspectorName("Spatial-Temporal Post-Processing (STP)")]
         STP = 2,
-
-#if ENABLE_UPSCALER_FRAMEWORK
+        /// <summary>
+        /// An upscaler managed by the upscaler framework.
+        /// </summary>
         IUpscaler = 3
-#endif
     }
 
     /// <summary>User-facing settings for dynamic resolution.</summary>
@@ -94,9 +94,7 @@ namespace UnityEngine.Rendering
             lowResVolumetricCloudsMinimumThreshold = 50.0f,
             rayTracingHalfResThreshold = 50.0f,
 
-#if ENABLE_UPSCALER_FRAMEWORK
-            IUpscalerOptions = new List<UpscalerOptions>(),
-#endif
+            upscalerOptions = new List<UpscalerOptions>(),
 
             DLSSUseOptimalSettings = true,
             DLSSPerfQualitySetting = 0,
@@ -192,10 +190,12 @@ namespace UnityEngine.Rendering
         [Range(0, 1)]
         public float fsrSharpness;
 
-#if ENABLE_UPSCALER_FRAMEWORK
+        /// <summary>
+        /// The list of configuration options for all registered upscalers.
+        /// These are typically auto-populated as sub-assets within the Render Pipeline Asset.
+        /// </summary>
         [SerializeReference]
-        public List<UpscalerOptions> IUpscalerOptions;
-#endif
+        public List<UpscalerOptions> upscalerOptions;
 
         /// <summary>The maximum resolution percentage that dynamic resolution can reach.</summary>
         public float maxPercentage;
@@ -225,7 +225,7 @@ namespace UnityEngine.Rendering
         public float lowResVolumetricCloudsMinimumThreshold;
 
         /// <summary>Obsolete, used only for data migration. Use the advancedUpscalersByPriority list instead to add the proper supported advanced upscaler by priority.</summary>
-        [Obsolete("Obsolete, used only for data migration. Use the advancedUpscalersByPriority list instead to add the proper supported advanced upscaler by priority. #from(2023.3)")]
+        [Obsolete("Obsolete, used only for data migration. Use the advancedUpscalersByPriority list instead to add the proper supported advanced upscaler by priority. #from(2023.3)", true)]
         public bool enableDLSS;
     }
 }

@@ -61,6 +61,7 @@ Shader "Universal Render Pipeline/2D/Sprite-Lit-Default"
 
             Varyings LitVertex(Attributes input)
             {
+                UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SKINNED_VERTEX_COMPUTE(input);
                 SetUpSpriteInstanceProperties();
                 input.positionOS = UnityFlipSprite(input.positionOS, unity_SpriteProps.xy);
@@ -114,6 +115,7 @@ Shader "Universal Render Pipeline/2D/Sprite-Lit-Default"
 
             Varyings NormalsRenderingVertex(Attributes input)
             {
+                UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SKINNED_VERTEX_COMPUTE(input);
                 SetUpSpriteInstanceProperties();
                 input.positionOS = UnityFlipSprite(input.positionOS, unity_SpriteProps.xy);
@@ -126,6 +128,9 @@ Shader "Universal Render Pipeline/2D/Sprite-Lit-Default"
 
             half4 NormalsRenderingFragment(Varyings input) : SV_Target
             {
+                // Setup instancing for SpriteFlip is used in NormalsRenderingShared
+                SetUpSpriteInstanceProperties();
+
                 return CommonNormalsFragment(input, input.color);
             }
             ENDHLSL
@@ -167,6 +172,7 @@ Shader "Universal Render Pipeline/2D/Sprite-Lit-Default"
 
             Varyings UnlitVertex(Attributes input)
             {
+                UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SKINNED_VERTEX_COMPUTE(input);
                 SetUpSpriteInstanceProperties();
                 input.positionOS = UnityFlipSprite(input.positionOS, unity_SpriteProps.xy);

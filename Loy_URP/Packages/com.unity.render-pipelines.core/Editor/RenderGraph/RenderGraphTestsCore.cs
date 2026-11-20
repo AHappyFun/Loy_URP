@@ -1,13 +1,11 @@
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 
-#if UNITY_EDITOR
-using UnityEditor.Rendering;
-#endif
-
-namespace UnityEngine.Rendering.Tests
+namespace UnityEditor.Rendering.Tests
 {
     // TODO: Move this class to the Tests/Editor folder once the "IsolatedPackagesVerified" CI test correctly resolves all dependencies.
     // Currently, the URP package fails to locate the RenderGraphTestsCore class when it's placed under Tests/Editor,
@@ -35,7 +33,7 @@ namespace UnityEngine.Rendering.Tests
         {
             public Action<ScriptableRenderContext, Camera, CommandBuffer> recordRenderGraphBody;
 
-            public RenderGraph renderGraph;
+            public RenderGraph renderGraph { get; private set; }
 
             public RenderTextureUVOriginStrategy renderTextureUVOriginStrategy;
 
@@ -130,9 +128,8 @@ namespace UnityEngine.Rendering.Tests
         {
             // Setting default global settings to the custom RG render pipeline type, no quality settings so we can rely on the default RP
             m_RenderGraphTestGlobalSettings = ScriptableObject.CreateInstance<RenderGraphTestGlobalSettings>();
-#if UNITY_EDITOR
             EditorGraphicsSettings.SetRenderPipelineGlobalSettingsAsset<RenderGraphTestPipelineInstance>(m_RenderGraphTestGlobalSettings);
-#endif
+
             // Saving old render pipelines to set them back after testing
             m_OldDefaultRenderPipeline = GraphicsSettings.defaultRenderPipeline;
             m_OldQualityRenderPipeline = QualitySettings.renderPipeline;
@@ -144,7 +141,6 @@ namespace UnityEngine.Rendering.Tests
 
             // Getting the RG from the custom asset pipeline
             m_RenderGraph = m_RenderGraphTestPipeline.renderGraph;
-            m_RenderGraph.nativeRenderPassesEnabled = true;
 
             // Necessary to disable it for the Unit Tests, as the caller is not the same.
             RenderGraph.RenderGraphExceptionMessages.enableCaller = false;
@@ -167,14 +163,20 @@ namespace UnityEngine.Rendering.Tests
             QualitySettings.renderPipeline = m_OldQualityRenderPipeline;
             m_OldQualityRenderPipeline = null;
 
-            m_RenderGraph.Cleanup();
+            try
+            {
+                m_RenderGraph.Cleanup();
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"Tried to clean RenderGraph but exception was thrown: {e.Message}");
+            }
 
-            Object.DestroyImmediate(m_RenderGraphTestPipeline);
 
-#if UNITY_EDITOR
+            UnityEngine.Object.DestroyImmediate(m_RenderGraphTestPipeline);
             EditorGraphicsSettings.SetRenderPipelineGlobalSettingsAsset<RenderGraphTestPipelineInstance>(null);
-#endif
-            Object.DestroyImmediate(m_RenderGraphTestGlobalSettings);
+
+            UnityEngine.Object.DestroyImmediate(m_RenderGraphTestGlobalSettings);
 
             GameObject.DestroyImmediate(m_GameObject);
             m_GameObject = null;

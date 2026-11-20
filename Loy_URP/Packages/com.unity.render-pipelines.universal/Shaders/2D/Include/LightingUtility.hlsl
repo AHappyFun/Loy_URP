@@ -59,8 +59,8 @@
     if(intensity < 1)\
     {\
         half4 shadowTex = SAMPLE_TEXTURE2D(_ShadowTex, sampler_ShadowTex, input.shadowUV); \
-        half4 shadowIntensity = 1-max(shadowTex.r, shadowTex.g * 1-shadowTex.b);\
-        color.rgb = (color.rgb * shadowIntensity.rgb) + (color.rgb * intensity*(1 - shadowIntensity.rgb));\
+        half shadowIntensity = 1 - max(shadowTex.r, shadowTex.g * (1 - shadowTex.b));\
+        color.rgb = (color.rgb * shadowIntensity) + (color.rgb * intensity * (1 - shadowIntensity));\
      }
 
 #define TRANSFER_SHADOWS(output)\
@@ -199,17 +199,19 @@ struct PerLight2D
             float       L2DVolumeOpacity;       \
             float       L2DShadowIntensity;     \
             int         L2DLightType;           \
+            int         L2DLightRenderingLayer; \
 
-    #define _L2D_INVMATRIX          L2DInvMatrix
-    #define _L2D_COLOR              L2DColor
-    #define _L2D_POSITION           L2DPosition
-    #define _L2D_FALLOFF_INTENSITY  L2DFalloffIntensity
-    #define _L2D_FALLOFF_DISTANCE   L2DFalloffDistance
-    #define _L2D_OUTER_ANGLE        L2DOuterAngle
-    #define _L2D_INNER_ANGLE        L2DInnerAngle
-    #define _L2D_INNER_RADIUS_MULT  L2DInnerRadiusMult
-    #define _L2D_VOLUME_OPACITY     L2DVolumeOpacity
-    #define _L2D_SHADOW_INTENSITY   L2DShadowIntensity
-    #define _L2D_LIGHT_TYPE         L2DLightType
+    #define _L2D_INVMATRIX              L2DInvMatrix
+    #define _L2D_COLOR                  L2DColor
+    #define _L2D_POSITION               L2DPosition
+    #define _L2D_FALLOFF_INTENSITY      L2DFalloffIntensity
+    #define _L2D_FALLOFF_DISTANCE       L2DFalloffDistance
+    #define _L2D_OUTER_ANGLE            L2DOuterAngle
+    #define _L2D_INNER_ANGLE            L2DInnerAngle
+    #define _L2D_INNER_RADIUS_MULT      L2DInnerRadiusMult
+    #define _L2D_VOLUME_OPACITY         L2DVolumeOpacity
+    #define _L2D_SHADOW_INTENSITY       L2DShadowIntensity
+    #define _L2D_LIGHT_TYPE             L2DLightType
+    #define _L2D_LIGHT_RENDERING_LAYER  L2DLightRenderingLayer
 
 #endif

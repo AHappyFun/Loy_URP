@@ -42,6 +42,7 @@ namespace ShaderStrippingAndPrefiltering
 
             public bool IsHDRShaderVariantValid { get; set; }
 
+            public bool stripExposureVariants { get; set; }
 
             public bool IsKeywordEnabled(LocalKeyword keyword)
             {
@@ -62,12 +63,18 @@ namespace ShaderStrippingAndPrefiltering
             {
                 return TestHelper.s_PassKeywords != null && TestHelper.s_PassKeywords.Contains(keyword.name);
             }
+
+            public bool IsKeywordDynamic(LocalKeyword keyword)
+            {
+                return TestHelper.s_DynamicKeywords != null && TestHelper.s_DynamicKeywords.Contains(keyword.name);
+            }
         }
 
         class TestHelper
         {
             public static List<string> s_EnabledKeywords;
             public static List<string> s_PassKeywords;
+            public static List<string> s_DynamicKeywords;
 
             public ShaderScriptableStripper stripper;
             public IShaderScriptableStrippingData data;
@@ -84,6 +91,7 @@ namespace ShaderStrippingAndPrefiltering
             {
                 s_PassKeywords = new List<string>() { };
                 s_EnabledKeywords = new List<string>() { };
+                s_DynamicKeywords = new List<string>() { };
 
                 stripper = new();
                 stripper.BeforeShaderStripping(shader);
@@ -229,6 +237,7 @@ namespace ShaderStrippingAndPrefiltering
             TestStripUnusedPass_XR(shader);
             TestStripUnusedPass_ShadowCaster(shader);
             TestStripUnusedPass_Decals(shader);
+            TestStripUnusedPass_RenderingLayerMask2D(shader);
         }
 
         public void TestStripUnusedPass_2D(Shader shader)
@@ -288,6 +297,25 @@ namespace ShaderStrippingAndPrefiltering
             helper.data.passName = ShaderScriptableStripper.kPassNameXRFinalPost;
             helper.IsTrue(helper.stripper.StripUnusedPass_XRFinalPost(ref helper.data));
             helper.IsTrue(helper.stripper.StripUnusedPass(ref helper.data));
+        }
+
+        public void TestStripUnusedPass_RenderingLayerMask2D(Shader shader)
+        {
+            TestHelper helper;
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            helper.data.passName = ShaderScriptableStripper.kPassNameRenderingLayerMask2D;
+            helper.IsTrue(helper.stripper.StripUnusedPass_RenderingLayerMask2D(ref helper.data));
+            helper.IsTrue(helper.stripper.StripUnusedPass(ref helper.data));
+
+            helper = new TestHelper(shader, ShaderFeatures.LightLayers);
+            helper.data.passName = ShaderScriptableStripper.kPassNameRenderingLayerMask2D;
+            helper.IsFalse(helper.stripper.StripUnusedPass_RenderingLayerMask2D(ref helper.data));
+            helper.IsFalse(helper.stripper.StripUnusedPass(ref helper.data));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUniversal2D;
+            helper.IsFalse(helper.stripper.StripUnusedPass_RenderingLayerMask2D(ref helper.data));
         }
 
         public void TestStripUnusedPass_ShadowCaster(Shader shader)
@@ -493,6 +521,7 @@ namespace ShaderStrippingAndPrefiltering
             TestStripInvalidVariants_HDR(shader);
             StripInvalidVariants_TerrainHoles(shader, expectedTerrainHoles, expectedTerrainHolesWithAlphaTestOn);
             TestStripInvalidVariants_Shadows(shader, expectedSoftShadows);
+            TestStripInvalidVariants_AdditionalLights(shader);
         }
 
         public void TestStripInvalidVariants_HDR(Shader shader)
@@ -644,9 +673,39 @@ namespace ShaderStrippingAndPrefiltering
             TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.AdditionalLightShadows, ShaderKeywordStrings.SoftShadows};
             helper.IsFalse(helper.stripper.StripInvalidVariants_Shadows(ref helper.data));
             helper.IsFalse(helper.stripper.StripInvalidVariants(ref helper.data));
+
+            // Dynamic shadow keyword keeps soft shadows even with no shadow keyword set here.
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            helper.data.IsHDRShaderVariantValid = true;
+            TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.SoftShadows};
+            TestHelper.s_DynamicKeywords = new List<string>{ShaderKeywordStrings.MainLightShadows};
+            helper.IsFalse(helper.stripper.StripInvalidVariants_Shadows(ref helper.data));
+            helper.IsFalse(helper.stripper.StripInvalidVariants(ref helper.data));
+
+            // Dynamic _ADDITIONAL_LIGHTS keeps the additional-shadow variant the static path strips.
+            helper = new TestHelper(shader, ShaderFeatures.ShadowsKeepOffVariants);
+            helper.data.IsHDRShaderVariantValid = true;
+            TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.AdditionalLightShadows};
+            helper.AreEqual(shader != null, helper.stripper.StripInvalidVariants_Shadows(ref helper.data));
+
+            helper = new TestHelper(shader, ShaderFeatures.ShadowsKeepOffVariants);
+            helper.data.IsHDRShaderVariantValid = true;
+            TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.AdditionalLightShadows};
+            TestHelper.s_DynamicKeywords = new List<string>{ShaderKeywordStrings.AdditionalLightsPixel};
+            helper.IsFalse(helper.stripper.StripInvalidVariants_Shadows(ref helper.data));
         }
 
+        public void TestStripInvalidVariants_AdditionalLights(Shader shader)
+        {
+            TestHelper helper;
+            List<string> additionalLightKeywords = new List<string>() { ShaderKeywordStrings.AdditionalLightsVertex, ShaderKeywordStrings.AdditionalLightsPixel };
 
+            // Invalid: Both Vertex AND Pixel enabled - should be stripped
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.AdditionalLightsVertex, ShaderKeywordStrings.AdditionalLightsPixel};
+            TestHelper.s_PassKeywords = additionalLightKeywords;
+            helper.AreEqual(shader != null, helper.stripper.StripInvalidVariants_AdditionalLights(ref helper.data));
+        }
 
         /*****************************************************
          * Unsupported Variants
@@ -710,6 +769,13 @@ namespace ShaderStrippingAndPrefiltering
             TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.DIRLIGHTMAP_COMBINED, ShaderKeywordStrings.DYNAMICLIGHTMAP_ON};
             helper.IsFalse(helper.stripper.StripUnsupportedVariants_DirectionalLightmap(ref helper.data));
             helper.IsFalse(helper.stripper.StripUnsupportedVariants(ref helper.data));
+
+            // Dynamic LIGHTMAP_ON keeps the variant the static path strips.
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>{ShaderKeywordStrings.DIRLIGHTMAP_COMBINED};
+            TestHelper.s_DynamicKeywords = new List<string>{ShaderKeywordStrings.LIGHTMAP_ON};
+            helper.IsFalse(helper.stripper.StripUnsupportedVariants_DirectionalLightmap(ref helper.data));
+            helper.IsFalse(helper.stripper.StripUnsupportedVariants(ref helper.data));
         }
 
         public void StripUnsupportedVariants_EditorVisualization(Shader shader, bool expectedEditorVizualization)
@@ -764,6 +830,7 @@ namespace ShaderStrippingAndPrefiltering
         [TestCase("Hidden/Universal Render Pipeline/XR/XROcclusionMesh")]
         [TestCase("Hidden/Universal Render Pipeline/XR/XRMirrorView")]
         [TestCase("Hidden/Universal Render Pipeline/XR/XRMotionVector")]
+        [TestCase("Hidden/Universal Render Pipeline/XRInsetOccluder")]
         public void TestStripUnusedFeatures(string shaderName)
         {
             Shader shader = Shader.Find(shaderName);
@@ -785,12 +852,15 @@ namespace ShaderStrippingAndPrefiltering
             TestStripUnusedFeatures_ReflectionProbes(shader);
             TestStripUnusedFeatures_AdditionalLights(shader);
             TestStripUnusedFeatures_ScreenSpaceOcclusion(shader);
+            TestStripUnusedFeatures_ScreenSpaceReflection(shader);
             TestStripUnusedFeatures_DecalsDbuffer(shader);
             TestStripUnusedFeatures_DecalsNormalBlend(shader);
             TestStripUnusedFeatures_DecalLayers(shader);
             TestStripUnusedFeatures_WriteRenderingLayers(shader);
             TestStripUnusedFeatures_AccurateGbufferNormals(shader);
             TestStripUnusedFeatures_LightCookies(shader);
+            TestStripUnusedFeatures_VolumetricFog(shader);
+            TestStripUnusedFeatures_LightFalloffQuadratic(shader);
             TestStripUnusedFeatures_ProbesVolumes(shader);
             TestStripUnusedFeatures_SHAuto(shader);
             TestStripUnusedFeatures_DataDrivenLensFlare(shader);
@@ -1001,16 +1071,19 @@ namespace ShaderStrippingAndPrefiltering
             helper.IsFalse(helper.stripper.StripUnusedFeatures_XROcclusionMesh(ref helper.data));
             helper.IsFalse(helper.stripper.StripUnusedFeatures_XRMirrorView(ref helper.data));
             helper.IsFalse(helper.stripper.StripUnusedFeatures_XRMotionVector(ref helper.data));
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_XRQuadViewInsetOccluder(ref helper.data));
 
             helper = new TestHelper(shader, ShaderFeatures.None, stripUnusedXRVariants: true);
             bool isXROcclusion = shader != null && shader.name == "Hidden/Universal Render Pipeline/XR/XROcclusionMesh";
             bool isXRMirror = shader != null && shader.name == "Hidden/Universal Render Pipeline/XR/XRMirrorView";
             bool isXRMotionVector = shader != null && shader.name == "Hidden/Universal Render Pipeline/XR/XRMotionVector";
+            bool isXRQuadViewInsetOccluder = shader != null && shader.name == "Hidden/Universal Render Pipeline/XRInsetOccluder";
 
             //We should strip the shader only if it's the XR shader.
             helper.IsTrue(isXROcclusion ? helper.stripper.StripUnusedFeatures_XROcclusionMesh(ref helper.data) : !helper.stripper.StripUnusedFeatures_XROcclusionMesh(ref helper.data));
             helper.IsTrue(isXRMirror ? helper.stripper.StripUnusedFeatures_XRMirrorView(ref helper.data) : !helper.stripper.StripUnusedFeatures_XRMirrorView(ref helper.data));
             helper.IsTrue(isXRMotionVector ? helper.stripper.StripUnusedFeatures_XRMotionVector(ref helper.data) : !helper.stripper.StripUnusedFeatures_XRMotionVector(ref helper.data));
+            helper.IsTrue(isXRQuadViewInsetOccluder ? helper.stripper.StripUnusedFeatures_XRQuadViewInsetOccluder(ref helper.data) : !helper.stripper.StripUnusedFeatures_XRQuadViewInsetOccluder(ref helper.data));
 
         }
 
@@ -1212,6 +1285,11 @@ namespace ShaderStrippingAndPrefiltering
             TestHelper helper;
             List<string> additionalLightShadowKeywords = new List<string>() { ShaderKeywordStrings.AdditionalLightShadows };
 
+            // StencilDeferred is exempted from additional-light shadows-off variant stripping
+            // (see ShaderScriptableStripper.StripUnusedFeatures_AdditionalLightShadows).
+            bool isStencilDeferred = shader != null && shader.name == "Hidden/Universal Render Pipeline/StencilDeferred";
+            bool expectedStripOffVariant = shader != null && !isStencilDeferred;
+
             // None
             helper = new TestHelper(shader, ShaderFeatures.None);
             helper.IsFalse(helper.stripper.StripUnusedFeatures_AdditionalLightShadows(ref helper.data, ref helper.featureStripTool));
@@ -1228,7 +1306,7 @@ namespace ShaderStrippingAndPrefiltering
             // AdditionalLightShadows
             helper = new TestHelper(shader, ShaderFeatures.AdditionalLightShadows);
             TestHelper.s_PassKeywords = additionalLightShadowKeywords;
-            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_AdditionalLightShadows(ref helper.data, ref helper.featureStripTool));
+            helper.AreEqual(expectedStripOffVariant, helper.stripper.StripUnusedFeatures_AdditionalLightShadows(ref helper.data, ref helper.featureStripTool));
 
             helper = new TestHelper(shader, ShaderFeatures.AdditionalLightShadows);
             TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.AdditionalLightShadows };
@@ -1253,6 +1331,21 @@ namespace ShaderStrippingAndPrefiltering
 
             helper = new TestHelper(shader, ShaderFeatures.ShadowsKeepOffVariants | ShaderFeatures.AdditionalLightShadows);
             TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.AdditionalLightShadows };
+            TestHelper.s_PassKeywords = additionalLightShadowKeywords;
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_AdditionalLightShadows(ref helper.data, ref helper.featureStripTool));
+        }
+
+        // StencilDeferred's _ADDITIONAL_LIGHT_SHADOWS off variant must survive variant stripping
+        // regardless of the renderer's stripShadowsOffVariants flag.
+        [Test]
+        public void StencilDeferred_KeepsAdditionalLightShadowsOffVariant_EvenWhenShadowsKeepOffVariantsDisabled()
+        {
+            Shader shader = Shader.Find("Hidden/Universal Render Pipeline/StencilDeferred");
+            Assert.IsNotNull(shader, "StencilDeferred shader must be available for this test.");
+
+            List<string> additionalLightShadowKeywords = new List<string>() { ShaderKeywordStrings.AdditionalLightShadows };
+
+            var helper = new TestHelper(shader, ShaderFeatures.AdditionalLightShadows);
             TestHelper.s_PassKeywords = additionalLightShadowKeywords;
             helper.IsFalse(helper.stripper.StripUnusedFeatures_AdditionalLightShadows(ref helper.data, ref helper.featureStripTool));
         }
@@ -1645,6 +1738,51 @@ namespace ShaderStrippingAndPrefiltering
             helper.IsFalse(helper.stripper.StripUnusedFeatures_ScreenSpaceOcclusion(ref helper.data, ref helper.featureStripTool));
         }
 
+        public void TestStripUnusedFeatures_ScreenSpaceReflection(Shader shader)
+        {
+            TestHelper helper;
+
+            // None
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteSmoothness};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            // ScreenSpaceReflection
+            helper = new TestHelper(shader, ShaderFeatures.ScreenSpaceReflection);
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.ScreenSpaceReflection);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.ScreenSpaceReflection);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteSmoothness};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.ScreenSpaceReflection);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.ScreenSpaceReflection, ShaderKeywordStrings.WriteSmoothness};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_ScreenSpaceReflection(ref helper.data, ref helper.featureStripTool));
+        }
+
         public void TestStripUnusedFeatures_DecalsDbuffer(Shader shader)
         {
             TestHelper helper;
@@ -2003,6 +2141,17 @@ namespace ShaderStrippingAndPrefiltering
             helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
 
             helper = new TestHelper(shader, ShaderFeatures.None);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
             helper.data.passName = ShaderScriptableStripper.kPassNameGBuffer;
             TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
             helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
@@ -2046,6 +2195,17 @@ namespace ShaderStrippingAndPrefiltering
             helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
 
             helper = new TestHelper(shader, ShaderFeatures.OpaqueWriteRenderingLayers);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.OpaqueWriteRenderingLayers);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.OpaqueWriteRenderingLayers);
             helper.data.passName = ShaderScriptableStripper.kPassNameGBuffer;
             TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
             helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
@@ -2084,6 +2244,17 @@ namespace ShaderStrippingAndPrefiltering
 
             helper = new TestHelper(shader, ShaderFeatures.GBufferWriteRenderingLayers);
             helper.data.passName = ShaderScriptableStripper.kPassNameForwardLit;
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.GBufferWriteRenderingLayers);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
+            TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.GBufferWriteRenderingLayers);
+            helper.data.passName = ShaderScriptableStripper.kPassNameUnlit;
             TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
             TestHelper.s_PassKeywords = new List<string>() {ShaderKeywordStrings.WriteRenderingLayers};
             helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_WriteRenderingLayers(ref helper.data, ref helper.featureStripTool));
@@ -2187,6 +2358,132 @@ namespace ShaderStrippingAndPrefiltering
             helper.IsFalse(helper.stripper.StripUnusedFeatures_LightCookies(ref helper.data, ref helper.featureStripTool));
         }
 
+        public void TestStripUnusedFeatures_VolumetricFog(Shader shader)
+        {
+            TestHelper helper;
+
+            // The Lit family's keyword space: master, fog mode pair, receive-fog and surface type.
+            List<string> litPassKeywords = new List<string>()
+            {
+                ShaderKeywordStrings.VolumetricFog,
+                ShaderKeywordStrings.FogAnalytic,
+                ShaderKeywordStrings.FogVolumetric,
+                ShaderKeywordStrings.TransparentReceiveFog,
+                ShaderKeywordStrings._SURFACE_TYPE_TRANSPARENT,
+            };
+
+            // The Unlit family's keyword space: no _VOLUMETRIC_FOG master.
+            List<string> unlitPassKeywords = new List<string>()
+            {
+                ShaderKeywordStrings.FogAnalytic,
+                ShaderKeywordStrings.FogVolumetric,
+                ShaderKeywordStrings.TransparentReceiveFog,
+                ShaderKeywordStrings._SURFACE_TYPE_TRANSPARENT,
+            };
+
+            // Fog feature unused: the analytic default variant must survive as the mode pair has
+            // no off variant and the runtime keeps _FOG_ANALYTIC enabled as the resting state...
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogAnalytic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // ...while master and volumetric variants are stripped.
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogAnalytic };
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogVolumetric };
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // Receive-fog variants survive even without the feature: materials enable the keyword
+            // regardless of the renderer features, and stripping a variant a material requests
+            // breaks strict shader variant matching.
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogAnalytic, ShaderKeywordStrings.TransparentReceiveFog, ShaderKeywordStrings._SURFACE_TYPE_TRANSPARENT };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // Fog feature in use: the runtime states (analytic default, analytic + master,
+            // volumetric + master) survive, with and without receive-fog.
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogAnalytic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogAnalytic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogVolumetric };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogVolumetric, ShaderKeywordStrings.TransparentReceiveFog, ShaderKeywordStrings._SURFACE_TYPE_TRANSPARENT };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // The volumetric mode is only ever enabled together with the master keyword, so the
+            // Lit family's volumetric variants without the master can never be requested.
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogVolumetric };
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // The Unlit family has no master keyword in the pass, so its volumetric variants stay.
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = unlitPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogVolumetric };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // Receive-fog is never enabled on a material without the transparent surface keyword.
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogAnalytic, ShaderKeywordStrings.TransparentReceiveFog };
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = litPassKeywords;
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.FogAnalytic, ShaderKeywordStrings.TransparentReceiveFog, ShaderKeywordStrings._SURFACE_TYPE_TRANSPARENT };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+
+            // ShaderGraph shaders don't declare the receive-fog keyword; the surface type rule
+            // must leave their variants alone.
+            helper = new TestHelper(shader, ShaderFeatures.VolumetricFog);
+            TestHelper.s_PassKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogAnalytic, ShaderKeywordStrings.FogVolumetric };
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.VolumetricFog, ShaderKeywordStrings.FogVolumetric };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_VolumetricFog(ref helper.data, ref helper.featureStripTool));
+        }
+
+        public void TestStripUnusedFeatures_LightFalloffQuadratic(Shader shader)
+        {
+            TestHelper helper;
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_PassKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_LightFalloffQuadratic(ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            TestHelper.s_PassKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            helper.AreEqual(shader != null, helper.stripper.StripUnusedFeatures_LightFalloffQuadratic(ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.LightFalloffQuadratic);
+            TestHelper.s_PassKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_LightFalloffQuadratic(ref helper.featureStripTool));
+
+            helper = new TestHelper(shader, ShaderFeatures.LightFalloffQuadratic);
+            TestHelper.s_EnabledKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            TestHelper.s_PassKeywords = new List<string>() { ShaderKeywordStrings.LightFalloffQuadratic };
+            helper.IsFalse(helper.stripper.StripUnusedFeatures_LightFalloffQuadratic(ref helper.featureStripTool));
+        }
+
         public void TestStripUnusedFeatures_ProbesVolumes(Shader shader)
         {
             TestHelper helper;
@@ -2271,6 +2568,7 @@ namespace ShaderStrippingAndPrefiltering
                 ShaderKeywordStrings.BloomHQDirt,
                 ShaderKeywordStrings.TonemapACES,
                 ShaderKeywordStrings.TonemapNeutral,
+                ShaderKeywordStrings.TonemapAgX,
                 ShaderKeywordStrings.FilmGrain,
             };
 
@@ -2395,6 +2693,21 @@ namespace ShaderStrippingAndPrefiltering
 
             helper = new TestHelper(shader, ShaderFeatures.None, volumeFeatures:VolumeFeatures.ToneMapping);
             TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.TonemapNeutral};
+            TestHelper.s_PassKeywords = passKeywords;
+            helper.IsFalse(helper.stripper.StripVolumeFeatures_UberPostShader(ref helper.data));
+
+            // Tonemap AgX
+            helper = new TestHelper(shader, ShaderFeatures.None);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.TonemapAgX};
+            TestHelper.s_PassKeywords = passKeywords;
+            helper.AreEqual(isCorrectShader, helper.stripper.StripVolumeFeatures_UberPostShader(ref helper.data));
+
+            helper = new TestHelper(shader, ShaderFeatures.None, volumeFeatures:VolumeFeatures.ToneMapping);
+            TestHelper.s_PassKeywords = passKeywords;
+            helper.IsFalse(helper.stripper.StripVolumeFeatures_UberPostShader(ref helper.data));
+
+            helper = new TestHelper(shader, ShaderFeatures.None, volumeFeatures:VolumeFeatures.ToneMapping);
+            TestHelper.s_EnabledKeywords = new List<string>() {ShaderKeywordStrings.TonemapAgX};
             TestHelper.s_PassKeywords = passKeywords;
             helper.IsFalse(helper.stripper.StripVolumeFeatures_UberPostShader(ref helper.data));
 

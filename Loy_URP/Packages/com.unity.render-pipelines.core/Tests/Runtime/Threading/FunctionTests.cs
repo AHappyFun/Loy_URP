@@ -8,6 +8,9 @@ using UnityEngine.Rendering;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
+#if UNITY_ANDROID
+using Unity.TestUtilities;
+#endif
 
 class ThreadingEmulationFunctionTests : IPrebuildSetup
 {
@@ -177,12 +180,36 @@ class ThreadingEmulationFunctionTests : IPrebuildSetup
         {
             Assert.Ignore("These tests are not supported on WebGPU");
         }
+
+        // Compute output buffer reads back all zeros under UGK on D3D12; Vulkan UGK is unaffected.
+        if (IsForcedUGK() && SystemInfo.graphicsDeviceType == GraphicsDeviceType.Direct3D12)
+        {
+            Assert.Ignore("Compute buffer readback returns all zeros under UGK on D3D12 - https://jira.unity3d.com/browse/UGK-2877");
+        }
     }
 
+    private static bool IsForcedUGK() =>
+        System.Array.Exists(System.Environment.GetCommandLineArgs(),
+            arg => arg.Equals("-force-ugk", System.StringComparison.OrdinalIgnoreCase));
+
     [Test]
-    [UnityPlatform(exclude = new[] { RuntimePlatform.WindowsEditor, RuntimePlatform.WSAPlayerX64, RuntimePlatform.WindowsPlayer })] //https://jira.unity3d.com/browse/UUM-78016
     public void WaveTest([Values]Kernel kernel, [Values]WaveSizeKeyword waveSizeKeyword)
     {
+#if UNITY_ANDROID
+        // ReadAtBroadcast with the native wave size returns 0 on the Samsung Galaxy S20 FE
+        // (Adreno 650, Vulkan). However, Quest2 is passing even though it has the same GPU,
+        // so it seems to be the S20 FE driver specifically, not Adreno 650 in general. Suspected
+        // driver/cross-compiler bug around WaveReadLaneAt with a WaveGetLaneCount()-derived
+        // (dynamically-uniform but not literal-constant) lane index — the shuffle variant works.
+        if (AndroidUtilities.AndroidDeviceId == "r8q" // r8q == Samsung Galaxy S20 FE
+            && SystemInfo.graphicsDeviceType == GraphicsDeviceType.Vulkan
+            && kernel == Kernel.ReadAtBroadcast
+            && waveSizeKeyword == WaveSizeKeyword.WAVE_SIZE_NATIVE)
+        {
+            Assert.Ignore("ReadAtBroadcast/native wave broken on Adreno 650 / Samsung Galaxy S20 FE (Vulkan)");
+        }
+#endif
+
         int groupSize = (int)GroupSizeKeyword.GROUP_SIZE_128;
 
         // Ensure that the wave tests are capable of running on the current device

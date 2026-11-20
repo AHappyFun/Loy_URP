@@ -20,7 +20,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
         // ------------------------
         // Version history:
         // 1 - Initial version
-        internal const int k_Version = 1;
+        // 2 - Changed executionId from 32bit InstanceID to 64bit EntityId
+        // 3 - Added Pause message type for synchronizing pause state between editor and player
+        internal const int k_Version = 3;
 
         // These were generated using GUID.NewGuid and hard-coded
         static readonly Guid s_EditorToPlayerGuid = new Guid("df519969-f421-4397-b2a1-1740abc989a0");
@@ -30,7 +32,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
         {
             Activate = 0,
             DebugData = 1,
-            AnalyticsData = 2
+            AnalyticsData = 2,
+            Pause = 3
         }
 
         public abstract class IPayload
@@ -63,6 +66,11 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 gpuVendor = SystemInfo.graphicsDeviceVendor;
                 gpuName = SystemInfo.graphicsDeviceName;
             }
+        }
+
+        public class PausePayload : IPayload
+        {
+            public bool isPaused;
         }
 
         Action<MessageType, IPayload> m_UserCallback;
@@ -119,7 +127,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
                     throw new InvalidOperationException("No valid payload provided");
 
                 writer.Write(debugDataPayload.graphName);
-                writer.Write(debugDataPayload.executionId);
+                writer.Write(EntityId.ToULong(debugDataPayload.executionId));
                 writer.Write(DebugDataSerialization.ToJson(debugDataPayload.debugData));
             }
             else if (type == MessageType.AnalyticsData)
@@ -135,11 +143,20 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 writer.Write(analyticsPayload.gpuVendor);
                 writer.Write(analyticsPayload.gpuName);
             }
+            else if (type == MessageType.Pause)
+            {
+                writer.Write(k_Version);
+
+                if (payload is not PausePayload pausePayload)
+                    throw new InvalidOperationException("No valid payload provided");
+
+                writer.Write(pausePayload.isPaused);
+            }
 
             return memoryStream.ToArray();
         }
 
-        internal static (MessageType, IPayload) DeserializeMessage(byte[] data)
+        internal static unsafe (MessageType, IPayload) DeserializeMessage(byte[] data)
         {
             using var memoryStream = new MemoryStream(data);
             using var reader = new BinaryReader(memoryStream);
@@ -156,7 +173,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 }
 
                 payload.graphName = reader.ReadString();
-                payload.executionId = reader.ReadInt32();
+                ulong rawEntityId = reader.ReadUInt64();
+                payload.executionId = *((EntityId*)(&rawEntityId));
                 payload.debugData = DebugDataSerialization.FromJson(reader.ReadString());
                 return (type, payload);
             }
@@ -174,6 +192,19 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 payload.deviceModel = reader.ReadString();
                 payload.gpuVendor = reader.ReadString();
                 payload.gpuName = reader.ReadString();
+
+                return (type, payload);
+            }
+            else if (type == MessageType.Pause)
+            {
+                var payload = new PausePayload();
+                payload.version = reader.ReadInt32();
+                if (!payload.isCompatible)
+                {
+                    return (type, payload);
+                }
+
+                payload.isPaused = reader.ReadBoolean();
 
                 return (type, payload);
             }

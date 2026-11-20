@@ -2,7 +2,7 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!114 &-8886208210172211487
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -16,7 +16,7 @@ MonoBehaviour:
   settings:
     injectionPoint: 550
     affectSceneView: 1
-    effectOrder: 000000000100000002000000
+    effectOrder: 000000000100000002000000i
     outline:
       enabled: 1
       outlineColor: {r: 0, g: 0, b: 0, a: 1}
@@ -30,7 +30,7 @@ MonoBehaviour:
       fadeStart: 35
       fadeEnd: 100
     streak:
-      enabled: 1
+      enabled: 0
       threshold: 0.36
       stretch: 0.75
       intensity: 0.48
@@ -48,7 +48,7 @@ MonoBehaviour:
   glitchShader: {fileID: 4800000, guid: de9b0af49909ab344b3b4c41096f81e1, type: 3}
 --- !u!114 &-5298835949692327270
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -102,12 +102,11 @@ MonoBehaviour:
   - {fileID: 4751200078909277272}
   - {fileID: 6978462706574381597}
   - {fileID: 7660457836123274701}
-  - {fileID: 7656126331739273248}
   - {fileID: 6041220770971095916}
   - {fileID: -8886208210172211487}
   - {fileID: -5298835949692327270}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a2078d5b65506406a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6
-  m_UseNativeRenderPass: 0
+  - {fileID: 4005599399343945071}
+  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b66ff5695e6ebf9637l
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   m_AssetVersion: 3
@@ -123,21 +122,25 @@ MonoBehaviour:
   m_DefaultStencilState:
     overrideStencilState: 0
     stencilReference: 0
+    stencilReadMask: 15
+    stencilWriteMask: 15
     stencilCompareFunction: 8
     passOperation: 2
     failOperation: 0
     zFailOperation: 0
   m_ShadowTransparentReceive: 1
-  m_RenderingMode: 1
+  m_RenderingMode: 3
   m_DepthPrimingMode: 0
   m_CopyDepthMode: 1
   m_DepthAttachmentFormat: 0
   m_DepthTextureFormat: 0
+  m_ShadowmapStencil: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
+  m_TileOnlyMode: 0
 --- !u!114 &812345678901234567
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -147,7 +150,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0298ea3295ac4653ab2af08d3297ebb4, type: 3}
   m_Name: SSGIRenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::SSGIRenderFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     ssgiMaterial: {fileID: 2100000, guid: 16b6f32f3e0ef4741b803e3e85a7ed9e, type: 2}
     passEvent: 240
@@ -157,9 +160,22 @@ MonoBehaviour:
     isHalfSize: 1
     DepthBias: 0.05
     Thickness: 0.25
+--- !u!114 &4005599399343945071
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8406b95d18054752ac25ef8eb7ac2d41, type: 3}
+  m_Name: SurfaceCacheGIRendererFeature
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.SurfaceCacheGIRendererFeature
+  m_Active: 1
 --- !u!114 &4041069810517058087
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -194,7 +210,7 @@ MonoBehaviour:
   - {fileID: 2800000, guid: 5a0de702ef6225a418b371066a53d00b, type: 3}
 --- !u!114 &4228818792906336876
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -208,7 +224,7 @@ MonoBehaviour:
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
 --- !u!114 &4751200078909277272
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -225,7 +241,7 @@ MonoBehaviour:
     mipCount: 8
 --- !u!114 &6041220770971095916
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -241,7 +257,7 @@ MonoBehaviour:
   GIRange: 1
 --- !u!114 &6702227998080770732
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -251,7 +267,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 955d35bc18444448956540aee140d2a4, type: 3}
   m_Name: HBAORenderFeature
   m_EditorClassIdentifier: Assembly-CSharp::HBAORenderFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     hbaoMaterial: {fileID: 2100000, guid: 6798e918406751a43802bde6d129e87c, type: 2}
     passEvent: 220
@@ -265,7 +281,7 @@ MonoBehaviour:
     applyToGI: 1
 --- !u!114 &6978462706574381597
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -299,7 +315,7 @@ MonoBehaviour:
     passEvent: 240
 --- !u!114 &7660457836123274701
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}

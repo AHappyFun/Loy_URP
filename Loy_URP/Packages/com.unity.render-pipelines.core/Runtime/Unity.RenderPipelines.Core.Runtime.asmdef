@@ -16,11 +16,6 @@
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.unity.modules.vr",
-            "expression": "1.0.0",
-            "define": "ENABLE_VR_MODULE"
-        },
-        {
             "name": "com.unity.modules.xr",
             "expression": "1.0.0",
             "define": "ENABLE_XR_MODULE"
@@ -49,6 +44,26 @@
             "name": "com.unity.modules.amd",
             "expression": "1.0.0",
             "define": "ENABLE_AMD_MODULE"
+        },
+        {
+            "name": "com.unity.modules.metalfx",
+            "expression": "1.0.0",
+            "define": "ENABLE_METALFX_MODULE"
+        },
+        {
+            "name": "com.unity.modules.physics",
+            "expression": "1.0.0",
+            "define": "ENABLE_PHYSICS_MODULE"
+        },
+        {
+            "name": "com.unity.modules.uielements",
+            "expression": "1.0.0",
+            "define": "ENABLE_UIELEMENTS_MODULE"
+        },
+        {
+            "name": "com.unity.modules.terrain",
+            "expression": "1.0.0",
+            "define": "ENABLE_TERRAIN_MODULE"
         }
     ],
     "noEngineReferences": false

@@ -89,6 +89,7 @@ Shader "Loy/ToonLit"
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_IRRADIANCE
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
             #pragma multi_compile _ SHADOWS_SHADOWMASK
@@ -190,6 +191,26 @@ Shader "Loy/ToonLit"
 
             ENDHLSL
 		}
+
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode" = "Meta" }
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.0
+            #pragma vertex UniversalVertexMeta
+            #pragma fragment LoyFragmentMeta
+            #pragma shader_feature_local_fragment _ALPHATEST_ON
+            #pragma shader_feature EDITOR_VISUALIZATION
+
+            #define LOY_META_MASK_MAP _MaskMap
+            #define LOY_META_MASK_SAMPLER sampler_MaskMap
+            #define LOY_META_EMISSION_SAMPLER sampler_EmissionMap
+            #include "LoyLitMetaPass.hlsl"
+            ENDHLSL
+        }
     }
 
     FallBack "Hidden/Universal Render Pipeline/FallbackError"

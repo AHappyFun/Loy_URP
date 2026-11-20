@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Unity.Mathematics;
+using Unity.Scripting.LifecycleManagement;
 
 namespace UnityEngine.Rendering
 {
@@ -152,10 +153,14 @@ namespace UnityEngine.Rendering
             m_ActiveItemIndices.Clear();
         }
 
+        // Static s_TypeCount and TypeId<T>.value fields don't need to be reset when entering playmode.
+        // s_TypeCount is only incremented by the static initialization of TypeId<T>.value.
+        [NoAutoStaticsCleanup]
         static uint s_TypeCount;
 
         static class TypeId<T>
         {
+            [NoAutoStaticsCleanup]
             public static uint value = s_TypeCount++;
         }
 

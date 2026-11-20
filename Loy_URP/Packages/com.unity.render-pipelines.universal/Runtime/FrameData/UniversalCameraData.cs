@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
 
 namespace UnityEngine.Rendering.Universal
 {
@@ -121,47 +122,15 @@ namespace UnityEngine.Rendering.Universal
 #endif
             return m_ProjectionMatrix;
         }
-        
-#if URP_COMPATIBILITY_MODE
-        /// <summary>
-        /// Returns the camera GPU projection matrix. This contains platform specific changes to handle y-flip and reverse z. Includes camera jitter if required by active features.
-        /// Similar to <c>GL.GetGPUProjectionMatrix</c> but queries URP internal state to know if the pipeline is rendering to render texture.
-        /// For more info on platform differences regarding camera projection check: https://docs.unity3d.com/Manual/SL-PlatformDifferences.html
-        /// </summary>
-        /// <param name="viewIndex"> View index in case of stereo rendering. By default <c>viewIndex</c> is set to 0. </param>
-        /// <seealso cref="GL.GetGPUProjectionMatrix(Matrix4x4, bool)"/>
-        /// <returns></returns>
-        public Matrix4x4 GetGPUProjectionMatrix(int viewIndex = 0)
-        {
-            // Disable obsolete warning for internal usage
-            #pragma warning disable CS0618
-            // GetGPUProjectionMatrix takes a projection matrix and returns a GfxAPI adjusted version, does not set or get any state.
-            return m_JitterMatrix * GL.GetGPUProjectionMatrix(GetProjectionMatrixNoJitter(viewIndex), IsCameraProjectionMatrixFlipped());
-            #pragma warning restore CS0618
-        }
-
-        /// <summary>
-        /// Returns the camera GPU projection matrix. This contains platform specific changes to handle y-flip and reverse z. Does not include any camera jitter.
-        /// Similar to <c>GL.GetGPUProjectionMatrix</c> but queries URP internal state to know if the pipeline is rendering to render texture.
-        /// For more info on platform differences regarding camera projection check: https://docs.unity3d.com/Manual/SL-PlatformDifferences.html
-        /// </summary>
-        /// <param name="viewIndex"> View index in case of stereo rendering. By default <c>viewIndex</c> is set to 0. </param>
-        /// <seealso cref="GL.GetGPUProjectionMatrix(Matrix4x4, bool)"/>
-        /// <returns></returns>
-        public Matrix4x4 GetGPUProjectionMatrixNoJitter(int viewIndex = 0)
-        {
-            // Disable obsolete warning for internal usage
-            #pragma warning disable CS0618
-            // GetGPUProjectionMatrix takes a projection matrix and returns a GfxAPI adjusted version, does not set or get any state.
-            return GL.GetGPUProjectionMatrix(GetProjectionMatrixNoJitter(viewIndex), IsCameraProjectionMatrixFlipped());
-            #pragma warning restore CS0618
-        }
-#endif
 
         internal Matrix4x4 GetGPUProjectionMatrix(bool renderIntoTexture, int viewIndex = 0)
         {
             return GL.GetGPUProjectionMatrix(GetProjectionMatrix(viewIndex), renderIntoTexture);
         }
+
+        // The jitter matrix is Matrix4x4.Translate(offsetX, offsetY, 0), so the offsets sit in column 3.
+        // Jitter values are in NDC space (-1 to 1).
+        internal Vector2 jitter => new Vector2(m_JitterMatrix.m03, m_JitterMatrix.m13);
 
         /// <summary>
         /// The camera component.
@@ -181,6 +150,12 @@ namespace UnityEngine.Rendering.Universal
         /// The min dimension is 1.
         /// </summary>
         public int scaledHeight;
+
+        // The hardware dynamic resolution (ScalableBufferManager) scale captured once per camera at setup, so upscaler
+        // passes read a stable per-camera value instead of the live, global, mid-frame-mutable SBM factors (which other
+        // passes could change between the camera color being aliased and the upscaler reading it). Vector2.one when the
+        // camera does not use hardware dynamic resolution.
+        internal Vector2 hardwareDynamicResolutionScale;
 
         // NOTE: This is internal instead of private to allow ref return in the old CameraData compatibility property.
         // We can make this private when it is removed.
@@ -211,6 +186,8 @@ namespace UnityEngine.Rendering.Universal
         /// Render texture settings used to create intermediate camera textures for rendering.
         /// </summary>
         public RenderTextureDescriptor cameraTargetDescriptor;
+        internal RenderTargetInfo backbufferColor;
+        internal RenderTargetInfo backbufferDepth;
         internal Rect pixelRect;
         internal bool useScreenCoordOverride;
         internal Vector4 screenSizeOverride;
@@ -224,9 +201,17 @@ namespace UnityEngine.Rendering.Universal
         /// </summary>
         public float renderScale;
         internal ImageScalingMode imageScalingMode;
+
+        /// <summary>
+        /// The final resolved upscaler hash after 'Automatic' has been processed.
+        /// </summary>
+        internal int resolvedUpscalerHash; // hash generated by Shader.PropertyToID()
+
+        [Obsolete("upscalingFilter is no longer used #from(6000.3)")]
         internal ImageUpscalingFilter upscalingFilter;
         internal bool fsrOverrideSharpness;
         internal float fsrSharpness;
+
         internal HDRColorBufferPrecision hdrColorBufferPrecision;
 
         /// <summary>
@@ -429,37 +414,13 @@ namespace UnityEngine.Rendering.Universal
             bool isBackbuffer = handleID == BuiltinRenderTextureType.CameraTarget || handleID == BuiltinRenderTextureType.Depth;
 #if ENABLE_VR && ENABLE_XR_MODULE
             if (xr.enabled)
+            {
                 isBackbuffer |= handleID == new RenderTargetIdentifier(xr.renderTarget, 0, CubemapFace.Unknown, 0);
+                isBackbuffer |= handleID == new RenderTargetIdentifier(xr.motionVectorRenderTarget, 0, CubemapFace.Unknown, 0);
+            }
 #endif
             return !isBackbuffer;
         }
-        
-#if URP_COMPATIBILITY_MODE
-        /// <summary>
-        /// True if the camera device projection matrix is flipped. This happens when the pipeline is rendering
-        /// to a render texture in non OpenGL platforms. If you are doing a custom Blit pass to copy camera textures
-        /// (_CameraColorTexture, _CameraDepthAttachment) you need to check this flag to know if you should flip the
-        /// matrix when rendering with for cmd.Draw* and reading from camera textures.
-        /// </summary>
-        /// <returns> True if the camera device projection matrix is flipped. </returns>
-        public bool IsCameraProjectionMatrixFlipped()
-        {
-            if (!SystemInfo.graphicsUVStartsAtTop)
-                return false;
-
-            // Users only have access to CameraData on URP rendering scope. The current renderer should never be null.
-            var renderer = ScriptableRenderer.current;
-            Debug.Assert(renderer != null, "IsCameraProjectionMatrixFlipped is being called outside camera rendering scope.");
-
-            // Disable obsolete warning for internal usage
-            #pragma warning disable CS0618
-            if (renderer != null)
-                return IsHandleYFlipped(renderer.cameraColorTargetHandle) || targetTexture != null;
-            #pragma warning restore CS0618
-
-            return true;
-        }
-#endif
 
         /// <summary>
         /// True if the render target's projection matrix is flipped. This happens when the pipeline is rendering
@@ -489,6 +450,21 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <summary>
+        /// Returns true when Meta Temporal Pixel Synthesis is the active resolver for this camera.
+        /// When true, the compositor performs the temporal resolve and any upscaling, so URP must suppress
+        /// its own TAA/STP resolve, its jitter, and its spatial upscalers.
+        /// </summary>
+        /// <returns>True if Temporal Pixel Synthesis is active</returns>
+        internal bool IsTemporalPixelSynthesisActive()
+        {
+#if ENABLE_VR && ENABLE_XR_MODULE
+            return xr.enabled && xr.isTemporalPixelSynthesisActive;
+#else
+            return false;
+#endif
+        }
+
+        /// <summary>
         /// Returns true if the pipeline and the given camera are configured to render with temporal anti-aliasing post processing enabled
         ///
         /// Once selected, TAA necessitates some pre-requisites from the pipeline to run, mostly from the camera itself.
@@ -505,7 +481,8 @@ namespace UnityEngine.Rendering.Universal
                    && (cameraTargetDescriptor.msaaSamples == 1)                                                                       // No MSAA
                    && !(additionalCameraData?.renderType == CameraRenderType.Overlay || additionalCameraData?.cameraStack.Count > 0)  // No Camera stack
                    && !camera.allowDynamicResolution                                                                                  // No Dynamic Resolution
-                   && renderer.SupportsMotionVectors();                                                                               // Motion Vectors implemented
+                   && renderer.SupportsMotionVectors()                                                                                // Motion Vectors implemented
+                   && !IsTemporalPixelSynthesisActive();                                                                                      // XR compositor is the resolver (also disables jitter via CalculateJitterMatrix)
         }
 
         /// <summary>
@@ -515,7 +492,8 @@ namespace UnityEngine.Rendering.Universal
         /// <returns>True if STP is requested</returns>
         internal bool IsSTPRequested()
         {
-            return (imageScalingMode == ImageScalingMode.Upscaling) && (upscalingFilter == ImageUpscalingFilter.STP);
+            return (imageScalingMode == ImageScalingMode.Upscaling) &&
+                (resolvedUpscalerHash == UniversalRenderPipeline.k_UpscalerHash_STP);
         }
 
         /// <summary>
@@ -639,8 +617,17 @@ namespace UnityEngine.Rendering.Universal
         /// </summary>
         internal StpHistory stpHistory;
 
+        /// <summary>
+        /// Post-upscale alpha history for the alpha upscale pass that runs after color-only upscalers.
+        /// </summary>
+        internal AlphaUpscaleHistory alphaUpscaleHistory;
+
         // TAA settings.
         internal TemporalAA.Settings taaSettings;
+
+        // Sub-pixel jitter applied to the projection matrix this frame.
+        // Computed once during camera setup, read by upscalers during post-process.
+        internal Vector2 subpixelJitter;
 
         // Post-process history reset has been triggered for this camera.
         internal bool resetHistory
@@ -673,6 +660,8 @@ namespace UnityEngine.Rendering.Universal
             renderType = CameraRenderType.Base;
             targetTexture = null;
             cameraTargetDescriptor = default;
+            backbufferColor = default;
+            backbufferDepth = default;
             pixelRect = default;
             useScreenCoordOverride = false;
             screenSizeOverride = default;
@@ -682,7 +671,8 @@ namespace UnityEngine.Rendering.Universal
             aspectRatio = 0.0f;
             renderScale = 1.0f;
             imageScalingMode = ImageScalingMode.None;
-            upscalingFilter = ImageUpscalingFilter.Point;
+            resolvedUpscalerHash = -1;
+            hardwareDynamicResolutionScale = Vector2.one;
             fsrOverrideSharpness = false;
             fsrSharpness = 0.0f;
             hdrColorBufferPrecision = HDRColorBufferPrecision._32Bits;
@@ -714,7 +704,9 @@ namespace UnityEngine.Rendering.Universal
             backgroundColor = Color.black;
             taaHistory = null;
             stpHistory = null;
+            alphaUpscaleHistory = null;
             taaSettings = default;
+            subpixelJitter = default;
             baseCamera = null;
             isLastBaseCamera = false;
             stackAnyPostProcessingEnabled = false;

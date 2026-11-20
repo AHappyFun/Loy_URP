@@ -17,19 +17,19 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             LoadAudit loadAudit = nativePass.loadAudit[attachmentIndex];
             string loadReason = LoadAudit.LoadReasonMessages[(int) loadAudit.reason];
             if (loadAudit.passId >= 0)
-                loadReason = loadReason.Replace("{pass}", $"<b>{ctx.passNames[loadAudit.passId].name}</b>");
+                loadReason = loadReason.Replace("{pass}", $"<b>{ctx.GetPassName(loadAudit.passId)}</b>");
 
             StoreAudit storeAudit = nativePass.storeAudit[attachmentIndex];
             string storeReason = StoreAudit.StoreReasonMessages[(int) storeAudit.reason];
             if (storeAudit.passId >= 0)
-                storeReason = storeReason.Replace("{pass}", $"<b>{ctx.passNames[storeAudit.passId].name}</b>");
+                storeReason = storeReason.Replace("{pass}", $"<b>{ctx.GetPassName(storeAudit.passId)}</b>");
 
             string storeMsaaReason = string.Empty;
             if (storeAudit.msaaReason != StoreReason.InvalidReason && storeAudit.msaaReason != StoreReason.NoMSAABuffer)
             {
                 storeMsaaReason = StoreAudit.StoreReasonMessages[(int) storeAudit.msaaReason];
                 if (storeAudit.msaaPassId >= 0)
-                    storeMsaaReason = storeMsaaReason.Replace("{pass}", $"<b>{ctx.passNames[storeAudit.msaaPassId].name}</b>");
+                    storeMsaaReason = storeMsaaReason.Replace("{pass}", $"<b>{ctx.GetPassName(storeAudit.msaaPassId)}</b>");
             }
 
             return new RenderGraph.DebugData.PassData.NRPInfo.NativeRenderPassInfo.AttachmentInfo
@@ -48,7 +48,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             string msg = "";
             if (nativePass.breakAudit.breakPass >= 0)
             {
-                msg += $"Failed to merge {ctx.passNames[nativePass.breakAudit.breakPass].name} into this native pass.\n";
+                msg += $"Failed to merge {ctx.GetPassName(nativePass.breakAudit.breakPass)} into this native pass.\n";
             }
 
             msg += PassBreakAudit.BreakReasonMessages[(int) nativePass.breakAudit.reason];
@@ -60,8 +60,8 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             string message = mergeResult.reason == PassBreakReason.Merged ?
                 "The passes are <b>compatible</b> to be merged.\n\n" :
                 "The passes are <b>incompatible</b> to be merged.\n\n";
-            string passName = InjectSpaces(pass.GetName(ctx).name);
-            string prevPassName = InjectSpaces(prevPass.GetName(ctx).name);
+            string passName = InjectSpaces(pass.GetName(ctx));
+            string prevPassName = InjectSpaces(prevPass.GetName(ctx));
             switch (mergeResult.reason)
             {
                 case (PassBreakReason.Merged):
@@ -88,7 +88,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     message += $"{prevPassName} uses a different depth buffer than {passName}.";
                     break;
                 case PassBreakReason.AttachmentLimitReached:
-                    message += $"Merging the passes would use more than {FixedAttachmentArray<PassFragmentData>.MaxAttachments} attachments.";
+                    message += $"Merging the passes would use more than {RenderGraph.kMaxMRTCount} colour attachments.";
                     break;
                 case PassBreakReason.SubPassLimitReached:
                     message += $"Merging the passes would use more than {k_MaxSubpass} native subpasses.";
@@ -107,6 +107,13 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     break;
                 case PassBreakReason.PassMergingDisabled:
                     message += "The pass merging is disabled.";
+                    break;
+                case PassBreakReason.BackbufferInMultipleRenderTargetsNotSupported:
+                    message += "Mixing backbuffer and custom render textures is not supported on this platform "
+                                + "(see SystemInfo.supportsBackbufferInMultipleRenderTargets).";
+                    break;
+                case PassBreakReason.MixedAllDepthSlicesAndSingleDepthSlice:
+                    message += "The passes use the same resource using different depth slice modes (all slices (-1) vs specific single slice).";
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -135,8 +142,6 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
         internal void GenerateNativeCompilerDebugData(ref RenderGraph.DebugData debugData)
         {
             ref var ctx = ref contextData;
-
-            debugData.isNRPCompiler = true;
 
             // Resolve read/write lists per resource
             Dictionary<(RenderGraphResourceType, int), List<int>> resourceReadLists = new Dictionary<(RenderGraphResourceType, int), List<int>>();
@@ -206,7 +211,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
 
                     if (!isNullResource)
                     {
-                        string resourceName = ctx.resources.resourceNames[t][i].name;
+                        string resourceName = ctx.GetResourceName(new ResourceHandle(i, type, false));
                         debugResource.name = !string.IsNullOrEmpty(resourceName) ? resourceName : "(unnamed)";
                         debugResource.imported = resourceUnversioned.isImported;
                     }
@@ -250,6 +255,14 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                     if (resourceWriteLists.ContainsKey(((RenderGraphResourceType) t, i)))
                         debugResource.producerList = resourceWriteLists[((RenderGraphResourceType) t, i)];
 
+#if UNITY_ENABLE_CHECKS
+                    if (type == RenderGraphResourceType.Texture && !isNullResource)
+                    {
+                        var texResource = graph.m_ResourcesForDebugOnly.GetTextureResource(i);
+                        debugResource.scriptInfo = texResource.debugScriptInfo;
+                    }
+#endif
+
                     debugData.resourceLists[t].Add(debugResource);
                 }
             }
@@ -259,7 +272,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
             {
                 var graphPass = graph.m_RenderPasses[passId];
                 ref var passData = ref ctx.passData.ElementAt(passId);
-                string passName = passData.GetName(ctx).name;
+                string passName = passData.GetName(ctx);
                 string passDisplayName = InjectSpaces(passName);
 
                 RenderGraph.DebugData.PassData debugPass = new RenderGraph.DebugData.PassData();
@@ -272,7 +285,7 @@ namespace UnityEngine.Rendering.RenderGraphModule.NativeRenderPassCompiler
                 debugPass.resourceReadLists = new RenderGraph.DebugData.PassData.ResourceIdLists();
                 debugPass.resourceWriteLists = new RenderGraph.DebugData.PassData.ResourceIdLists();
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_ENABLE_CHECKS
                 debugPass.scriptInfo = graphPass.debugScriptInfo;
 #endif
 

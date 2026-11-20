@@ -99,7 +99,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
     [MovedFrom(true, "UnityEngine.Experimental.Rendering.RenderGraphModule", "UnityEngine.Rendering.RenderGraphModule")]
     public readonly struct TextureHandle : IEquatable<TextureHandle>
     {
-        private static TextureHandle s_NullHandle = new TextureHandle();
+        private static readonly TextureHandle s_NullHandle = new TextureHandle();
 
         /// <summary>
         /// Returns a null texture handle
@@ -232,7 +232,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
         Functor
     }
 
-#if UNITY_2020_2_OR_NEWER
     /// <summary>
     /// Subset of the texture desc containing information for fast memory allocation (when platform supports it)
     /// </summary>
@@ -245,7 +244,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
         ///<summary>How much of the render target is to be switched into fast memory (between 0 and 1).</summary>
         public float residencyFraction;
     }
-#endif
 
     /// <summary>
     /// Descriptor used to create texture resources
@@ -313,10 +311,8 @@ namespace UnityEngine.Rendering.RenderGraphModule
 
         ///<summary>Texture name.</summary>
         public string name;
-#if UNITY_2020_2_OR_NEWER
         ///<summary>Descriptor to determine how the texture will be in fast memory on platform that supports it.</summary>
         public FastMemoryDesc fastMemoryDesc;
-#endif
         ///<summary>Determines whether the texture will fallback to a black texture if it is read without ever writing to it.</summary>
         public bool fallBackToBlackTexture;
         ///<summary>
@@ -504,7 +500,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
         /// Hash function
         /// </summary>
         /// <returns>The texture descriptor hash.</returns>
-        public override int GetHashCode()
+        public override int GetHashCode() => ComputeDescHash().value;
+
+        internal HashFNV1A32 ComputeDescHash()
         {
             var hashCode = HashFNV1A32.Create();
             switch (sizeMode)
@@ -538,11 +536,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
             hashCode.Append(bindTextureMS);
             hashCode.Append(useDynamicScale);
             hashCode.Append((int) msaaSamples);
-#if UNITY_2020_2_OR_NEWER
             hashCode.Append(fastMemoryDesc.inFastMemory);
-#endif
             hashCode.Append(enableShadingRate);
-            return hashCode.value;
+            return hashCode;
         }
 
         /// <summary>
@@ -568,6 +564,14 @@ namespace UnityEngine.Rendering.RenderGraphModule
     {
         static int m_TextureCreationIndex;
 
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            m_TextureCreationIndex = 0;
+        }
+#endif
+
         internal TextureUVOriginSelection textureUVOrigin;
 
         public override string GetName()
@@ -579,7 +583,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public override int GetDescHashCode() { return desc.GetHashCode(); }
+        public override HashFNV1A32 GetDescHash() { return desc.ComputeDescHash(); }
 
         public override void CreateGraphicsResource()
         {
@@ -641,16 +645,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 graphicsResource.Release();
             base.ReleaseGraphicsResource();
         }
-
-        public override void LogCreation(RenderGraphLogger logger)
-        {
-            logger.LogLine($"Created Texture: {desc.name} (Cleared: {desc.clearBuffer})");
-        }
-
-        public override void LogRelease(RenderGraphLogger logger)
-        {
-            logger.LogLine($"Released Texture: {desc.name}");
-        }
     }
 
     class TexturePool : RenderGraphResourcePool<RTHandle>
@@ -675,9 +669,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
             return "Texture";
         }
 
-        override protected int GetSortIndex(RTHandle res)
+        override protected ulong GetSortIndex(RTHandle res)
         {
-            return res.GetInstanceID();
+            return res.GetUniqueID();
         }
     }
 }

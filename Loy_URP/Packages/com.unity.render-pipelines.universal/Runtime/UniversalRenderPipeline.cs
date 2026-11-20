@@ -2,6 +2,7 @@ using System;
 using Unity.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using Unity.Scripting.LifecycleManagement;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.Rendering.Universal;
@@ -12,6 +13,10 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 using UnityEngine.Profiling;
 using static UnityEngine.Camera;
+
+#if ENABLE_WINDOW_ABSTRACTION && PLATFORM_SUPPORTS_PER_WINDOW_TRANSPARENCY
+using UnityEngine.Windowing;
+#endif
 
 namespace UnityEngine.Rendering.Universal
 {
@@ -25,6 +30,97 @@ namespace UnityEngine.Rendering.Universal
         /// </summary>
         public const string k_ShaderTagName = "UniversalPipeline";
 
+        // Display names for the builtin spatial upscalers.
+        internal const string k_UpscalerName_Auto = "Auto (Bilinear or Nearest-Neighbor)";
+        internal const string k_UpscalerName_Point = "Nearest-Neighbor";
+        internal const string k_UpscalerName_Linear = "Bilinear";
+        internal const string k_UpscalerName_FSR1 = "FidelityFX Super Resolution 1.0";
+
+        // Stable identifiers for the builtin upscalers, serialized by UniversalRenderPipelineAsset. Never change these.
+        internal static readonly string k_UpscalerId_Auto = "unity.auto";
+        internal static readonly string k_UpscalerId_Point = "unity.point";
+        internal static readonly string k_UpscalerId_Linear = "unity.bilinear";
+        internal static readonly string k_UpscalerId_FSR1 = "amd.fsr1";
+
+        // Interned ids, so the per-camera resolved upscaler can be compared as an int.
+        internal static readonly int k_UpscalerHash_Point = Shader.PropertyToID(k_UpscalerId_Point);
+        internal static readonly int k_UpscalerHash_Linear = Shader.PropertyToID(k_UpscalerId_Linear);
+        internal static readonly int k_UpscalerHash_FSR1 = Shader.PropertyToID(k_UpscalerId_FSR1);
+        internal static readonly int k_UpscalerHash_STP = Shader.PropertyToID(STPIUpscaler.registeredId);
+
+        internal class AutoUpscaler : AbstractUpscaler
+        {
+            public override string upscalerId => k_UpscalerId_Auto;
+            public override string name => k_UpscalerName_Auto;
+            public override bool isTemporal => false;
+            public override bool supportsSharpening => false;
+            public override bool supportsAlphaUpscaling => true;
+            // RecordRenderGraph is an empty implementation from AbstractUpscaler
+        }
+        internal class BilinearUpscaler : AbstractUpscaler
+        {
+            public override string upscalerId => k_UpscalerId_Linear;
+            public override string name => k_UpscalerName_Linear;
+            public override bool isTemporal => false;
+            public override bool supportsSharpening => false;
+            public override bool supportsAlphaUpscaling => true;
+        }
+        internal class PointUpscaler : AbstractUpscaler
+        {
+            public override string upscalerId => k_UpscalerId_Point;
+            public override string name => k_UpscalerName_Point;
+            public override bool isTemporal => false;
+            public override bool supportsSharpening => false;
+            public override bool supportsAlphaUpscaling => true;
+        }
+        internal class FSR1Upscaler : AbstractUpscaler
+        {
+            public override string upscalerId => k_UpscalerId_FSR1;
+            public override string name => k_UpscalerName_FSR1;
+            public override bool isSupportedOnDevice => FSRUtils.IsSupported();
+            public override bool isTemporal => false;
+            public override bool supportsSharpening => true;
+            public override bool supportsAlphaUpscaling => true;
+            // the FSR1 class is only for registration / unifying API for choosing an upscaler.
+            // The pass execution logic is still carried out by the internal Fsr1UpscalePostProcessPass.cs
+        }
+        private static readonly HashSet<Type> k_EmbeddedUpscalerTypes = new()
+        {
+            typeof(AutoUpscaler),
+            typeof(BilinearUpscaler),
+            typeof(PointUpscaler)
+        };
+        internal static readonly Type[] k_UpscalerSortOrder = new Type[]
+        {
+            typeof(AutoUpscaler),
+            typeof(BilinearUpscaler),
+            typeof(PointUpscaler),
+            typeof(FSR1Upscaler),
+            typeof(STPIUpscaler)
+            // Any external upscalers (DLSS, FSR2) will implicitly follow alphabetically
+        };
+
+        // Registers on load as well as on pipeline construction, so the registry lists these upscalers even before a
+        // pipeline instance exists. Registration is idempotent (happens once).
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoad]
+#endif
+        static class RegisterBuiltinUpscalers
+        {
+            static RegisterBuiltinUpscalers() => Register();
+
+            [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+            static void InitRuntime() => Register();
+
+            internal static void Register()
+            {
+                UpscalerRegistry.Register<AutoUpscaler>(k_UpscalerId_Auto, k_UpscalerName_Auto);
+                UpscalerRegistry.Register<BilinearUpscaler>(k_UpscalerId_Linear, k_UpscalerName_Linear);
+                UpscalerRegistry.Register<PointUpscaler>(k_UpscalerId_Point, k_UpscalerName_Point);
+                UpscalerRegistry.Register<FSR1Upscaler>(k_UpscalerId_FSR1, k_UpscalerName_FSR1);
+            }
+        }
+
         // Cache camera data to avoid per-frame allocations.
         internal static class CameraMetadataCache
         {
@@ -33,18 +129,17 @@ namespace UnityEngine.Rendering.Universal
                 public ProfilingSampler sampler;
             }
 
-            static Dictionary<int, CameraMetadataCacheEntry> s_MetadataCache = new();
-
-            static readonly CameraMetadataCacheEntry k_NoAllocEntry = new() { sampler = new ProfilingSampler("Unknown") };
+            static readonly Dictionary<EntityId, CameraMetadataCacheEntry> s_MetadataCache = new();
 
             public static CameraMetadataCacheEntry GetCached(Camera camera)
             {
-#if UNIVERSAL_PROFILING_NO_ALLOC
-                return k_NoAllocEntry;
-#else
-                int cameraId = camera.GetHashCode();
+                EntityId cameraId = camera.GetEntityId();
                 if (!s_MetadataCache.TryGetValue(cameraId, out CameraMetadataCacheEntry result))
                 {
+                    // Whenever a new camera is encountered, we will need to retrieve its name. We use this allocating
+                    // frame to also prune the cache of deleted cameras (e.g. scene change or cameras destroyed from script)
+                    RemoveDeletedCameras();
+
                     string cameraName = camera.name; // Warning: camera.name allocates
                     result = new CameraMetadataCacheEntry
                     {
@@ -55,7 +150,29 @@ namespace UnityEngine.Rendering.Universal
                 }
 
                 return result;
-#endif
+            }
+
+            static void RemoveDeletedCameras()
+            {
+                using (UnityEngine.Pool.ListPool<EntityId>.Get(out var deletedCameras))
+                {
+                    foreach (var id in s_MetadataCache.Keys)
+                    {
+                        if (Resources.EntityIdToObject(id) == null)
+                            deletedCameras.Add(id);
+                    }
+                    foreach (var id in deletedCameras)
+                    {
+                        if (s_MetadataCache.TryGetValue(id, out var entry))
+                            entry.sampler?.Dispose();
+                        s_MetadataCache.Remove(id);
+                    }
+                }
+            }
+
+            public static void Clear()
+            {
+                s_MetadataCache.Clear();
             }
         }
 
@@ -80,9 +197,6 @@ namespace UnityEngine.Rendering.Universal
                 {
                     const string k_Name = nameof(ScriptableRenderer);
                     public static readonly ProfilingSampler setupCullingParameters = new ProfilingSampler($"{k_Name}.{nameof(ScriptableRenderer.SetupCullingParameters)}");
-#if URP_COMPATIBILITY_MODE
-                    public static readonly ProfilingSampler setup = new ProfilingSampler($"{k_Name}.{nameof(ScriptableRenderer.Setup)}");
-#endif
                 };
 
                 public static class Context
@@ -176,41 +290,70 @@ namespace UnityEngine.Rendering.Universal
 
         private UniversalRenderPipelineGlobalSettings m_GlobalSettings;
 
-        internal UniversalRenderPipelineRuntimeTextures runtimeTextures { get; private set; }
+        struct DisplayMSAARequest
+        {
+            // Set by any camera that needs the surface multisampled; one camera keeps it on for the
+            // whole frame. Reset and consumed only in Render() so it can never be read stale.
+            bool m_NeededThisFrame;
 
-        internal static RenderTextureUVOriginStrategy renderTextureUVOriginStrategy { private get; set; }
+            // Hysteresis on dropping MSAA to 1: counts consecutive frames not needing MSAA so a per-frame
+            // flip-flop of the decision doesn't keep reallocating the surface.
+            int m_FramesSinceNeeded;
+
+            public void BeginFrame() => m_NeededThisFrame = false;
+            public void Require() => m_NeededThisFrame = true;
+            public void ResetDowngradeDelay() => m_FramesSinceNeeded = 0;
+
+            // Returns the sample count to request. Upgrades apply immediately; downgrades wait out the
+            // hysteresis, since extra MSAA frames cost only bandwidth, never correctness.
+            public int Resolve(int assetSamples, int currentSamples)
+            {
+                if (m_NeededThisFrame)
+                {
+                    m_FramesSinceNeeded = 0;
+                    return assetSamples;                        // upgrade immediately
+                }
+                if (++m_FramesSinceNeeded >= realBackbufferMSAADowngradeDelayFrames)
+                    return 1;                                   // downgrade only after the delay
+                return currentSamples;                          // hold current during the delay
+            }
+        }
+
+        // The real backbuffer and XR eye textures each need their own: a camera with allowXRRendering disabled
+        // will render into the real back buffer in the same frame as the XR cameras render into the eye textures.
+        private DisplayMSAARequest m_RealBackbufferMSAARequest;
+        private DisplayMSAARequest m_XRDisplayMSAARequest;
+
+        // Must be > 1: when the renderer configuration changes for only a few frames (different render passes
+        // enqueued, e.g. by the volume system), this keeps us from setting back buffer MSAA to 1 and back
+        // again in quick succession, which reallocates the back buffer twice - costly and can stutter.
+        // Because it counts *consecutive* not-needed frames (see above), a configuration that flips every
+        // frame never sets MSAA to 1, so it never thrashes, for any value > 1. A higher value costs little -
+        // the back buffer just stays multisampled for these extra frames after MSAA is genuinely no longer
+        // needed - but is a little harder to follow when debugging or in automated tests. 6 is a conservative
+        // default; raise it if renderer configuration changes cause back buffer thrash.
+        internal const int realBackbufferMSAADowngradeDelayFrames = 6;
+
+        internal UniversalRenderPipelineRuntimeTextures runtimeTextures { get; private set; }
 
         /// <summary>
         /// The default Render Pipeline Global Settings.
         /// </summary>
         public override RenderPipelineGlobalSettings defaultSettings => m_GlobalSettings;
 
-        // flag to keep track of depth buffer requirements by any of the overlay cameras in the stack
-        internal static bool stackedOverlayCamerasRequireDepthForPostProcessing = false;
-
-        internal static RenderGraph s_RenderGraph;
-        internal static RTHandleResourcePool s_RTHandlePool;
-
-#if URP_COMPATIBILITY_MODE
-        // internal for tests
-        internal static bool useRenderGraph;
-#endif
+        // All static variables for this class are cleaned up in Dispose(), which is always called when entering/exiting play mode.
+        // Therefore they are marked with [NoAutoStaticsCleanup] to mute analyzer warnings about them.
+        [NoAutoStaticsCleanup] internal static RenderGraph s_RenderGraph;
+        [NoAutoStaticsCleanup] internal static RTHandleResourcePool s_RTHandlePool;
 
         // Store locally the value on the instance due as the Render Pipeline Asset data might change before the disposal of the asset, making some APV Resources leak.
         internal bool apvIsEnabled = false;
 
         // Flag to check if offscreen UI cover prepass should be executed for the current frame.
-        internal static bool requireOffscreenUICoverPrepass;
+        [NoAutoStaticsCleanup] internal static bool requireOffscreenUICoverPrepass;
 
         // Flag to check if offscreen UI for HDR output is rendered in this frame at the first base camera.
-        internal static bool offscreenUIRenderedInCurrentFrame;
-
-        // In some specific cases, we modify Screen.msaaSamples to reduce GPU bandwidth
-        internal static bool canOptimizeScreenMSAASamples { get; private set; }
-
-        // For iOS and macOS players, the Screen API MSAA samples change request is only applied in the next frame (UUM-42825)
-        // To adress this, we need to store here the MSAA sample count at the beginning of the frame
-        internal static int startFrameScreenMSAASamples { get; private set; }
+        [NoAutoStaticsCleanup] internal static bool offscreenUIRenderedInCurrentFrame;
 
         // Reference to the asset associated with the pipeline.
         // When a pipeline asset is switched in `GraphicsSettings`, the `UniversalRenderPipelineCore.asset` member
@@ -223,9 +366,39 @@ namespace UnityEngine.Rendering.Universal
         /// <inheritdoc/>
         public override string ToString() => pipelineAsset?.ToString();
 
-#if ENABLE_UPSCALER_FRAMEWORK
         internal static Upscaling upscaling;
-#endif
+
+        /// <summary>
+        /// Gets the list of available upscaler IDs registered with the upscaling framework.
+        /// </summary>
+        /// <value>
+        /// A read-only list of strings containing the IDs of all supported upscalers.
+        /// Returns an empty list if the upscaling framework is not initialized.
+        /// </value>
+        public IReadOnlyList<string> availableUpscalerIds => upscaling?.upscalerIds ?? Array.Empty<string>();
+
+        /// <summary>
+        /// Sets the active upscaler for the pipeline by its ID.
+        /// </summary>
+        /// <param name="upscalerId">The ID of the upscaler to activate (e.g., "unity.stp").</param>
+        /// <returns>
+        /// <c>true</c> if the upscaler exists and the assignment was successful; <c>false</c> if the upscaling framework is uninitialized or the specified ID is invalid.
+        /// </returns>
+        public bool SetUpscaler(string upscalerId)
+        {
+            if (upscaling == null)
+                return false;
+
+            return upscaling.SetActiveUpscaler(upscalerId);
+        }
+
+        /// <summary>
+        /// Gets the name of the currently active upscaler.
+        /// </summary>
+        /// <value>
+        /// The name of the active upscaler, or an empty string if the upscaling framework is null.
+        /// </value>
+        public string activeUpscalerName => upscaling?.activeUpscaler?.name ?? string.Empty;
 
         /// <summary>
         /// Creates a new <c>UniversalRenderPipeline</c> instance.
@@ -252,17 +425,21 @@ namespace UnityEngine.Rendering.Universal
             // Init global shader keywords
             ShaderGlobalKeywords.InitializeShaderGlobalKeywords();
 
+            // The fog mode pair (_FOG_ANALYTIC _FOG_VOLUMETRIC) has no off variant, so one of the
+            // two must be enabled from the first frame for strict shader variant matching, even on
+            // renderers that never touch the fog keywords (e.g. the 2D Renderer).
+            Shader.SetKeyword(ShaderGlobalKeywords.FogAnalytic, true);
+            Shader.SetKeyword(ShaderGlobalKeywords.FogVolumetric, false);
+
             GraphicsSettings.useScriptableRenderPipelineBatching = asset.useSRPBatcher;
 
-            // In QualitySettings.antiAliasing disabled state uses value 0, where in URP 1
-            int qualitySettingsMsaaSampleCount = QualitySettings.antiAliasing > 0 ? QualitySettings.antiAliasing : 1;
-            bool msaaSampleCountNeedsUpdate = qualitySettingsMsaaSampleCount != asset.msaaSampleCount;
+            // QualitySettings.antiAliasing syncs engine MSAA state but does not reallocate the back buffer.
+            QualitySettings.antiAliasing = asset.msaaSampleCount;
 
-            // Let engine know we have MSAA on for cases where we support MSAA backbuffer
-            if (msaaSampleCountNeedsUpdate)
-            {
-                QualitySettings.antiAliasing = asset.msaaSampleCount;
-            }
+            // Apply the asset's MSAA to the back buffer at bind time so it doesn't lag asset changes by a
+            // frame; ApplyRealBackbufferMSAARequest still turns it off per-frame when no camera needs it.
+            RequestRealBackbufferMSAA(asset.msaaSampleCount);
+            m_RealBackbufferMSAARequest.ResetDowngradeDelay();
 
             var defaultVolumeProfileSettings = GraphicsSettings.GetRenderPipelineSettings<URPDefaultVolumeProfileSettings>();
             VolumeManager.instance.Initialize(defaultVolumeProfileSettings.volumeProfile, asset.volumeProfile);
@@ -270,9 +447,10 @@ namespace UnityEngine.Rendering.Universal
             // Configure initial XR settings
             MSAASamples msaaSamples = (MSAASamples)Mathf.Clamp(Mathf.NextPowerOfTwo(QualitySettings.antiAliasing), (int)MSAASamples.None, (int)MSAASamples.MSAA8x);
             XRSystem.SetDisplayMSAASamples(msaaSamples);
+            m_XRDisplayMSAARequest.ResetDowngradeDelay();
             XRSystem.SetRenderScale(asset.renderScale);
 
-            Lightmapping.SetDelegate(lightsDelegate);
+            Lightmapping.SetDelegate(s_LightsDelegate);
 
             CameraCaptureBridge.enabled = true;
 
@@ -281,23 +459,17 @@ namespace UnityEngine.Rendering.Universal
             DecalProjector.defaultMaterial = asset.decalMaterial;
 
             s_RenderGraph = new RenderGraph("URPRenderGraph");
-#if URP_COMPATIBILITY_MODE
-            useRenderGraph = !GraphicsSettings.GetRenderPipelineSettings<RenderGraphSettings>().enableRenderCompatibilityMode;
-
-#if !UNITY_EDITOR
-            Debug.Log($"RenderGraph is now {(useRenderGraph ? "enabled" : "disabled")}.");
-#endif
-#endif
-
             s_RTHandlePool = new RTHandleResourcePool();
 
-            DebugManager.instance.RefreshEditor();
+            DebugManager.instance.RecreateDebugUI();
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             m_DebugDisplaySettingsUI.RegisterDebug(UniversalRenderPipelineDebugDisplaySettings.Instance);
 #endif
 
             QualitySettings.enableLODCrossFade = asset.enableLODCrossFade;
+
+            UpdateSwapChainPreTransformOverride(asset);
 
             apvIsEnabled = asset != null && asset.lightProbeSystem == LightProbeSystem.ProbeVolumes;
             SupportedRenderingFeatures.active.overridesLightProbeSystem = apvIsEnabled;
@@ -322,14 +494,56 @@ namespace UnityEngine.Rendering.Universal
             // Initializes only if VRS is supported.
             Vrs.InitializeResources();
 
-#if ENABLE_UPSCALER_FRAMEWORK
-            upscaling = new Upscaling(asset.iUpscalerOptions);
-#endif
+            // URP-native (builtin) upscalers are handled here.
+            // For the embedded upscalers {linear, point, auto}, we will provide them in a set to the upscaling system.
+            // For the standalone pass upcalers (fsr1, stp), we'll let them register themselves.
+            // Note: FSR1 became an exception, we will keep using the Fsr1UpscalePostProcessPass.cs instead of IUpscaler
+            //       until we address the unification of HDRP/URP texture binding for the blitter.
+            RegisterBuiltinUpscalers.Register();
+
+            upscaling = new Upscaling(asset.upscalerOptions, k_EmbeddedUpscalerTypes, k_UpscalerSortOrder);
+
+            // Resolved once here rather than per frame, so a runtime SetActiveUpscaler() call isn't overwritten.
+            // Editing the asset recreates the pipeline via RenderPipelineAsset.OnValidate(), which re-resolves.
+            if (asset.scalingMode == ScalingMode.Upscaling)
+                upscaling.SetActiveUpscalerToFirstSupported(asset.GetUpscalerPriorityIds());
+        }
+
+        // Disables swapchain pre-transform while any Tile-Only renderer is in use (the two are
+        // incompatible) and restores it otherwise; the engine recreates the swapchain on change.
+        static void UpdateSwapChainPreTransformOverride(UniversalRenderPipelineAsset asset)
+        {
+            if (!SystemInfo.supportsSwapChainPreTransform || asset == null)
+                return;
+
+            bool anyTileOnlyRenderer = false;
+            foreach (var rendererData in asset.rendererDataList)
+            {
+                if (rendererData is UniversalRendererData universalRendererData && universalRendererData.tileOnlyMode)
+                {
+                    anyTileOnlyRenderer = true;
+                    break;
+                }
+            }
+
+            bool wasDisabled = QualitySettings.disableSwapChainPreTransform;
+            QualitySettings.disableSwapChainPreTransform = anyTileOnlyRenderer;
+
+            if (!wasDisabled && anyTileOnlyRenderer)
+                Debug.Log("Disabling swapchain pre-transform ('Apply display rotation during rendering'): the active Universal Render Pipeline Asset contains a renderer with Tile-Only Mode enabled, which is incompatible with pre-transform. This applies even if no camera currently uses that renderer. Remove the Tile-Only renderer from the asset's renderer list to keep pre-transform enabled.");
+        }
+
+        static void ResetSwapChainPreTransformOverride()
+        {
+            if (SystemInfo.supportsSwapChainPreTransform)
+                QualitySettings.disableSwapChainPreTransform = false;
         }
 
         /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
+            ResetSwapChainPreTransformOverride();
+
             Vrs.DisposeResources();
 
             if (apvIsEnabled)
@@ -337,18 +551,21 @@ namespace UnityEngine.Rendering.Universal
                 ProbeReferenceVolume.instance.Cleanup();
             }
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             m_DebugDisplaySettingsUI.UnregisterDebug();
 #endif
 
             Blitter.Cleanup();
+
+#if ENABLE_PROFILER
+            UniversalRenderPipelineDebugDisplaySettings.Instance?.renderingSettings?.SetBatchingTypeDebugEnabled(false);
+#endif
 
             base.Dispose(disposing);
 
             pipelineAsset.DestroyRenderers();
 
             SupportedRenderingFeatures.active = new SupportedRenderingFeatures();
-            ShaderData.instance.Dispose();
             XRSystem.Dispose();
 
             s_RenderGraph.Cleanup();
@@ -367,6 +584,23 @@ namespace UnityEngine.Rendering.Universal
 
             DisposeAdditionalCameraData();
             AdditionalLightsShadowAtlasLayout.ClearStaticCaches();
+
+            CameraMetadataCache.Clear();
+            requireOffscreenUICoverPrepass = false;
+            offscreenUIRenderedInCurrentFrame = false;
+
+            // Dispose only clears the contexts, leaving the registered-upscaler list intact.
+            // The command buffer signals upscaler plugins on the render thread to release their native resources;
+            // it records no GPU work. Release can be asynchronous, so this can't be a plain managed Dispose on the
+            // main thread. ExecuteCommandBuffer dispatches the signal immediately, as there's no render context to
+            // submit to at pipeline teardown.
+            if (upscaling != null)
+            {
+                var upscalerCmd = CommandBufferPool.Get("Upscaler Dispose");
+                upscaling.Dispose(upscalerCmd);
+                Graphics.ExecuteCommandBuffer(upscalerCmd);
+                CommandBufferPool.Release(upscalerCmd);
+            }
         }
 
         // If the URP gets destroyed, we must clean up all the added URP specific camera data and
@@ -392,7 +626,7 @@ namespace UnityEngine.Rendering.Universal
 
             public CameraRenderingScope(ScriptableRenderContext context, Camera camera)
             {
-                using (new ProfilingScope(beginCameraRenderingSampler))
+                using (new ProfilingScope(beginCameraRenderingSampler, camera))
                 {
                     m_Context = context;
                     m_Camera = camera;
@@ -403,7 +637,7 @@ namespace UnityEngine.Rendering.Universal
 
             public void Dispose()
             {
-                using (new ProfilingScope(endCameraRenderingSampler))
+                using (new ProfilingScope(endCameraRenderingSampler, m_Camera))
                 {
                     EndCameraRendering(m_Context, m_Camera);
                 }
@@ -441,6 +675,19 @@ namespace UnityEngine.Rendering.Universal
         /// <inheritdoc/>
         protected override void Render(ScriptableRenderContext renderContext, List<Camera> cameras)
         {
+            // RenderPipelineManager calls this once per frame: reset the back buffer MSAA request, let each
+            // camera rendered here report its need, then apply. Cameras rendered outside this path (render
+            // requests) are not counted — safe only because they target a destination texture, never the back
+            // buffer. If that changes, this decision becomes incomplete.
+            m_RealBackbufferMSAARequest.BeginFrame();
+            m_XRDisplayMSAARequest.BeginFrame();
+            RenderCameras(renderContext, cameras);
+            ApplyRealBackbufferMSAARequest();
+            ApplyXRDisplayMSAARequest();
+        }
+
+        void RenderCameras(ScriptableRenderContext renderContext, List<Camera> cameras)
+        {
             SetHDRState(cameras);
 
             int cameraCount = cameras.Count;
@@ -451,31 +698,27 @@ namespace UnityEngine.Rendering.Universal
             // The offscreen UI cover prepass ensures the overlay UI covers the entire display by blitting UI to the screen first, even when the combined camera viewports do not fill the screen.
             requireOffscreenUICoverPrepass = HDROutputForMainDisplayIsActive() && asset.supportsHDR && SupportedRenderingFeatures.active.rendersUIOverlay && !CoreUtils.IsScreenFullyCoveredByCameras(cameras);
 
-            // Bandwidth optimization with Render Graph in some circumstances
-            SetupScreenMSAASamplesState(cameraCount);
-
             GPUResidentDrawer.ReinitializeIfNeeded();
 
             // TODO: Would be better to add Profiling name hooks into RenderPipelineManager.
             // C#8 feature, only in >= 2020.2
-            using var profScope = new ProfilingScope(ProfilingSampler.Get(URPProfileId.UniversalRenderTotal));
+            using var profScope = new ProfilingScope(URPProfilingSamplers.UniversalRenderTotal);
 
             using (new ContextRenderingScope(renderContext, cameras))
             {
                 GraphicsSettings.lightsUseLinearIntensity = (QualitySettings.activeColorSpace == ColorSpace.Linear);
                 GraphicsSettings.lightsUseColorTemperature = true;
                 SetupPerFrameShaderConstants();
-                XRSystem.SetDisplayMSAASamples((MSAASamples)asset.msaaSampleCount);
 
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                var cbSettings = GraphicsSettings.GetRenderPipelineSettings<RenderingCapabilitiesSettings>();
+                useGlobalConstantBuffer = cbSettings != null && cbSettings.useGlobalConstantBuffer;
+
+#if UNITY_ENABLE_CHECKS
                 if (DebugManager.instance.isAnyDebugUIActive)
                     UniversalRenderPipelineDebugDisplaySettings.Instance.UpdateDisplayStats();
 
                 // This is for texture streaming
                 UniversalRenderPipelineDebugDisplaySettings.Instance.UpdateMaterials();
-#endif
-#if ENABLE_UPSCALER_FRAMEWORK
-                upscaling.SetActiveUpscaler(asset.upscalerName);
 #endif
                 // URP uses the camera's allowDynamicResolution flag to decide if useDynamicScale should be enabled for camera render targets.
                 // However, the RTHandle system has an additional setting that controls if useDynamicScale will be set for render targets allocated via RTHandles.
@@ -492,6 +735,14 @@ namespace UnityEngine.Rendering.Universal
                 {
                     // camera can be a base or an overlay camera
                     var camera = cameras[i];
+
+                    // Bumped here, not in RenderSingleCamera, so it fires once per stack rendering
+                    // rather than once per camera within the stack.
+                    if (camera.targetTexture != null)
+                    {
+                        camera.targetTexture.IncrementUpdateCount();
+                    }
+
                     bool isLastBaseCamera = i == lastBaseCameraIndex;
                     if (IsGameCamera(camera))
                     {
@@ -503,11 +754,12 @@ namespace UnityEngine.Rendering.Universal
                         using (new CameraRenderingScope(renderContext, camera))
                         {
 #if VISUAL_EFFECT_GRAPH_0_0_1_OR_NEWER
-                        //It should be called before culling to prepare material. When there isn't any VisualEffect component, this method has no effect.
-                        //N.B.: We aren't expecting an XR camera at this stage
-                        VFX.VFXManager.PrepareCamera(camera);
+                            //It should be called before culling to prepare material. When there isn't any VisualEffect component, this method has no effect.
+                            //N.B.: We aren't expecting an XR camera at this stage
+                            VFX.VFXManager.PrepareCamera(camera);
 #endif
-                            UpdateVolumeFramework(camera, null);
+                            camera.TryGetComponent<UniversalAdditionalCameraData>(out var additionalCameraData);
+                            UpdateVolumeFramework(camera, additionalCameraData);
                             // Only render if camera is a base camera
                             RenderSingleCameraInternal(renderContext, camera, isLastBaseCamera);
                         }
@@ -516,11 +768,63 @@ namespace UnityEngine.Rendering.Universal
 
                 s_RenderGraph.EndFrame();
                 s_RTHandlePool.PurgeUnusedResources(Time.frameCount);
+
+                // Clean up expired upscaler contexts (unused for > 400 frames)
+                if (upscaling != null)
+                {
+                    var cmd = CommandBufferPool.Get("Upscaler Context Cleanup");
+                    upscaling.CleanupExpiredContexts(cmd);
+                    renderContext.ExecuteCommandBuffer(cmd);
+                    CommandBufferPool.Release(cmd);
+                }
             }
 
 #if ENABLE_SHADER_DEBUG_PRINT
             ShaderDebugPrintManager.instance.EndFrame();
 #endif
+        }
+
+        // Renderers call this (via ScriptableRenderer.ReportDisplayTargetMSAA) to report that a camera needs
+        // the real back buffer multisampled.
+        internal void RequireRealBackbufferMSAA()
+        {
+            m_RealBackbufferMSAARequest.Require();
+        }
+
+        // Only sets the request for the next frame. The current frame already imported the live back buffer
+        // value (Screen.currentBackbufferMSAASamples) into RenderGraph, so rendering stays correct no matter
+        // when the surface is actually reallocated (deferred to the next frame on platforms like Metal).
+        private void ApplyRealBackbufferMSAARequest()
+        {
+            RequestRealBackbufferMSAA(m_RealBackbufferMSAARequest.Resolve(asset.msaaSampleCount, Screen.msaaSamples));
+        }
+
+        // Sets the real back buffer MSAA count, clamped to 1 where MSAA is resolved explicitly (the
+        // optimization is inactive there). Reallocates only when the count actually changes vs the engine's
+        // currently requested count (Screen.msaaSamples), so this also respects external changes to it.
+        private void RequestRealBackbufferMSAA(int samples)
+        {
+            if (UniversalRenderer.PlatformRequiresExplicitMsaaResolve())
+                samples = 1;
+            if (samples != Screen.msaaSamples)
+                Screen.SetMSAASamples(samples);
+        }
+
+        // XR counterpart of RequireRealBackbufferMSAA, for the XR eye textures.
+        internal void RequireXRDisplayMSAA()
+        {
+            m_XRDisplayMSAARequest.Require();
+        }
+
+        // XR counterpart of ApplyRealBackbufferMSAARequest. The eye textures are reallocated at the next XR
+        // frame start, and URP imports their live descriptor each frame, so rendering stays correct.
+        private void ApplyXRDisplayMSAARequest()
+        {
+            if (!XRSystem.displayActive)
+                return;
+
+            int samples = m_XRDisplayMSAARequest.Resolve(asset.msaaSampleCount, (int)XRSystem.GetDisplayMSAASamples());
+            XRSystem.SetDisplayMSAASamples((MSAASamples)samples);
         }
 
         /// <summary>
@@ -566,8 +870,10 @@ namespace UnityEngine.Rendering.Universal
                 int mipLevel = standardRequest != null ? standardRequest.mipLevel : singleRequest.mipLevel;
                 int slice = standardRequest != null ? standardRequest.slice : singleRequest.slice;
                 int face = standardRequest != null ? (int)standardRequest.face : (int)singleRequest.face;
+                bool isPreview = standardRequest != null ? standardRequest.isPreview : false;
 
                 //store data that will be changed
+                var originalCameraType = camera.cameraType;
                 var originalTarget = camera.targetTexture;
 
                 //set data
@@ -586,21 +892,33 @@ namespace UnityEngine.Rendering.Universal
                 RTDesc.width = Mathf.Max(1, RTDesc.width);
                 RTDesc.height = Mathf.Max(1, RTDesc.height);
 
+                RTDesc.depthStencilFormat = destination.depthStencilFormat;
+                if (RTDesc.depthStencilFormat == GraphicsFormat.None)
+                    RTDesc.depthStencilFormat = CoreUtils.GetDefaultDepthStencilFormat();
+
                 //if mip is 0 and target is Texture2D we can immediately render to the requested destination
                 if(destination.dimension != TextureDimension.Tex2D || mipLevel != 0)
                 {
                     temporaryRT = RenderTexture.GetTemporary(RTDesc);
                 }
 
+                if (isPreview)
+                    camera.cameraType = CameraType.Preview;
                 camera.targetTexture = temporaryRT ? temporaryRT : destination;
 
+                // Do not call Render() here — it must run once per frame (see its back buffer MSAA bookkeeping).
                 if (standardRequest != null)
                 {
-                    Render(context, new List<Camera>{ camera });
+                    RenderCameras(context, new List<Camera>{ camera });
                 }
                 else
                 {
-                    using (ListPool<Camera>.Get(out var tmp))
+                    if (camera.targetTexture != null)
+                    {
+                        camera.targetTexture.IncrementUpdateCount();
+                    }
+
+                    using (UnityEngine.Pool.ListPool<Camera>.Get(out var tmp))
                     {
                         tmp.Add(camera);
 
@@ -663,6 +981,7 @@ namespace UnityEngine.Rendering.Universal
                 }
 
                 //restore data
+                camera.cameraType = originalCameraType;
                 camera.targetTexture = originalTarget;
                 Graphics.SetRenderTarget(originalTarget);
                 RenderTexture.ReleaseTemporary(temporaryRT);
@@ -689,8 +1008,17 @@ namespace UnityEngine.Rendering.Universal
         internal static void RenderSingleCameraInternal(ScriptableRenderContext context, Camera camera, bool isLastBaseCamera = true)
         {
             UniversalAdditionalCameraData additionalCameraData = null;
-            if (IsGameCamera(camera))
-                camera.gameObject.TryGetComponent(out additionalCameraData);
+
+            camera.gameObject.TryGetComponent(out additionalCameraData);
+
+            // Some scene view effects (e.g. screen space reflections and ssao) require camera history, which is owned
+            // by UniversalAdditionalCameraData. Add the component on demand so those effects can access history
+            // for the scene view camera.
+            if (camera.cameraType == CameraType.SceneView && additionalCameraData == null)
+            {
+                additionalCameraData = camera.gameObject.AddComponent<UniversalAdditionalCameraData>();
+                additionalCameraData.hideFlags = HideFlags.HideAndDontSave;
+            }
 
             RenderSingleCameraInternal(context, camera, ref additionalCameraData, isLastBaseCamera);
         }
@@ -719,7 +1047,6 @@ namespace UnityEngine.Rendering.Universal
 
             RenderSingleCamera(context, cameraData);
         }
-
         static bool TryGetCullingParameters(UniversalCameraData cameraData, out ScriptableCullingParameters cullingParams)
         {
 #if ENABLE_VR && ENABLE_XR_MODULE
@@ -730,6 +1057,10 @@ namespace UnityEngine.Rendering.Universal
                 // Sync the FOV on the camera to match the projection from the XR device
                 if (!cameraData.camera.usePhysicalProperties && !XRGraphicsAutomatedTests.enabled)
                     cameraData.camera.fieldOfView = Mathf.Rad2Deg * Mathf.Atan(1.0f / cullingParams.stereoProjectionMatrix.m11) * 2.0f;
+
+                LODParameters lodParameters = cullingParams.lodParameters;
+                lodParameters.fieldOfView = cameraData.camera.fieldOfView; // Update it in case it was synced above
+                cullingParams.lodParameters = lodParameters;
 
                 return true;
             }
@@ -776,11 +1107,9 @@ namespace UnityEngine.Rendering.Universal
             CommandBuffer cmdScope = cameraData.xr.enabled ? null : cmd;
 
             var cameraMetadata = CameraMetadataCache.GetCached(camera);
-            using (new ProfilingScope(cmdScope, cameraMetadata.sampler)) // Enqueues a "BeginSample" command into the CommandBuffer cmd
+            using (new ProfilingScope(cmdScope, cameraMetadata.sampler, camera)) // Enqueues a "BeginSample" command into the CommandBuffer cmd
             {
-                renderer.Clear(cameraData.renderType);
-
-                using (new ProfilingScope(Profiling.Pipeline.Renderer.setupCullingParameters))
+                using (new ProfilingScope(Profiling.Pipeline.Renderer.setupCullingParameters, camera))
                 {
                     var legacyCameraData = new CameraData(frameData);
 
@@ -832,7 +1161,9 @@ namespace UnityEngine.Rendering.Universal
                 // NOTE: Tracks only the current (this) camera, not shadow views or any other offscreen views.
                 // NOTE: Shared between both Execute and Render (RG) paths.
                 if (additionalCameraData != null)
+                {
                     additionalCameraData.motionVectorsPersistentData.Update(cameraData);
+                }
 
                 // TODO: Move into the renderer. Problem: It modifies the AdditionalCameraData which is copied into RenderingData which causes value divergence for value types.
                 // Update TAA persistent data based on cameraData. Most importantly resize the history render targets.
@@ -847,7 +1178,22 @@ namespace UnityEngine.Rendering.Universal
                 // RenderingData takes a copy of the CameraData.
                 // UniversalRenderingData needs to be created here to avoid copying cullResults.
                 var data = frameData.Create<UniversalRenderingData>();
-                data.cullResults = context.Cull(ref cullingParameters);
+
+#if ENABLE_VR && ENABLE_XR_MODULE
+                if (cameraData.xr.enabled)
+                {
+                    var xrPassUniversal = cameraData.xr as XRPassUniversal;
+                    data.reuseCullingResult = cameraData.xr.isQuadViewInnerPass && xrPassUniversal.TryGetStackCullingResults(out data.cullResults);
+                    if (!data.reuseCullingResult)
+                    {
+                        data.cullResults = context.Cull(ref cullingParameters);
+                        if (cameraData.xr.xrLayoutType == XRLayoutType.TwoPassQuadViews)
+                            xrPassUniversal.SetStackCullingResults(data.cullResults);
+                    }
+                }
+                else
+#endif
+                    data.cullResults = context.Cull(ref cullingParameters);
 
                 GPUResidentDrawer.PostCullBeginCameraRendering(new RenderRequestBatcherContext { commandBuffer = cmd });
 
@@ -856,16 +1202,15 @@ namespace UnityEngine.Rendering.Universal
                 // Initialize all the data types required for rendering.
                 UniversalLightData lightData;
                 UniversalShadowData shadowData;
-                CullContextData cullData;
 
-                using (new ProfilingScope(Profiling.Pipeline.initializeRenderingData))
+                using (new ProfilingScope(Profiling.Pipeline.initializeRenderingData, camera))
                 {
                     CreateUniversalResourceData(frameData);
                     lightData = CreateLightData(frameData, asset, data.cullResults.visibleLights, renderingMode);
                     shadowData = CreateShadowData(frameData, asset, renderingMode);
                     CreatePostProcessingData(frameData, asset);
                     CreateRenderingData(frameData, asset, cmd, renderingMode, cameraData.renderer);
-                    cullData = CreateCullContextData(frameData, context);
+                    CreateCullContextData(frameData, context);
                 }
 
                 RenderingData legacyRenderingData = new RenderingData(frameData);
@@ -875,49 +1220,23 @@ namespace UnityEngine.Rendering.Universal
                 if (asset?.useAdaptivePerformance == true)
                     ApplyAdaptivePerformance(frameData);
 #endif
-                UniversalRenderPipeline.renderTextureUVOriginStrategy = RenderTextureUVOriginStrategy.BottomLeft;
 
+#if ENABLE_VR && ENABLE_XR_MODULE
+                shadowData.shadowMapCachingEnabled = cameraData.xr.enabled && cameraData.xr.xrLayoutType == XRLayoutType.TwoPassQuadViews;
+                shadowData.useCachedShadowMap = shadowData.shadowMapCachingEnabled && cameraData.xr.isQuadViewInnerPass;
+#endif
                 CreateShadowAtlasAndCullShadowCasters(lightData, shadowData, cameraData, ref data.cullResults, ref context);
 
                 renderer.AddRenderPasses(ref legacyRenderingData);
-
-#if URP_COMPATIBILITY_MODE
-                if (!useRenderGraph)
-                {
-                    // Disable obsolete warning for internal usage
-                    #pragma warning disable CS0618
-                    using (new ProfilingScope(Profiling.Pipeline.Renderer.setup))
-                    {
-                        renderer.Setup(context, ref legacyRenderingData);
-                    }
-
-                    // Timing scope inside
-                    renderer.Execute(context, ref legacyRenderingData);
-                    #pragma warning restore CS0618
-                }
-                else
-#endif
-                {
-                    RenderTextureUVOriginStrategy uvOriginStrategy = UniversalRenderPipeline.renderTextureUVOriginStrategy;
-                    RecordAndExecuteRenderGraph(s_RenderGraph, context, renderer, cmd, cameraData.camera, uvOriginStrategy);
-                    renderer.FinishRenderGraphRendering(cmd);
-                }
+                RecordAndExecuteRenderGraph(s_RenderGraph, context, renderer, cmd, cameraData.camera);
+                renderer.FinishRenderGraphRendering(cmd);
             } // When ProfilingSample goes out of scope, an "EndSample" command is enqueued into CommandBuffer cmd
 
             context.ExecuteCommandBuffer(cmd); // Sends to ScriptableRenderContext all the commands enqueued since cmd.Clear, i.e the "EndSample" command
             CommandBufferPool.Release(cmd);
 
-            using (new ProfilingScope(Profiling.Pipeline.Context.submit))
+            using (new ProfilingScope(Profiling.Pipeline.Context.submit, cameraData.camera))
             {
-#if URP_COMPATIBILITY_MODE
-                // Render Graph will do the validation by itself, so this is redundant in that case
-                if (!useRenderGraph && renderer.useRenderPassEnabled && !context.SubmitForRenderPassValidation())
-                {
-                    renderer.useRenderPassEnabled = false;
-                    cmd.SetKeyword(ShaderGlobalKeywords.RenderPassEnabled, false);
-                    Debug.LogWarning("Rendering command not supported inside a native RenderPass found. Falling back to non-RenderPass rendering path");
-                }
-#endif
                 context.Submit(); // Actually execute the commands that we previously sent to the ScriptableRenderContext context
             }
             ScriptableRenderer.current = null;
@@ -934,6 +1253,9 @@ namespace UnityEngine.Rendering.Universal
             if (shadowData.supportsAdditionalLightShadows)
                 shadowData.shadowAtlasLayout = BuildAdditionalLightsShadowAtlasLayout(lightData, shadowData, cameraData);
 
+            if (shadowData.useCachedShadowMap)
+                return;
+
             shadowData.visibleLightsShadowCullingInfos = ShadowCulling.CullShadowCasters(ref context, shadowData, ref shadowData.shadowAtlasLayout, ref cullResults);
         }
 
@@ -947,7 +1269,7 @@ namespace UnityEngine.Rendering.Universal
         /// <param name="isLastBaseCamera">True if this is the last base camera.</param>
         static void RenderCameraStack(ScriptableRenderContext context, Camera baseCamera, bool isLastBaseCamera)
         {
-            using var profScope = new ProfilingScope(ProfilingSampler.Get(URPProfileId.RenderCameraStack));
+            using var profScope = new ProfilingScope(URPProfilingSamplers.RenderCameraStack, baseCamera);
 
             baseCamera.TryGetComponent<UniversalAdditionalCameraData>(out var baseCameraAdditionalData);
 
@@ -973,8 +1295,6 @@ namespace UnityEngine.Rendering.Universal
             {
                 var baseCameraRendererType = renderer.GetType();
                 bool shouldUpdateCameraStack = false;
-
-                stackedOverlayCamerasRequireDepthForPostProcessing = false;
 
                 for (int i = 0; i < stackedOverlayCameras.Count; ++i)
                 {
@@ -1014,8 +1334,6 @@ namespace UnityEngine.Rendering.Universal
                             continue;
                         }
 
-                        stackedOverlayCamerasRequireDepthForPostProcessing |= CheckPostProcessForDepth();
-
                         stackAnyPostProcessingEnabled |= data.renderPostProcessing;
                         lastActiveOverlayCameraIndex = i;
                     }
@@ -1028,11 +1346,16 @@ namespace UnityEngine.Rendering.Universal
 
             bool isStackedRendering = lastActiveOverlayCameraIndex != -1;
 
+            // The camera data is set based on the supported features.
+            renderer.UpdateSupportedRenderingFeatures();
+
             // Prepare XR rendering
             var xrActive = false;
             var xrRendering = baseCameraAdditionalData?.allowXRRendering ?? true;
             var xrLayout = XRSystem.NewLayout();
             xrLayout.AddCamera(baseCamera, xrRendering);
+
+            XRPassUniversal prevXRPassUniversal = null;
 
             // With XR multi-pass enabled, each camera can be rendered multiple times with different parameters
             foreach ((Camera _, XRPass xrPass) in xrLayout.GetActivePasses())
@@ -1040,6 +1363,14 @@ namespace UnityEngine.Rendering.Universal
                 var xrPassUniversal = xrPass as XRPassUniversal;
                 if (xrPass.enabled)
                 {
+                    // For inner QuadView pass: copy each stack camera's culling results from the outer pass so RenderSingleCamera
+                    // can reuse them without issuing a second context.Cull() call.
+                    if (prevXRPassUniversal != null && xrPass.isQuadViewInnerPass)
+                    {
+                        xrPassUniversal.stackCullingResults.Clear();
+                        xrPassUniversal.stackCullingResults.AddRange(prevXRPassUniversal.stackCullingResults);
+                    }
+
                     xrActive = true;
                     UpdateCameraStereoMatrices(baseCamera, xrPass);
 
@@ -1091,8 +1422,6 @@ namespace UnityEngine.Rendering.Universal
                     if (asset?.useAdaptivePerformance == true)
                         ApplyAdaptivePerformance(baseCameraData);
 #endif
-                    // update the base camera flag so that the scene depth is stored if needed by overlay cameras later in the frame
-                    baseCameraData.postProcessingRequiresDepthTexture |= stackedOverlayCamerasRequireDepthForPostProcessing;
 
                     // Check whether the camera stack final output is HDR
                     // This is equivalent of UniversalCameraData.isHDROutputActive but without necessiting the base camera to be the last camera in the stack.
@@ -1103,23 +1432,21 @@ namespace UnityEngine.Rendering.Universal
                         hdrDisplayOutputActive = xrPass.isHDRDisplayOutputActive;
 #endif
                     finalOutputHDR =
-                        asset.supportsHDR &&
                         hdrDisplayOutputActive // Check whether any HDR display is active and the render pipeline asset allows HDR rendering
                         && baseCamera.targetTexture == null &&
                         (baseCamera.cameraType == CameraType.Game ||
                          baseCamera.cameraType == CameraType.VR) // Check whether the stack outputs to a screen
-                        && baseCameraData.allowHDROutput; // Check whether the base camera allows HDR output
+                        && baseCameraData.isHdrEnabled; // Check whether the base camera has HDR enabled (this includes a check if the renderer supports it)
 
                     // Update stack-related parameters
                     baseCameraData.stackAnyPostProcessingEnabled = stackAnyPostProcessingEnabled;
                     baseCameraData.stackLastCameraOutputToHDR = finalOutputHDR;
 
-                    // Render the offscreen overlay UI only in the first base camera.
-                    var rendersOffscreenUI = baseCameraData.rendersOverlayUI && finalOutputHDR && !offscreenUIRenderedInCurrentFrame;
-                    if (rendersOffscreenUI)
-                        offscreenUIRenderedInCurrentFrame = true;
-                    baseCameraData.rendersOffscreenUI = rendersOffscreenUI;
-                    baseCameraData.blitsOffscreenUICover = rendersOffscreenUI && requireOffscreenUICoverPrepass;
+                    // Render the HDR offscreen overlay UI only in the first base camera if it renders overlay UI.
+                    UpdateOffscreenUIRendering(baseCameraData, finalOutputHDR);
+
+                    if (xrPassUniversal != null)
+                        xrPassUniversal.stackCameraIndex = 0;
 
                     RenderSingleCamera(context, baseCameraData);
                 }
@@ -1171,13 +1498,21 @@ namespace UnityEngine.Rendering.Universal
                                 overlayCameraData.stackAnyPostProcessingEnabled = stackAnyPostProcessingEnabled;
                                 overlayCameraData.stackLastCameraOutputToHDR = finalOutputHDR;
 
+                                // Render the HDR offscreen overlay UI from the stack's last camera if earlier base camera did not render overlay UI.
+                                if (isLastOverlayCamera)
+                                    UpdateOffscreenUIRendering(overlayCameraData, finalOutputHDR);
+
                                 xrLayout.ReconfigurePass(overlayCameraData.xr, overlayCamera);
+
+                                if (xrPassUniversal != null)
+                                    xrPassUniversal.stackCameraIndex = i + 1;
 
                                 RenderSingleCamera(context, overlayCameraData);
                             }
                         }
                     }
                 }
+                prevXRPassUniversal = xrPassUniversal;
             }
 
             if (xrActive)
@@ -1207,6 +1542,19 @@ namespace UnityEngine.Rendering.Universal
             baseCameraData.pixelHeight = (int)System.Math.Round(camPixelRect.height + camPixelRect.y) - (int)System.Math.Round(camPixelRect.y);
             baseCameraData.aspectRatio = (float)baseCameraData.pixelWidth / (float)baseCameraData.pixelHeight;
 
+            // XR backbuffer info — sourced directly from the XR render target descriptor.
+            baseCameraData.backbufferColor = new RenderTargetInfo
+            {
+                width = xr.renderTargetDesc.width,
+                height = xr.renderTargetDesc.height,
+                volumeDepth = xr.renderTargetDesc.volumeDepth,
+                msaaSamples = xr.renderTargetDesc.msaaSamples,
+                format = xr.renderTargetDesc.graphicsFormat,
+                bindMS = xr.renderTargetDesc.msaaSamples > 1 && !UniversalRenderer.PlatformRequiresExplicitMsaaResolve(),
+            };
+            baseCameraData.backbufferDepth = baseCameraData.backbufferColor;
+            baseCameraData.backbufferDepth.format = xr.renderTargetDesc.depthStencilFormat;
+
             // Update cameraData cameraTargetDescriptor for XR. This descriptor is mainly used for configuring intermediate screen space textures
             var originalTargetDesc = baseCameraData.cameraTargetDescriptor;
             baseCameraData.cameraTargetDescriptor = xr.renderTargetDesc;
@@ -1214,7 +1562,12 @@ namespace UnityEngine.Rendering.Universal
             {
                 baseCameraData.cameraTargetDescriptor.graphicsFormat = originalTargetDesc.graphicsFormat;
             }
-            baseCameraData.cameraTargetDescriptor.msaaSamples = originalTargetDesc.msaaSamples;
+
+            // Tile-only must match the cameraTargetDescriptor MSAA with backbufferDescriptor.
+            bool tileOnlyMode = baseCameraData.renderer is UniversalRenderer { useTileOnlyMode: true };
+            baseCameraData.cameraTargetDescriptor.msaaSamples = tileOnlyMode
+                ? baseCameraData.backbufferColor.msaaSamples
+                : originalTargetDesc.msaaSamples;
 
             if (baseCameraData.isDefaultViewport)
             {
@@ -1232,28 +1585,59 @@ namespace UnityEngine.Rendering.Universal
             // If upscaling is active, set the scaled width and height
             baseCameraData.scaledWidth = Mathf.Max(1, (int)(baseCameraData.pixelWidth * baseCameraData.renderScale));
             baseCameraData.scaledHeight = Mathf.Max(1, (int)(baseCameraData.pixelHeight * baseCameraData.renderScale));
-#if ENABLE_UPSCALER_FRAMEWORK
-            if (baseCameraData.isDefaultViewport && baseCameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler) // baseCameraData.isDefaultViewport only. (XRDisplaySubsystem.scaleOfAllViewports isn't supported.)
+
+            ApplyTemporalPixelSynthesisOverrides(baseCameraData);
+        }
+
+        // Frame-keyed rather than bools: this runs once per XR pass and once per stacked overlay camera, and
+        // any one of those can see TPS inactive, so a bool reset on "inactive" would spam every frame.
+        [AutoStaticsCleanup] static int s_LastTemporalPixelSynthesisSuppressedTAAFrame = -1;
+        [AutoStaticsCleanup] static int s_LastTemporalPixelSynthesisSuppressedUpscalerFrame = -1;
+
+        /// <summary>
+        /// Reports what Temporal Pixel Synthesis suppressed, and neutralises the legacy upscaling filter.
+        /// TAA and STP are suppressed in <see cref="UniversalCameraData.IsTemporalAAEnabled"/>, and the
+        /// upscaler framework in <c>CreatePostProcessingData</c>.
+        /// </summary>
+        static void ApplyTemporalPixelSynthesisOverrides(UniversalCameraData cameraData)
+        {
+            if (!cameraData.IsTemporalPixelSynthesisActive())
+                return;
+
+            if (cameraData.IsTemporalAARequested()
+                && !cameraData.IsSTPRequested()
+                && s_LastTemporalPixelSynthesisSuppressedTAAFrame != Time.frameCount)
             {
-                // An IUpscaler is active. It might want to change the pre-upscale resolution. Negotiate with it.
-                IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                if (activeUpscaler.IsSupportedXR())
-                {
-                    Vector2Int res = new Vector2Int(baseCameraData.scaledWidth, baseCameraData.scaledHeight);
-                    activeUpscaler.NegotiatePreUpscaleResolution(ref res, new Vector2Int(baseCameraData.pixelWidth, baseCameraData.pixelHeight));
-                    baseCameraData.scaledWidth = res.x;
-                    baseCameraData.scaledHeight = res.y;
-                    // Feedback new scaledWidth and scaledHeight to cameraTargetDescriptor immediately.
-                    baseCameraData.cameraTargetDescriptor.width = baseCameraData.scaledWidth;
-                    baseCameraData.cameraTargetDescriptor.height = baseCameraData.scaledHeight;
-                }
+                s_LastTemporalPixelSynthesisSuppressedTAAFrame = Time.frameCount;
+                Debug.LogWarning("URP Temporal Anti-aliasing is disabled: Meta Temporal Pixel Synthesis is the active resolver on this XR device. " +
+                    "The compositor performs the temporal resolve, and URP must not apply its own jitter. Set Anti-aliasing to None on the camera to silence this message.");
             }
-#endif
+
+            bool spatialUpscalerActive = cameraData.resolvedUpscalerHash != k_UpscalerHash_Linear
+                && cameraData.resolvedUpscalerHash != k_UpscalerHash_Point
+                && cameraData.imageScalingMode == ImageScalingMode.Upscaling;
+
+            if (spatialUpscalerActive && s_LastTemporalPixelSynthesisSuppressedUpscalerFrame != Time.frameCount)
+            {
+                s_LastTemporalPixelSynthesisSuppressedUpscalerFrame = Time.frameCount;
+                Debug.LogWarning($"URP upscaler '{upscaling?.activeUpscaler?.name ?? string.Empty}' is disabled: Meta Temporal Pixel Synthesis is the active resolver on this XR device and the compositor performs anti-aliasing and upscaling. " +
+                    "URP has fallen back to a bilinear resolve for the render scale. Set the URP Asset's upscaling filter to Automatic to silence this message.");
+            }
+        }
+
+        static void UpdateOffscreenUIRendering(UniversalCameraData cameraData, bool finalOutputHDR)
+        {
+            // The first eligible camera in the frame draws HDR offscreen overlay UI.
+            var rendersOffscreenUI = cameraData.rendersOverlayUI && finalOutputHDR && !offscreenUIRenderedInCurrentFrame;
+            if (rendersOffscreenUI)
+                offscreenUIRenderedInCurrentFrame = true;
+            cameraData.rendersOffscreenUI = rendersOffscreenUI;
+            cameraData.blitsOffscreenUICover = rendersOffscreenUI && requireOffscreenUICoverPrepass;
         }
 
         static void UpdateVolumeFramework(Camera camera, UniversalAdditionalCameraData additionalCameraData)
         {
-            using var profScope = new ProfilingScope(ProfilingSampler.Get(URPProfileId.UpdateVolumeFramework));
+            using var profScope = new ProfilingScope(URPProfilingSamplers.UpdateVolumeFramework);
 
             // We update the volume framework for:
             // * All cameras in the editor when not in playmode
@@ -1322,37 +1706,41 @@ namespace UnityEngine.Rendering.Universal
             if (stack.GetComponent<MotionBlur>().IsActive())
                 return true;
 
+            if (LensFlareCommonSRP.IsOcclusionRTCompatible()
+                && !LensFlareCommonSRP.Instance.IsEmpty()
+                && UniversalRenderPipeline.asset.supportDataDrivenLensFlare)
+                return true;
+
             return false;
         }
 
-        static void SetSupportedRenderingFeatures(UniversalRenderPipelineAsset pipelineAsset)
+        internal static void SetSupportedRenderingFeatures(UniversalRenderPipelineAsset pipelineAsset)
         {
 #if UNITY_EDITOR
-            SupportedRenderingFeatures.active = new SupportedRenderingFeatures()
-            {
-                reflectionProbeModes = SupportedRenderingFeatures.ReflectionProbeModes.Rotation,
-                defaultMixedLightingModes = SupportedRenderingFeatures.LightmapMixedBakeModes.Subtractive,
-                mixedLightingModes = SupportedRenderingFeatures.LightmapMixedBakeModes.Subtractive | SupportedRenderingFeatures.LightmapMixedBakeModes.IndirectOnly | SupportedRenderingFeatures.LightmapMixedBakeModes.Shadowmask,
-                lightmapBakeTypes = LightmapBakeType.Baked | LightmapBakeType.Mixed | LightmapBakeType.Realtime,
-                lightmapsModes = LightmapsMode.CombinedDirectional | LightmapsMode.NonDirectional,
-                lightProbeProxyVolumes = false,
-                motionVectors = true,
-                receiveShadows = false,
-                reflectionProbes = false,
-                reflectionProbesBlendDistance = true,
-                particleSystemInstancing = true,
-                overridesEnableLODCrossFade = true
-            };
-            if (GraphicsSettings.TryGetRenderPipelineSettings<URPReflectionProbeSettings>(out var reflectionProbeSettings)
-                && !reflectionProbeSettings.UseReflectionProbeRotation)
-            {
-                SupportedRenderingFeatures.active.reflectionProbeModes = SupportedRenderingFeatures.ReflectionProbeModes.None;
-            }
+            SupportedRenderingFeatures.active.reflectionProbeModes = SupportedRenderingFeatures.ReflectionProbeModes.Rotation;
+            SupportedRenderingFeatures.active.defaultMixedLightingModes = SupportedRenderingFeatures.LightmapMixedBakeModes.Subtractive;
+            SupportedRenderingFeatures.active.mixedLightingModes = SupportedRenderingFeatures.LightmapMixedBakeModes.Subtractive | SupportedRenderingFeatures.LightmapMixedBakeModes.IndirectOnly | SupportedRenderingFeatures.LightmapMixedBakeModes.Shadowmask;
+            SupportedRenderingFeatures.active.lightmapBakeTypes = LightmapBakeType.Baked | LightmapBakeType.Mixed | LightmapBakeType.Realtime;
+            SupportedRenderingFeatures.active.lightmapsModes = LightmapsMode.CombinedDirectional | LightmapsMode.NonDirectional;
+            SupportedRenderingFeatures.active.lightProbeProxyVolumes = false;
+            SupportedRenderingFeatures.active.motionVectors = true;
+            SupportedRenderingFeatures.active.receiveShadows = false;
+            SupportedRenderingFeatures.active.reflectionProbes = false;
+            SupportedRenderingFeatures.active.reflectionProbesBlendDistance = true;
+            SupportedRenderingFeatures.active.particleSystemInstancing = true;
+            SupportedRenderingFeatures.active.overridesEnableLODCrossFade = true;
 
             SceneViewDrawMode.SetupDrawMode();
 #endif
+            if (GraphicsSettings.TryGetRenderPipelineSettings<URPReflectionProbeSettings>(out var reflectionProbeSettings))
+            {
+                SupportedRenderingFeatures.active.reflectionProbeModes =
+                    reflectionProbeSettings.UseReflectionProbeRotation
+                        ? SupportedRenderingFeatures.ReflectionProbeModes.Rotation
+                        : SupportedRenderingFeatures.ReflectionProbeModes.None;
+            }
 
-            SupportedRenderingFeatures.active.supportsHDR = pipelineAsset.supportsHDR;
+            SupportedRenderingFeatures.active.supportsHDR = pipelineAsset != null && pipelineAsset.supportsHDR;
             SupportedRenderingFeatures.active.rendersUIOverlay = true;
         }
 
@@ -1370,12 +1758,140 @@ namespace UnityEngine.Rendering.Universal
             cameraData.scaledHeight = Mathf.Max(1, (int) (camera.pixelHeight * cameraData.renderScale));
         }
 
+        // Whether the active upscaler drives this camera's render resolution. False for editor cameras (scene/preview/
+        // reflection would get resized to the upscaler's resolution) and hardware-DRS cameras (ScalableBufferManager
+        // owns scaling and is mutually exclusive with the framework upscaler; see UpscalerPostProcessPass).
+        internal static bool UpscalerDrivesCameraResolution(UniversalCameraData cameraData, IUpscaler activeUpscaler)
+        {
+            if (activeUpscaler == null)
+                return false;
+
+            var cameraType = cameraData.camera.cameraType;
+            if (cameraType == CameraType.SceneView
+                || cameraType == CameraType.Preview
+                || cameraType == CameraType.Reflection)
+                return false;
+
+            return !cameraData.camera.allowDynamicResolution;
+        }
+
+        // Determines whether the active upscaler dictates the render resolution for this camera.
+        // Returns false (the pipeline keeps its Render Scale) when:
+        //  - no upscaler is active, or the camera is an editor (scene/preview/reflection) camera, or
+        //  - the upscaler does not pin the resolution (constraint != Fixed, e.g. STP/spatial filters, or range-driven custom scaling).
+        // A quality-mode upscaler that renders at native (e.g. DLSS DLAA) still dictates (qualityModeResolution == display),
+        // so it correctly forces native regardless of Render Scale.
+        internal static bool TryGetUpscalerDictatedResolution(UniversalCameraData cameraData, IUpscaler activeUpscaler, out Vector2Int renderResolution)
+        {
+            renderResolution = default;
+
+            if (!UpscalerDrivesCameraResolution(cameraData, activeUpscaler))
+                return false;
+
+            // Use cameraData.pixelWidth/Height (the viewport size, XR-adjusted) rather than camera.pixelWidth, to match
+            // the display resolution the rest of the pipeline scales from.
+            var displayResolution = new Vector2Int(cameraData.pixelWidth, cameraData.pixelHeight);
+
+            // Acquire the per-camera context for the active upscaler
+            // In XR multi-pass rendering, encode eye information into the camera ID to ensure separate contexts per eye
+            var cameraInstanceID = EntityId.ToULong(cameraData.camera.GetEntityId());
+            ulong viewId = cameraInstanceID;
+            if (cameraData.xr.enabled && !cameraData.xr.singlePassEnabled)
+                viewId = (ulong)HashCode.Combine(cameraInstanceID, cameraData.xr.multipassId);
+
+            UpscalerOptions options = upscaling.GetGlobalOptions(activeUpscaler);
+
+            // Acquire context early
+            upscaling.AcquireContext(viewId, activeUpscaler, options, displayResolution);
+
+            var info = activeUpscaler.GetResolutionInfo(displayResolution, options);
+
+            if (info.constraint != UpscalerResolutionConstraint.Fixed)
+                return false;
+
+            renderResolution = info.qualityModeResolution;
+            return true;
+        }
+
+        // Last requested Render Scale (rounded to 2 decimals) we warned about; NaN means none. Tracked so a clamp warns
+        // once per distinct out-of-range value instead of every frame.
+        float m_LastWarnedClampRequestedScale = float.NaN;
+
+        // Clamps a pipeline-chosen render size to the active upscaler's supported [min,max] range, for upscalers that
+        // constrain the resolution without dictating it (constraint == Range). Returns the
+        // size unchanged when the range doesn't apply, and warns when a clamp occurs.
+        internal static Vector2Int ClampRenderSizeToUpscalerBounds(UniversalCameraData cameraData, IUpscaler activeUpscaler, Vector2Int renderSize)
+        {
+            if (!UpscalerDrivesCameraResolution(cameraData, activeUpscaler))
+                return renderSize;
+
+            // In upscaler terms we have two resolutions: Render Resolution and Display Resolution.
+            // In this context, the target(display resolution) is the camera's output viewport.
+            // The local name deliberately mirrors the IUpscaler API parameters.
+            var displayResolution = new Vector2Int(cameraData.pixelWidth, cameraData.pixelHeight);
+
+            // Only upscalers actually upscale (render size below the display). At render scale >= 1.0 the image is native
+            // or supersampled (downscaled) and the upscaler is inactive, so its range doesn't apply — don't clamp (it
+            // would corrupt the supersampling resolution) and don't warn.
+            if (renderSize.x >= displayResolution.x && renderSize.y >= displayResolution.y)
+                return renderSize;
+
+            // Acquire the per-camera context for the active upscaler
+            // In XR multi-pass rendering, encode eye information into the camera ID to ensure separate contexts per eye
+            var cameraInstanceID = EntityId.ToULong(cameraData.camera.GetEntityId());
+            ulong viewId = cameraInstanceID;
+            if (cameraData.xr.enabled && !cameraData.xr.singlePassEnabled)
+                viewId = (ulong)HashCode.Combine(cameraInstanceID, cameraData.xr.multipassId);
+
+            UpscalerOptions options = upscaling.GetGlobalOptions(activeUpscaler);
+
+            // Acquire context early
+            upscaling.AcquireContext(viewId, activeUpscaler, options, displayResolution);
+
+            var info = activeUpscaler.GetResolutionInfo(displayResolution, options);
+
+            if (info.constraint != UpscalerResolutionConstraint.Range)
+                return renderSize;
+
+            var clamped = new Vector2Int(
+                Mathf.Clamp(renderSize.x, info.minResolution.x, info.maxResolution.x),
+                Mathf.Clamp(renderSize.y, info.minResolution.y, info.maxResolution.y));
+
+            if (Debug.isDebugBuild && RenderPipelineManager.currentPipeline is UniversalRenderPipeline urp)
+            {
+                if (clamped == renderSize)
+                {
+                    urp.m_LastWarnedClampRequestedScale = float.NaN; // in range: clear it so a later out-of-range value warns again
+                }
+                else
+                {
+                    // A clamp occurred: warn once per distinct requested Render Scale
+                    float requestedScale = (float)renderSize.x / displayResolution.x;
+                    float roundedRequested = Mathf.Floor(requestedScale * 100f + 0.5f) / 100f;
+                    if (!Mathf.Approximately(urp.m_LastWarnedClampRequestedScale, roundedRequested))
+                    {
+                        urp.m_LastWarnedClampRequestedScale = roundedRequested;
+                        float minScale = (float)info.minResolution.x / displayResolution.x;
+                        float maxScale = (float)info.maxResolution.x / displayResolution.x;
+                        Debug.LogWarning(
+                            $"Requested Render Scale {requestedScale:0.00} is outside {activeUpscaler.name}'s supported range " +
+                            $"[{minScale:0.00}..{maxScale:0.00}] and was clamped. Keep Render Scale / dynamic resolution within " +
+                            "the upscaler's limits to avoid this.");
+                    }
+                }
+            }
+
+            return clamped;
+        }
+
         static UniversalCameraData CreateCameraData(ContextContainer frameData, Camera camera, UniversalAdditionalCameraData additionalCameraData)
         {
             using var profScope = new ProfilingScope(Profiling.Pipeline.initializeCameraData);
 
             var renderer = GetRenderer(camera, additionalCameraData);
             UniversalCameraData cameraData = frameData.Create<UniversalCameraData>();
+            cameraData.renderer = renderer;
+
             InitializeStackedCameraData(camera, additionalCameraData, cameraData);
 
             cameraData.camera = camera;
@@ -1389,36 +1905,42 @@ namespace UnityEngine.Rendering.Universal
 
             // If upscaling is active, set the scaled width and height
             InitializeScaledDimensions(camera, cameraData);
-#if ENABLE_UPSCALER_FRAMEWORK
-            if (cameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler)
+
+            IUpscaler activeUpscaler = upscaling.activeUpscaler;
+            bool upscalerDictatesResolution = TryGetUpscalerDictatedResolution(cameraData, activeUpscaler, out var upscalerRenderSize);
+            if (upscalerDictatesResolution)
             {
-                // An IUpscaler is active. It might want to change the pre-upscale resolution. Negotiate with it.
-                IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                Debug.Assert(activeUpscaler != null);
-                Vector2Int res = new Vector2Int(cameraData.scaledWidth, cameraData.scaledHeight);
-                activeUpscaler.NegotiatePreUpscaleResolution(ref res, new Vector2Int(cameraData.pixelWidth, cameraData.pixelHeight));
-                cameraData.scaledWidth = res.x;
-                cameraData.scaledHeight = res.y;
+                cameraData.scaledWidth = upscalerRenderSize.x;
+                cameraData.scaledHeight = upscalerRenderSize.y;
             }
+            else
+            {
+                // Upscaler doesn't dictate the resolution but may constrain it to a supported range; clamp into it.
+                var clamped = ClampRenderSizeToUpscalerBounds(cameraData, activeUpscaler,
+                    new Vector2Int(cameraData.scaledWidth, cameraData.scaledHeight));
+                cameraData.scaledWidth = clamped.x;
+                cameraData.scaledHeight = clamped.y;
+            }
+
+            // Capture the global hardware-DRS (ScalableBufferManager) scale once here so upscaler passes read this stable
+            // per-camera value rather than the live global, which another pass could mutate mid-frame.
+            cameraData.hardwareDynamicResolutionScale = camera.allowDynamicResolution
+                ? new Vector2(ScalableBufferManager.widthScaleFactor, ScalableBufferManager.heightScaleFactor)
+                : Vector2.one;
+
+#if ENABLE_WINDOW_ABSTRACTION && PLATFORM_SUPPORTS_PER_WINDOW_TRANSPARENCY && !UNITY_EDITOR
+            bool needsAlphaChannel = WindowingTransparency.IsGameWindowTransparent(cameraData.camera.targetDisplay);
+#else
+            bool needsAlphaChannel = Graphics.preserveFramebufferAlpha;
 #endif
 
-            bool rendererSupportsMSAA = renderer != null && renderer.supportedRenderingFeatures.msaa;
-
-            int msaaSamples = 1;
-            if (camera.allowMSAA && asset.msaaSampleCount > 1 && rendererSupportsMSAA)
-                msaaSamples = (camera.targetTexture != null) ? camera.targetTexture.antiAliasing : asset.msaaSampleCount;
-
-            // Use XR's MSAA if camera is XR camera. XR MSAA needs special handle here because it is not per Camera.
-            // Multiple cameras could render into the same XR display and they should share the same MSAA level.
-            // However it should still respect the sample count of the target texture camera is rendering to.
-            if (cameraData.xrRendering && rendererSupportsMSAA && camera.targetTexture == null)
-                msaaSamples = (int)XRSystem.GetDisplayMSAASamples();
-
-            bool needsAlphaChannel = Graphics.preserveFramebufferAlpha;
-
             cameraData.hdrColorBufferPrecision = asset ? asset.hdrColorBufferPrecision : HDRColorBufferPrecision._32Bits;
-            cameraData.cameraTargetDescriptor = CreateRenderTextureDescriptor(camera, cameraData,
-                cameraData.isHdrEnabled, cameraData.hdrColorBufferPrecision, msaaSamples, needsAlphaChannel, cameraData.requiresOpaqueTexture);
+
+            CreateBackbufferInfo(camera, cameraData, needsAlphaChannel);
+
+            int msaaSamples = GetIntermediateTexturesMSAA(cameraData, renderer);
+
+            cameraData.cameraTargetDescriptor = CreateRenderTextureDescriptor(camera, cameraData, msaaSamples);
 
             uint count = GraphicsFormatUtility.GetAlphaComponentCount(cameraData.cameraTargetDescriptor.graphicsFormat);
             cameraData.isAlphaOutputEnabled = GraphicsFormatUtility.HasAlphaChannel(cameraData.cameraTargetDescriptor.graphicsFormat);
@@ -1481,11 +2003,16 @@ namespace UnityEngine.Rendering.Universal
                 cameraData.allowHDROutput = true;
             }
 
+            var supportedRenderingFeatures = cameraData.renderer.supportedRenderingFeatures;
+
             ///////////////////////////////////////////////////////////////////
             // Settings that control output of the camera                     /
             ///////////////////////////////////////////////////////////////////
 
-            cameraData.isHdrEnabled = baseCamera.allowHDR && settings.supportsHDR;
+            if (!supportedRenderingFeatures.antiAliasing)
+                cameraData.antialiasing = AntialiasingMode.None;
+
+            cameraData.isHdrEnabled = baseCamera.allowHDR && settings.supportsHDR && supportedRenderingFeatures.supportsHDR;
             cameraData.allowHDROutput &= settings.supportsHDR;
 
             Rect cameraRect = baseCamera.rect;
@@ -1502,27 +2029,19 @@ namespace UnityEngine.Rendering.Universal
             // Discard variations lesser than kRenderScaleThreshold.
             // Scale is only enabled for gameview.
             const float kRenderScaleThreshold = 0.05f;
-            bool disableRenderScale = ((Mathf.Abs(1.0f - settings.renderScale) < kRenderScaleThreshold) || isScenePreviewOrReflectionCamera);
-            cameraData.renderScale = disableRenderScale ? 1.0f : settings.renderScale;
+            bool disableRenderScale = (Mathf.Abs(1.0f - settings.renderScale) < kRenderScaleThreshold) || isScenePreviewOrReflectionCamera || !supportedRenderingFeatures.upscaling;
+            cameraData.renderScale = disableRenderScale? 1.0f : settings.renderScale;
 
-            // Convert the upscaling filter selection from the pipeline asset into an image upscaling filter
-            cameraData.upscalingFilter = ResolveUpscalingFilterSelection(new Vector2(cameraData.pixelWidth, cameraData.pixelHeight), cameraData.renderScale, settings.upscalingFilter,
-#if URP_COMPATIBILITY_MODE
-                GraphicsSettings.TryGetRenderPipelineSettings<RenderGraphSettings>(out var renderGraphSettings) && !renderGraphSettings.enableRenderCompatibilityMode
-#else
-                true
-#endif
-                );
+            // ImageUpscalingFilter is deprecated, we now track by upscaler id.
+            // The active upscaler is the highest priority one supported on this device, so resolve from it rather than
+            // from the serialized selection.
+            IUpscaler activeUpscaler = upscaling.activeUpscaler;
+            string selectedUpscalerId = activeUpscaler != null ? activeUpscaler.upscalerId : k_UpscalerId_Auto;
+            string resolvedUpscalerId = ResolveAutoUpscaler(cameraData.pixelWidth, cameraData.pixelHeight, cameraData.renderScale, selectedUpscalerId);
+            cameraData.resolvedUpscalerHash = Shader.PropertyToID(resolvedUpscalerId);
 
-            bool upscalerSupportsTemporalAntiAliasing = cameraData.upscalingFilter == ImageUpscalingFilter.STP;
-            bool upscalerSupportsSharpening = cameraData.upscalingFilter == ImageUpscalingFilter.FSR;
-#if ENABLE_UPSCALER_FRAMEWORK
-            if (cameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler)
-            {
-                IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                upscalerSupportsTemporalAntiAliasing = upscalerSupportsTemporalAntiAliasing || activeUpscaler.IsTemporalUpscaler();
-            }
-#endif
+            bool upscalerSupportsTemporalAntiAliasing = activeUpscaler != null && activeUpscaler.isTemporal;
+            bool upscalerSupportsSharpening = activeUpscaler != null && activeUpscaler.supportsSharpening;
 
             if (cameraData.renderScale > 1.0f)
             {
@@ -1551,17 +2070,7 @@ namespace UnityEngine.Rendering.Universal
 
             cameraData.xr = XRSystem.emptyPass;
             var renderScaleXR = cameraData.renderScale;
-#if ENABLE_UPSCALER_FRAMEWORK
-            if (cameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler)
-            {
-                IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                // XRSystem.SetRenderScale() will change the resolution for back buffers on XR.
-                // When IUpscaler is enabled, must be set renderScaleXR to 1 to disable this behavior.
-                // If the value of cameraData.renderScale and renderScaleXR are 0.5, the scale for UpscalingIO.preUpscaleResolution is 0.25.
-                if (activeUpscaler.IsSupportedXR())
-                    renderScaleXR = 1.0f;
-            }
-#endif
+
             XRSystem.SetRenderScale(renderScaleXR);
 
             var commonOpaqueFlags = SortingCriteria.CommonOpaque;
@@ -1628,6 +2137,14 @@ namespace UnityEngine.Rendering.Universal
                 cameraData.screenCoordScaleBias = Vector2.one;
             }
 
+            var supportedRenderingFeatures = renderer.supportedRenderingFeatures;
+
+            if (!supportedRenderingFeatures.cameraOpaqueTexture)
+                cameraData.requiresOpaqueTexture = false;
+
+            if (!supportedRenderingFeatures.cameraDepthTexture)
+                cameraData.requiresDepthTexture = false;
+
             cameraData.renderer = renderer;
             cameraData.postProcessingRequiresDepthTexture = CheckPostProcessForDepth(cameraData);
             cameraData.resolveFinalTarget = resolveFinalTarget;
@@ -1646,6 +2163,11 @@ namespace UnityEngine.Rendering.Universal
             {
                 cameraData.requiresOpaqueTexture = false;
             }
+
+            // Apply post-processing settings to the alpha output.
+            // cameraData.isAlphaOutputEnabled is set based on target alpha channel availability on create. Target can be a RenderTexture or the back-buffer.
+            bool allowAlphaOutput = !cameraData.postProcessEnabled || (cameraData.postProcessEnabled && settings.allowPostProcessAlphaOutput);
+            cameraData.isAlphaOutputEnabled = cameraData.isAlphaOutputEnabled && allowAlphaOutput;
 
             // NOTE: TAA depends on XR modifications of cameraTargetDescriptor.
             if (additionalCameraData != null)
@@ -1670,27 +2192,36 @@ namespace UnityEngine.Rendering.Universal
             // Affects the jitter set just below. Do not move.
             ApplyTaaRenderingDebugOverrides(ref cameraData.taaSettings);
 
-            TemporalAA.JitterFunc jitterFunc;
+            Matrix4x4 jitterMat = Matrix4x4.identity;
             // Depends on the cameraTargetDesc, size and MSAA also XR modifications of those.
-#if ENABLE_UPSCALER_FRAMEWORK
-            if (cameraData.IsTemporalAAEnabled() &&
-                cameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler)
+            IUpscaler activeUpscaler = upscaling.activeUpscaler;
+            // Only a temporal upscaler drives the jitter sequence.
+            if (cameraData.IsTemporalAAEnabled() && activeUpscaler != null && activeUpscaler.isTemporal)
             {
-                IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                Debug.Assert(activeUpscaler != null);
-                jitterFunc = activeUpscaler.CalculateJitter;
+                // Upscalers compute jitter with resolution-dependent parameters.
+                int taaFrameIndex = TemporalAA.CalculateTaaFrameIndex(ref cameraData.taaSettings);
+                float actualWidth = cameraData.cameraTargetDescriptor.width;
+                float upscaleRatio = (float)cameraData.pixelWidth / actualWidth;
+
+                activeUpscaler.CalculateJitter(taaFrameIndex, upscaleRatio, out Vector2 subpixelJitter, out bool allowScaling);
+
+                // Note: DLSS/FSR2 set allowScaling=false, so jitterScale is not applied
+                if (allowScaling)
+                    subpixelJitter *= cameraData.taaSettings.jitterScale;
+
+                // Store for later use by upscaler during post-process
+                cameraData.subpixelJitter = subpixelJitter;
+
+                jitterMat = TemporalAA.CalculateJitterMatrix(cameraData, subpixelJitter);
+            }
+            else if (cameraData.IsSTPEnabled())
+            {
+                jitterMat = TemporalAA.CalculateJitterMatrix(cameraData, StpUtils.s_JitterFunc);
             }
             else
-#endif
-            if (cameraData.IsSTPEnabled())
             {
-                jitterFunc = StpUtils.s_JitterFunc;
+                jitterMat = TemporalAA.CalculateJitterMatrix(cameraData, TemporalAA.s_JitterFunc);
             }
-            else
-            {
-                jitterFunc = TemporalAA.s_JitterFunc;
-            }
-            Matrix4x4 jitterMat = TemporalAA.CalculateJitterMatrix(cameraData, jitterFunc);
             cameraData.SetViewProjectionAndJitterMatrix(camera.worldToCameraMatrix, projectionMatrix, jitterMat);
 
             cameraData.worldSpaceCameraPos = camera.transform.position;
@@ -1708,11 +2239,6 @@ namespace UnityEngine.Rendering.Universal
 
             cameraData.stackAnyPostProcessingEnabled = cameraData.postProcessEnabled;
             cameraData.stackLastCameraOutputToHDR = cameraData.isHDROutputActive;
-
-            // Apply post-processing settings to the alpha output.
-            // cameraData.isAlphaOutputEnabled is set based on target alpha channel availability on create. Target can be a RenderTexture or the back-buffer.
-            bool allowAlphaOutput = !cameraData.postProcessEnabled || (cameraData.postProcessEnabled && settings.allowPostProcessAlphaOutput);
-            cameraData.isAlphaOutputEnabled = cameraData.isAlphaOutputEnabled && allowAlphaOutput;
         }
 
         static UniversalRenderingData CreateRenderingData(ContextContainer frameData, UniversalRenderPipelineAsset settings, CommandBuffer cmd, RenderingMode? renderingMode, ScriptableRenderer renderer)
@@ -1720,17 +2246,7 @@ namespace UnityEngine.Rendering.Universal
             UniversalLightData universalLightData = frameData.Get<UniversalLightData>();
 
             UniversalRenderingData data = frameData.Get<UniversalRenderingData>();
-            data.supportsDynamicBatching = settings.supportsDynamicBatching;
             data.perObjectData = GetPerObjectLightFlags(universalLightData, settings, renderingMode);
-
-#if URP_COMPATIBILITY_MODE
-            // Render graph does not support RenderingData.commandBuffer as its execution timeline might break.
-            // RenderingData.commandBuffer is available only for the old non-RG execute code path.
-            if(useRenderGraph)
-                data.m_CommandBuffer = null;
-            else
-                data.m_CommandBuffer = cmd;
-#endif
 
             UniversalRenderer universalRenderer = renderer as UniversalRenderer;
             if (universalRenderer != null)
@@ -1756,8 +2272,8 @@ namespace UnityEngine.Rendering.Universal
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
             UniversalLightData lightData = frameData.Get<UniversalLightData>();
 
-            m_ShadowBiasData.Clear();
-            m_ShadowResolutionData.Clear();
+            s_ShadowBiasData.Clear();
+            s_ShadowResolutionData.Clear();
 
             shadowData.shadowmapDepthBufferBits = 16;
             shadowData.mainLightShadowCascadeBorder = urpAsset.cascadeBorder;
@@ -1765,7 +2281,8 @@ namespace UnityEngine.Rendering.Universal
             shadowData.mainLightShadowCascadesSplit = GetMainLightCascadeSplit(shadowData.mainLightShadowCascadesCount, urpAsset);
             shadowData.mainLightShadowmapWidth = urpAsset.mainLightShadowmapResolution;
             shadowData.mainLightShadowmapHeight = urpAsset.mainLightShadowmapResolution;
-            shadowData.additionalLightsShadowmapWidth = shadowData.additionalLightsShadowmapHeight = urpAsset.additionalLightsShadowmapResolution;
+            shadowData.additionalLightsShadowmapWidth = shadowData.additionalLightsShadowmapHeight =
+                Math.Min(urpAsset.additionalLightsShadowmapResolution, PlatformAutoDetect.maxSupportedShadowAtlasResolution);
 
             // This will be setup in AdditionalLightsShadowCasterPass.
             shadowData.isKeywordAdditionalLightShadowsEnabled = false;
@@ -1840,15 +2357,15 @@ namespace UnityEngine.Rendering.Universal
             {
                 if (!shadowData.supportsMainLightShadows && i == mainLightIndex)
                 {
-                    m_ShadowBiasData.Add(Vector4.zero);
-                    m_ShadowResolutionData.Add(0);
+                    s_ShadowBiasData.Add(Vector4.zero);
+                    s_ShadowResolutionData.Add(0);
                     continue;
                 }
 
                 if (!shadowData.supportsAdditionalLightShadows && i != mainLightIndex)
                 {
-                    m_ShadowBiasData.Add(Vector4.zero);
-                    m_ShadowResolutionData.Add(0);
+                    s_ShadowBiasData.Add(Vector4.zero);
+                    s_ShadowResolutionData.Add(0);
                     continue;
                 }
 
@@ -1861,27 +2378,28 @@ namespace UnityEngine.Rendering.Universal
                 }
 
                 if (data && !data.usePipelineSettings)
-                    m_ShadowBiasData.Add(new Vector4(light.shadowBias, light.shadowNormalBias, 0.0f, 0.0f));
+                    s_ShadowBiasData.Add(new Vector4(light.shadowBias, light.shadowNormalBias, 0.0f, 0.0f));
                 else
-                    m_ShadowBiasData.Add(new Vector4(urpAsset.shadowDepthBias, urpAsset.shadowNormalBias, 0.0f, 0.0f));
+                    s_ShadowBiasData.Add(new Vector4(urpAsset.shadowDepthBias, urpAsset.shadowNormalBias, 0.0f, 0.0f));
 
                 if (data && (data.additionalLightsShadowResolutionTier == UniversalAdditionalLightData.AdditionalLightsShadowResolutionTierCustom))
                 {
-                    m_ShadowResolutionData.Add((int)light.shadowResolution); // native code does not clamp light.shadowResolution between -1 and 3
+                    s_ShadowResolutionData.Add((int)light.shadowResolution); // native code does not clamp light.shadowResolution between -1 and 3
                 }
                 else if (data && (data.additionalLightsShadowResolutionTier != UniversalAdditionalLightData.AdditionalLightsShadowResolutionTierCustom))
                 {
                     int resolutionTier = Mathf.Clamp(data.additionalLightsShadowResolutionTier, UniversalAdditionalLightData.AdditionalLightsShadowResolutionTierLow, UniversalAdditionalLightData.AdditionalLightsShadowResolutionTierHigh);
-                    m_ShadowResolutionData.Add(urpAsset.GetAdditionalLightsShadowResolution(resolutionTier));
+                    s_ShadowResolutionData.Add(urpAsset.GetAdditionalLightsShadowResolution(resolutionTier));
                 }
                 else
                 {
-                    m_ShadowResolutionData.Add(urpAsset.GetAdditionalLightsShadowResolution(UniversalAdditionalLightData.AdditionalLightsShadowDefaultResolutionTier));
+                    s_ShadowResolutionData.Add(urpAsset.GetAdditionalLightsShadowResolution(UniversalAdditionalLightData.AdditionalLightsShadowDefaultResolutionTier));
                 }
             }
 
-            shadowData.bias = m_ShadowBiasData;
-            shadowData.resolution = m_ShadowResolutionData;
+            shadowData.bias = s_ShadowBiasData;
+            shadowData.resolution = s_ShadowResolutionData;
+            shadowData.depthBiasMode = ShadowUtils.GetConfiguredDepthBiasMode();
             shadowData.supportsSoftShadows = urpAsset.supportsSoftShadows && (shadowData.supportsMainLightShadows || shadowData.supportsAdditionalLightShadows);
 
             return shadowData;
@@ -1907,6 +2425,9 @@ namespace UnityEngine.Rendering.Universal
 
         static void InitializeMainLightShadowResolution(UniversalShadowData shadowData)
         {
+            int maxAtlasResolution = PlatformAutoDetect.maxSupportedShadowAtlasResolution;
+            shadowData.mainLightShadowmapWidth = Mathf.Min(shadowData.mainLightShadowmapWidth, maxAtlasResolution);
+            shadowData.mainLightShadowmapHeight = Mathf.Min(shadowData.mainLightShadowmapHeight, maxAtlasResolution);
             shadowData.mainLightShadowResolution = ShadowUtils.GetMaxTileResolutionInAtlas(shadowData.mainLightShadowmapWidth, shadowData.mainLightShadowmapHeight, shadowData.mainLightShadowCascadesCount);
             shadowData.mainLightRenderTargetWidth = shadowData.mainLightShadowmapWidth;
             shadowData.mainLightRenderTargetHeight = (shadowData.mainLightShadowCascadesCount == 2) ? shadowData.mainLightShadowmapHeight >> 1 : shadowData.mainLightShadowmapHeight;
@@ -1917,7 +2438,7 @@ namespace UnityEngine.Rendering.Universal
             UniversalPostProcessingData postProcessingData = frameData.Create<UniversalPostProcessingData>();
             UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
-            postProcessingData.isEnabled = cameraData.stackAnyPostProcessingEnabled;
+            postProcessingData.isEnabled = cameraData.postProcessEnabled;
 
             postProcessingData.gradingMode = settings.supportsHDR
                 ? settings.colorGradingMode
@@ -1931,14 +2452,9 @@ namespace UnityEngine.Rendering.Universal
             postProcessingData.supportScreenSpaceLensFlare = settings.supportScreenSpaceLensFlare;
             postProcessingData.supportDataDrivenLensFlare = settings.supportDataDrivenLensFlare;
 
-#if ENABLE_UPSCALER_FRAMEWORK
-            postProcessingData.activeUpscaler = null;
-            if (settings.upscalingFilter == UpscalingFilterSelection.IUpscaler)
-            {
-                postProcessingData.activeUpscaler = upscaling.GetActiveUpscaler();
-                Debug.Assert(postProcessingData.activeUpscaler != null);
-            }
-#endif
+            // Disable upscaler when TPS is active
+            postProcessingData.activeUpscaler = cameraData.IsTemporalPixelSynthesisActive() ? null : upscaling.activeUpscaler;
+            postProcessingData.activeUpscalerIsEmbedded = upscaling.activeUpscalerIsEmbedded;
 
             return postProcessingData;
         }
@@ -2010,6 +2526,14 @@ namespace UnityEngine.Rendering.Universal
                 cameraData.stpHistory = additionalCameraData.historyManager.GetHistoryForWrite<StpHistory>();
             }
 
+            IUpscaler activeUpscaler = upscaling.activeUpscaler;
+            bool needsAlphaUpscaleHistory = cameraData.isAlphaOutputEnabled && activeUpscaler != null && activeUpscaler.isTemporal && !activeUpscaler.supportsAlphaUpscaling;
+            if (needsAlphaUpscaleHistory)
+            {
+                additionalCameraData.historyManager.RequestAccess<AlphaUpscaleHistory>();
+                cameraData.alphaUpscaleHistory = additionalCameraData.historyManager.GetHistoryForWrite<AlphaUpscaleHistory>();
+            }
+
             // Update TAA settings
             ref var taaSettings = ref additionalCameraData.taaSettings;
             cameraData.taaSettings = taaSettings;
@@ -2038,7 +2562,7 @@ namespace UnityEngine.Rendering.Universal
                 }
                 else
                 {
-                    allocation = cameraData.taaHistory.Update(ref cameraData.cameraTargetDescriptor, xrMultipassEnabled);
+                    allocation = cameraData.taaHistory.Update(cameraData, xrMultipassEnabled);
                 }
 
                 // Fill new history with current frame
@@ -2053,6 +2577,17 @@ namespace UnityEngine.Rendering.Universal
                 // In the case where STP is requested, but TAA gets disabled for various reasons so STP is disabled, we should release the STP history resources
                 if (cameraData.IsSTPRequested())
                     cameraData.stpHistory?.Reset();
+            }
+
+            // The alpha history is common to all color-only temporal upscalers,
+            // so it is updated outside the per-upscaler branches above.
+            if (cameraData.alphaUpscaleHistory != null)
+            {
+                bool alphaXrMultipassEnabled = false;
+#if ENABLE_VR && ENABLE_XR_MODULE
+                alphaXrMultipassEnabled = cameraData.xr.enabled && !cameraData.xr.singlePassEnabled;
+#endif
+                cameraData.alphaUpscaleHistory.Update(cameraData, alphaXrMultipassEnabled);
             }
         }
 
@@ -2101,8 +2636,7 @@ namespace UnityEngine.Rendering.Universal
             if (universalLightData.additionalLightsCount > 0 && !isForwardPlus)
             {
                 // In this case we also need per-object indices (unity_LightIndices)
-                if (!RenderingUtils.useStructuredBuffer)
-                    configuration |= PerObjectData.LightIndices;
+                configuration |= PerObjectData.LightIndices;
             }
 
             return configuration;
@@ -2156,6 +2690,18 @@ namespace UnityEngine.Rendering.Universal
             return GetBrightestDirectionalLightIndex(settings, visibleLights);
         }
 
+        /// <summary>
+        /// Whether URP uploads its global shader variables as a persistent constant buffer.
+        /// Read once per frame, this setting cannot change between the cameras of a frame.
+        /// </summary>
+        internal static bool useGlobalConstantBuffer { get; private set; }
+
+        /// <summary>
+        /// Inverse width of the LOD cross fade dithering texture, resolved once per frame from the pipeline asset.
+        /// The renderers read it to fill their global shader variables, see GlobalShaderVariablesBase.
+        /// </summary>
+        internal static float ditheringTextureInvSize { get; private set; }
+
         void SetupPerFrameShaderConstants()
         {
             using var profScope = new ProfilingScope(Profiling.Pipeline.setupPerFrameShaderConstants);
@@ -2182,7 +2728,7 @@ namespace UnityEngine.Rendering.Universal
 
             if (ditheringTexture != null)
             {
-                Shader.SetGlobalFloat(ShaderPropertyId.ditheringTextureInvSize, 1.0f / ditheringTexture.width);
+                ditheringTextureInvSize = 1.0f / ditheringTexture.width;
                 Shader.SetGlobalTexture(ShaderPropertyId.ditheringTexture, ditheringTexture);
             }
         }
@@ -2191,23 +2737,8 @@ namespace UnityEngine.Rendering.Universal
         {
             using var profScope = new ProfilingScope(Profiling.Pipeline.setupPerCameraShaderConstants);
 
-            // When glossy reflections are OFF in the shader we set a constant color to use as indirect specular
-            SphericalHarmonicsL2 ambientSH = RenderSettings.ambientProbe;
-            Color linearGlossyEnvColor = new Color(ambientSH[0, 0], ambientSH[1, 0], ambientSH[2, 0]) * RenderSettings.reflectionIntensity;
-            Color glossyEnvColor = CoreUtils.ConvertLinearToActiveColorSpace(linearGlossyEnvColor);
-            cmd.SetGlobalVector(ShaderPropertyId.glossyEnvironmentColor, glossyEnvColor);
-
-            // Used as fallback cubemap for reflections
+            // Used as fallback cubemap for reflections.
             cmd.SetGlobalTexture(ShaderPropertyId.glossyEnvironmentCubeMap, ReflectionProbe.defaultTexture);
-            cmd.SetGlobalVector(ShaderPropertyId.glossyEnvironmentCubeMapHDR, ReflectionProbe.defaultTextureHDRDecodeValues);
-
-            // Ambient
-            cmd.SetGlobalVector(ShaderPropertyId.ambientSkyColor, CoreUtils.ConvertSRGBToActiveColorSpace(RenderSettings.ambientSkyColor));
-            cmd.SetGlobalVector(ShaderPropertyId.ambientEquatorColor, CoreUtils.ConvertSRGBToActiveColorSpace(RenderSettings.ambientEquatorColor));
-            cmd.SetGlobalVector(ShaderPropertyId.ambientGroundColor, CoreUtils.ConvertSRGBToActiveColorSpace(RenderSettings.ambientGroundColor));
-
-            // Used when subtractive mode is selected
-            cmd.SetGlobalVector(ShaderPropertyId.subtractiveShadowColor, CoreUtils.ConvertSRGBToActiveColorSpace(RenderSettings.subtractiveShadowColor));
         }
 
         static void CheckAndApplyDebugSettings(ref RenderingData renderingData)
@@ -2237,91 +2768,47 @@ namespace UnityEngine.Rendering.Universal
         }
 
         /// <summary>
-        /// Returns the best supported image upscaling filter based on the provided upscaling filter selection
+        /// Resolves the automatic upscaler to the spatial upscaler best suited to the final image size and render scale.
         /// </summary>
-        /// <param name="imageSize">Size of the final image</param>
+        /// <param name="imageSizeX">Width of the final image</param>
+        /// <param name="imageSizeY">Height of the final image</param>
         /// <param name="renderScale">Scale being applied to the final image size</param>
-        /// <param name="selection">Upscaling filter selected by the user</param>
-        /// <returns>Either the original filter provided, or the best replacement available</returns>
-        static ImageUpscalingFilter ResolveUpscalingFilterSelection(Vector2 imageSize, float renderScale, UpscalingFilterSelection selection, bool enableRenderGraph)
+        /// <param name="selectedUpscalerId">Id of the active upscaler</param>
+        /// <returns>The resolved upscaler id, or the selected id when it isn't the automatic upscaler</returns>
+        static string ResolveAutoUpscaler(float imageSizeX, float imageSizeY, float renderScale, string selectedUpscalerId)
         {
-            // By default we just use linear filtering since it's the most compatible choice
-            ImageUpscalingFilter filter = ImageUpscalingFilter.Linear;
+            string resolvedUpscalerId = selectedUpscalerId;
 
-            // Fall back to the automatic filter if the selected filter isn't supported on the current platform or rendering environment
-            if (((selection == UpscalingFilterSelection.FSR) && (!FSRUtils.IsSupported()))
-                || ((selection == UpscalingFilterSelection.STP) && (!STP.IsSupported() || !enableRenderGraph))
-            )
+            if (selectedUpscalerId == k_UpscalerId_Auto)
             {
-                selection = UpscalingFilterSelection.Auto;
+                float pixelScale = (1.0f / renderScale);
+                bool isIntegerScale = Mathf.Approximately((pixelScale - Mathf.Floor(pixelScale)), 0.0f);
+
+                if (isIntegerScale)
+                {
+                    float widthScale = (imageSizeX / pixelScale);
+                    float heightScale = (imageSizeY / pixelScale);
+
+                    bool isImageCompatible = (Mathf.Approximately((widthScale - Mathf.Floor(widthScale)), 0.0f) &&
+                                              Mathf.Approximately((heightScale - Mathf.Floor(heightScale)), 0.0f));
+
+                    resolvedUpscalerId = isImageCompatible ? k_UpscalerId_Point : k_UpscalerId_Linear;
+                }
+                else
+                {
+                    resolvedUpscalerId = k_UpscalerId_Linear;
+                }
             }
 
-            switch (selection)
-            {
-                case UpscalingFilterSelection.Auto:
-                {
-                    // The user selected "auto" for their upscaling filter so we should attempt to choose the best filter
-                    // for the current situation. When the current resolution and render scale are compatible with integer
-                    // scaling we use the point sampling filter. Otherwise we just use the default filter (linear).
-                    float pixelScale = (1.0f / renderScale);
-                    bool isIntegerScale = Mathf.Approximately((pixelScale - Mathf.Floor(pixelScale)), 0.0f);
-
-                    if (isIntegerScale)
-                    {
-                        float widthScale = (imageSize.x / pixelScale);
-                        float heightScale = (imageSize.y / pixelScale);
-
-                        bool isImageCompatible = (Mathf.Approximately((widthScale - Mathf.Floor(widthScale)), 0.0f) &&
-                                                  Mathf.Approximately((heightScale - Mathf.Floor(heightScale)), 0.0f));
-
-                        if (isImageCompatible)
-                        {
-                            filter = ImageUpscalingFilter.Point;
-                        }
-                    }
-
-                    break;
-                }
-
-                case UpscalingFilterSelection.Linear:
-                {
-                    // Do nothing since linear is already the default
-
-                    break;
-                }
-
-                case UpscalingFilterSelection.Point:
-                {
-                    filter = ImageUpscalingFilter.Point;
-
-                    break;
-                }
-
-                case UpscalingFilterSelection.FSR:
-                {
-                    filter = ImageUpscalingFilter.FSR;
-
-                    break;
-                }
-
-                case UpscalingFilterSelection.STP:
-                {
-                    filter = ImageUpscalingFilter.STP;
-
-                    break;
-                }
-
-#if ENABLE_UPSCALER_FRAMEWORK
-                case UpscalingFilterSelection.IUpscaler:
-                {
-                    filter = ImageUpscalingFilter.IUpscaler;
-                    break;
-                }
-#endif
-            }
-
-            return filter;
+            return resolvedUpscalerId;
         }
+
+        // Returns true when the platform supports backbuffer depth memoryless AND
+        // the user has enabled it in PlayerSettings. Should only be called from
+        // the builtin backbuffer import path (caller already guarantees this).
+        internal static bool IsBackbufferDepthMemorylessActive()
+            => SystemInfo.supportsBackbufferDepthMemoryless
+               && UnityEngineInternal.MemorylessManager.isDepthMemoryless;
 
         /// <summary>
         /// Checks if the hardware (main display and platform) and the render pipeline support HDR.
@@ -2329,7 +2816,7 @@ namespace UnityEngine.Rendering.Universal
         /// <returns>True if the main display and platform support HDR and HDR output is enabled on the platform.</returns>
         internal static bool HDROutputForMainDisplayIsActive()
         {
-            bool hdrOutputSupported = SystemInfo.hdrDisplaySupportFlags.HasFlag(HDRDisplaySupportFlags.Supported) && asset.supportsHDR;
+            bool hdrOutputSupported = (SystemInfo.hdrDisplaySupportFlags & HDRDisplaySupportFlags.Supported) != 0 && asset.supportsHDR;
             bool hdrOutputActive = HDROutputSettings.main.available && HDROutputSettings.main.active;
             return hdrOutputSupported && hdrOutputActive;
         }
@@ -2373,7 +2860,7 @@ namespace UnityEngine.Rendering.Universal
             bool hdrOutputIncompatibleWithSDRRendering = hdrOutputActive && HDROutputSettings.main.displayColorGamut != ColorGamut.Rec709;
 
             // If the pipeline doesn't support HDR rendering, output to SDR.
-            bool supportsSwitchingHDROutput = SystemInfo.hdrDisplaySupportFlags.HasFlag(HDRDisplaySupportFlags.RuntimeSwitchable);
+            bool supportsSwitchingHDROutput = (SystemInfo.hdrDisplaySupportFlags & HDRDisplaySupportFlags.RuntimeSwitchable) != 0;
             bool switchHDROutputToSDROutput = !asset.supportsHDR && hdrOutputActive && hdrOutputIncompatibleWithSDRRendering;
             if (switchHDROutputToSDROutput && !warnedRuntimeSwitchHDROutputToSDROutput)
             {
@@ -2465,6 +2952,11 @@ namespace UnityEngine.Rendering.Universal
                 case TonemappingMode.ACES:
                     eetfMode = (int)tonemapping.acesPreset.value;
                     break;
+
+                // AgX does its own range reduction inside the AgX HDR-output path (ProcessColorForHDR),
+                // so it uses neither the EETF reduction mode nor the hue-shift amount.
+                case TonemappingMode.AgX:
+                    break;
             }
 
             hdrOutputParameters = new Vector4(eetfMode, hueShift, 0.0f, 0.0f);
@@ -2488,18 +2980,22 @@ namespace UnityEngine.Rendering.Universal
             {
                 cameraData.cameraTargetDescriptor.width = Mathf.Max(1, (int)(cameraData.pixelWidth * cameraData.renderScale));
                 cameraData.cameraTargetDescriptor.height = Mathf.Max(1, (int)(cameraData.pixelHeight * cameraData.renderScale));
-#if ENABLE_UPSCALER_FRAMEWORK
-                if (cameraData.upscalingFilter == ImageUpscalingFilter.IUpscaler)
+
+                IUpscaler activeUpscaler = upscaling.activeUpscaler;
+                if (TryGetUpscalerDictatedResolution(cameraData, activeUpscaler, out var upscalerRenderSize))
                 {
-                    // An IUpscaler is active. It might want to change the pre-upscale resolution. Negotiate with it.
-                    IUpscaler activeUpscaler = upscaling.GetActiveUpscaler();
-                    Debug.Assert(activeUpscaler != null);
-                    Vector2Int res = new Vector2Int(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height);
-                    activeUpscaler.NegotiatePreUpscaleResolution(ref res, new Vector2Int(cameraData.pixelWidth, cameraData.pixelHeight));
-                    cameraData.cameraTargetDescriptor.width = Mathf.Max(1, res.x);
-                    cameraData.cameraTargetDescriptor.height = Mathf.Max(1, res.y);
+                    cameraData.cameraTargetDescriptor.width = Mathf.Max(1, upscalerRenderSize.x);
+                    cameraData.cameraTargetDescriptor.height = Mathf.Max(1, upscalerRenderSize.y);
                 }
-#endif
+                else
+                {
+                    // Upscaler doesn't dictate the resolution but may constrain it to a supported range; clamp into it.
+                    var clamped = ClampRenderSizeToUpscalerBounds(cameraData, activeUpscaler,
+                        new Vector2Int(cameraData.cameraTargetDescriptor.width, cameraData.cameraTargetDescriptor.height));
+                    cameraData.cameraTargetDescriptor.width = Mathf.Max(1, clamped.x);
+                    cameraData.cameraTargetDescriptor.height = Mathf.Max(1, clamped.y);
+                }
+
                 cameraData.scaledWidth = cameraData.cameraTargetDescriptor.width;
                 cameraData.scaledHeight = cameraData.cameraTargetDescriptor.height;
             }
@@ -2516,15 +3012,12 @@ namespace UnityEngine.Rendering.Universal
             UniversalShadowData shadowData = frameData.Get<UniversalShadowData>();
             UniversalPostProcessingData postProcessingData = frameData.Get<UniversalPostProcessingData>();
 
-            if (AdaptivePerformance.AdaptivePerformanceRenderSettings.SkipDynamicBatching)
-                renderingData.supportsDynamicBatching = false;
-
             var MainLightShadowmapResolutionMultiplier = AdaptivePerformance.AdaptivePerformanceRenderSettings.MainLightShadowmapResolutionMultiplier;
             shadowData.mainLightShadowmapWidth = (int)(shadowData.mainLightShadowmapWidth * MainLightShadowmapResolutionMultiplier);
             shadowData.mainLightShadowmapHeight = (int)(shadowData.mainLightShadowmapHeight * MainLightShadowmapResolutionMultiplier);
 
             var MainLightShadowCascadesCountBias = AdaptivePerformance.AdaptivePerformanceRenderSettings.MainLightShadowCascadesCountBias;
-            shadowData.mainLightShadowCascadesCount = Mathf.Clamp(shadowData.mainLightShadowCascadesCount - MainLightShadowCascadesCountBias, 0, 4);
+            shadowData.mainLightShadowCascadesCount = Mathf.Clamp(shadowData.mainLightShadowCascadesCount - MainLightShadowCascadesCountBias, 1, 4);
 
             var shadowQualityIndex = AdaptivePerformance.AdaptivePerformanceRenderSettings.ShadowQualityBias;
             for (int i = 0; i < shadowQualityIndex; i++)
@@ -2606,14 +3099,6 @@ namespace UnityEngine.Rendering.Universal
                 // by setting rendersUIOverlay (public API) to false in a callback added to RenderPipelineManager.beginContextRendering
                 SupportedRenderingFeatures.active.rendersUIOverlay = true;
             }
-        }
-
-        private static void SetupScreenMSAASamplesState(int cameraCount)
-        {
-            // Enable potential bandwidth optimization only when rendering a single base camera
-            canOptimizeScreenMSAASamples = (cameraCount == 1);
-            // Save ScreenMSAASamples value at beginning of the frame, useful for iOS/macOS
-            startFrameScreenMSAASamples = Screen.msaaSamples;
         }
 
 #if UNITY_EDITOR

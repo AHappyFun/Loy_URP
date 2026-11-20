@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using JetBrains.Annotations;
 
 namespace UnityEngine.Rendering
 {
@@ -19,8 +18,6 @@ namespace UnityEngine.Rendering
         /// <param name="error">The exception raised by the implementation</param>
         /// <typeparam name="TValue">The value type stored on the list</typeparam>
         /// <returns>True if succeed, false otherwise</returns>
-        [CollectionAccess(CollectionAccessType.ModifyExistingContent)]
-        [MustUseReturnValue]
         public static bool TryRemoveElementsInRange<TValue>([DisallowNull] this IList<TValue> list, int index, int count, [NotNullWhen(false)] out Exception error)
         {
             try
@@ -31,7 +28,7 @@ namespace UnityEngine.Rendering
                 }
                 else
                 {
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
                     if (index < 0) throw new ArgumentOutOfRangeException(nameof(index));
                     if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
                     if (list.Count - index < count) throw new ArgumentException("index and count do not denote a valid range of elements in the list");

@@ -9,7 +9,7 @@ namespace UnityEngine.Rendering.Universal
     /// <summary>
     /// This renderer feature lets you create single-pass full screen post processing effects without needing to write code.
     /// </summary>
-    [URPHelpURL("renderer-features/renderer-feature-full-screen-pass")]
+    [URPHelpURL("urp/renderer-features/renderer-feature-full-screen-pass")]
     public partial class FullScreenPassRendererFeature : ScriptableRendererFeature
     {
         /// <summary>
@@ -82,6 +82,18 @@ namespace UnityEngine.Rendering.Universal
             return false;
         }
 
+        /// <summary>
+        /// Returns true if the combination of settings is compatible with Tile-Only Mode on the Universal Renderer.
+        /// </summary>
+        /// <param name="usesDeferredLighting">True when the renderer actually runs the Deferred (or Deferred+) path.</param>
+        internal bool IsCompatibleWithTileOnlyMode(bool usesDeferredLighting)
+        {
+            // These checks must match the Tile-Only Mode validation in FullScreenPassRendererFeatureEditor.
+            if (fetchColorBuffer)
+                return false;
+            return RenderingUtils.IsCompatibleWithTileOnlyMode(requirements, (RenderPassEvent)injectionPoint, usesDeferredLighting);
+        }
+
         /// <inheritdoc/>
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
@@ -99,22 +111,23 @@ namespace UnityEngine.Rendering.Universal
                 return;
             }
 
+            if (renderer is UniversalRenderer universalRenderer && universalRenderer.useTileOnlyMode && !IsCompatibleWithTileOnlyMode(universalRenderer.usesDeferredLighting))
+            {
+                Debug.LogErrorFormat(
+                    "Full Screen Renderer Feature \"{0}\": the current settings are not compatible with Tile-Only Mode. Open the Universal Renderer \"{1}\" in the Inspector for more information.",
+                    name, universalRenderer.name);
+                return;
+            }
+
             m_FullScreenPass.renderPassEvent = (RenderPassEvent)injectionPoint;
             m_FullScreenPass.ConfigureInput(requirements);
             m_FullScreenPass.SetupMembers(passMaterial, passIndex, fetchColorBuffer, bindDepthStencilAttachment);
 
             m_FullScreenPass.requiresIntermediateTexture = fetchColorBuffer;
-
+        
             renderer.EnqueuePass(m_FullScreenPass);
         }
 
-#if URP_COMPATIBILITY_MODE
-        /// <inheritdoc/>
-        protected override void Dispose(bool disposing)
-        {
-            m_FullScreenPass.Dispose();
-        }
-#endif
 
         internal class FullScreenRenderPass : ScriptableRenderPass
         {
@@ -123,11 +136,7 @@ namespace UnityEngine.Rendering.Universal
             private bool m_FetchActiveColor;
             private bool m_BindDepthStencilAttachment;
 
-            private static MaterialPropertyBlock s_SharedPropertyBlock = new MaterialPropertyBlock();
-
-#if URP_COMPATIBILITY_MODE
-            private RTHandle m_CopiedColor;
-#endif
+            private readonly MaterialPropertyBlock m_MaterialPropertyBlock = new MaterialPropertyBlock();
 
             public FullScreenRenderPass(string passName)
             {
@@ -142,80 +151,17 @@ namespace UnityEngine.Rendering.Universal
                 m_BindDepthStencilAttachment = bindDepthStencilAttachment;
             }
 
-#if URP_COMPATIBILITY_MODE
-            [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-            public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
+            private static void ExecuteMainPass(RasterCommandBuffer cmd, MaterialPropertyBlock mbp, RTHandle sourceTexture, Material material, int passIndex, Vector4 blitScaleBias)
             {
-                // Disable obsolete warning for internal usage
-#pragma warning disable CS0618
-                // FullScreenPass manages its own RenderTarget.
-                // ResetTarget here so that ScriptableRenderer's active attachement can be invalidated when processing this ScriptableRenderPass.
-                ResetTarget();
-#pragma warning restore CS0618
-
-                if (m_FetchActiveColor)
-                    ReAllocate(renderingData.cameraData.cameraTargetDescriptor);
-            }
-#endif
-
-            internal void ReAllocate(RenderTextureDescriptor desc)
-            {
-#if URP_COMPATIBILITY_MODE
-                desc.msaaSamples = 1;
-                desc.depthStencilFormat = GraphicsFormat.None;
-                RenderingUtils.ReAllocateHandleIfNeeded(ref m_CopiedColor, desc, name: "_FullscreenPassColorCopy");
-#endif
-            }
-
-#if URP_COMPATIBILITY_MODE
-            public void Dispose()
-            {
-                m_CopiedColor?.Release();
-            }
-#endif
-
-            private static void ExecuteCopyColorPass(RasterCommandBuffer cmd, RTHandle sourceTexture)
-            {
-                Blitter.BlitTexture(cmd, sourceTexture, new Vector4(1, 1, 0, 0), 0.0f, false);
-            }
-
-            private static void ExecuteMainPass(RasterCommandBuffer cmd, RTHandle sourceTexture, Material material, int passIndex)
-            {
-                s_SharedPropertyBlock.Clear();
+                mbp.Clear();
                 if (sourceTexture != null)
-                    s_SharedPropertyBlock.SetTexture(ShaderPropertyId.blitTexture, sourceTexture);
+                    mbp.SetTexture(ShaderPropertyId.blitTexture, sourceTexture);
 
                 // We need to set the "_BlitScaleBias" uniform for user materials with shaders relying on core Blit.hlsl to work
-                s_SharedPropertyBlock.SetVector(ShaderPropertyId.blitScaleBias, new Vector4(1, 1, 0, 0));
+                mbp.SetVector(ShaderPropertyId.blitScaleBias, blitScaleBias);
 
-                cmd.DrawProcedural(Matrix4x4.identity, material, passIndex, MeshTopology.Triangles, 3, 1, s_SharedPropertyBlock);
+                cmd.DrawProcedural(Matrix4x4.identity, material, passIndex, MeshTopology.Triangles, 3, 1, mbp);
             }
-
-#if URP_COMPATIBILITY_MODE
-            [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-            public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-            {
-                ref var cameraData = ref renderingData.cameraData;
-                var cmd = renderingData.commandBuffer;
-
-                using (new ProfilingScope(cmd, profilingSampler))
-                {
-                    RasterCommandBuffer rasterCmd = CommandBufferHelpers.GetRasterCommandBuffer(cmd);
-                    if (m_FetchActiveColor)
-                    {
-                        CoreUtils.SetRenderTarget(cmd, m_CopiedColor);
-                        ExecuteCopyColorPass(rasterCmd, cameraData.renderer.cameraColorTargetHandle);
-                    }
-
-                    if (m_BindDepthStencilAttachment)
-                        CoreUtils.SetRenderTarget(cmd, cameraData.renderer.cameraColorTargetHandle, cameraData.renderer.cameraDepthTargetHandle);
-                    else
-                        CoreUtils.SetRenderTarget(cmd, cameraData.renderer.cameraColorTargetHandle);
-
-                    ExecuteMainPass(rasterCmd, m_FetchActiveColor ? m_CopiedColor : null, m_Material, m_PassIndex);
-                }
-            }
-#endif
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
             {
@@ -224,20 +170,21 @@ namespace UnityEngine.Rendering.Universal
 
                 TextureHandle source, destination;
 
-                Debug.Assert(resourcesData.cameraColor.IsValid());
-
                 if (m_FetchActiveColor)
                 {
+                    // The pass requests the intermediate textures so this should always be valid
+                    Debug.Assert(resourcesData.cameraColor.IsValid());                    
+
                     var targetDesc = renderGraph.GetTextureDesc(resourcesData.cameraColor);
                     targetDesc.name = "_CameraColorFullScreenPass";
                     targetDesc.clearBuffer = false;
 
-                    source = resourcesData.activeColorTexture;
+                    source = resourcesData.cameraColor;
                     destination = renderGraph.CreateTexture(targetDesc);
 
                     renderGraph.AddBlitPass(source, destination, Vector2.one, Vector2.zero, passName: "Copy Color Full Screen");
 
-                    //Swap for next pass;
+                    // Swap for next pass;
                     source = destination;
                 }
                 else
@@ -245,34 +192,26 @@ namespace UnityEngine.Rendering.Universal
                     source = TextureHandle.nullHandle;
                 }
 
+                // If resourcesData.isActiveTargetBackBuffer == true, then the backbuffer is alread written to and this could overwrite it.
+                // However, the user might want to blend into the backbuffer so we allow it here.
                 destination = resourcesData.activeColorTexture;
-
-                // The AddBlitPass utility is not used when m_BindDepthStencilAttachment is active since SetRenderAttachmentDepth is not available with the returned builder of AddBlitPass.
-                bool useCustomPass = input != ScriptableRenderPassInput.None || m_BindDepthStencilAttachment;
-
-                if (useCustomPass)
-                {
-                    AddFullscreenRenderPassInputPass(renderGraph, resourcesData, cameraData, source, destination);
-                }
-                else
-                {
-                    var blitMaterialParameters = new BlitMaterialParameters(source, destination, m_Material, m_PassIndex);
-
-                    renderGraph.AddBlitPass(blitMaterialParameters, passName: "Blit Color Full Screen");
-                }
+                
+                AddFullscreenRenderPassInputPass(renderGraph, resourcesData, cameraData, source, destination);                
             }
 
-            private void AddFullscreenRenderPassInputPass(RenderGraph renderGraph, UniversalResourceData resourcesData, UniversalCameraData cameraData, TextureHandle source, TextureHandle destination)
+            private void AddFullscreenRenderPassInputPass(RenderGraph renderGraph, UniversalResourceData resourcesData, UniversalCameraData cameraData, in TextureHandle source, in TextureHandle destination)
             {
                 using (var builder = renderGraph.AddRasterRenderPass<MainPassData>(passName, out var passData, profilingSampler))
                 {
                     passData.material = m_Material;
+                    passData.materialPropertyBlock = m_MaterialPropertyBlock;
                     passData.passIndex = m_PassIndex;
 
-                    passData.inputTexture = source;
+                    passData.source = source;
+                    passData.destination = destination;
 
-                    if (passData.inputTexture.IsValid())
-                        builder.UseTexture(passData.inputTexture, AccessFlags.Read);
+                    if (passData.source.IsValid())
+                        builder.UseTexture(passData.source, AccessFlags.Read);
 
                     bool needsColor = (input & ScriptableRenderPassInput.Color) != ScriptableRenderPassInput.None;
                     bool needsDepth = (input & ScriptableRenderPassInput.Depth) != ScriptableRenderPassInput.None;
@@ -313,41 +252,22 @@ namespace UnityEngine.Rendering.Universal
                     builder.SetRenderAttachment(destination, 0, AccessFlags.Write);
 
                     if (m_BindDepthStencilAttachment)
-                        builder.SetRenderAttachmentDepth(resourcesData.activeDepthTexture, AccessFlags.Write);
+                        builder.SetRenderAttachmentDepth(resourcesData.activeDepthTexture, AccessFlags.ReadWrite);
 
-                    builder.SetRenderFunc((MainPassData data, RasterGraphContext rgContext) =>
+                    builder.SetRenderFunc(static (MainPassData data, RasterGraphContext rgContext) =>
                     {
-                        ExecuteMainPass(rgContext.cmd, data.inputTexture, data.material, data.passIndex);
+                        Vector4 scaleBias = RenderingUtils.GetFinalBlitScaleBias(rgContext, in data.source, in data.destination);
+                        ExecuteMainPass(rgContext.cmd, data.materialPropertyBlock, data.source, data.material, data.passIndex, scaleBias);
                     });
                 }
             }
-
-            private void AddCopyPassRenderPassFullscreen(RenderGraph renderGraph, TextureHandle source, TextureHandle destination)
-            {
-                using (var builder = renderGraph.AddRasterRenderPass<CopyPassData>("Copy Color Full Screen", out var passData, profilingSampler))
-                {
-                    passData.inputTexture = source;
-                    builder.UseTexture(passData.inputTexture, AccessFlags.Read);
-
-                    builder.SetRenderAttachment(destination, 0, AccessFlags.Write);
-
-                    builder.SetRenderFunc((CopyPassData data, RasterGraphContext rgContext) =>
-                    {
-                        ExecuteCopyColorPass(rgContext.cmd, data.inputTexture);
-                    });
-                }
-            }
-
-            private class CopyPassData
-            {
-                internal TextureHandle inputTexture;
-            }
-
             private class MainPassData
             {
                 internal Material material;
+                internal MaterialPropertyBlock materialPropertyBlock;
                 internal int passIndex;
-                internal TextureHandle inputTexture;
+                internal TextureHandle source;
+                internal TextureHandle destination;
             }
         }
     }

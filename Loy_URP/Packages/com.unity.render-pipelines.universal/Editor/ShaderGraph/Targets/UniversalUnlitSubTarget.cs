@@ -25,6 +25,15 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         [SerializeField]
         bool m_DefaultSSAO = true;
 
+        [SerializeField]
+        bool m_ScreenSpaceReflectionsContributeTransparent = true;
+
+        [SerializeField]
+        bool m_WritesColor = true;
+
+        [SerializeField]
+        bool m_ReceiveFog = false;
+
         public bool keepLightingVariants
         {
             get => m_KeepLightingVariants;
@@ -41,6 +50,24 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         {
             get => m_DefaultSSAO;
             set => m_DefaultSSAO = value;
+        }
+
+        public bool screenSpaceReflectionsContributeTransparent
+        {
+            get => m_ScreenSpaceReflectionsContributeTransparent;
+            set => m_ScreenSpaceReflectionsContributeTransparent = value;
+        }
+
+        public bool writesColor
+        {
+            get => m_WritesColor;
+            set => m_WritesColor = value;
+        }
+
+        public bool receiveFog
+        {
+            get => m_ReceiveFog;
+            set => m_ReceiveFog = value;
         }
 
         public UniversalUnlitSubTarget()
@@ -95,7 +122,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             material.SetFloat(Property.QueueControl, (float)BaseShaderGUI.QueueControl.Auto);
 
             if (IsSpacewarpSupported())
+            {
                 material.SetFloat(Property.XrMotionVectorsPass, 1.0f);
+            }
 
             // call the full unlit material setup function
             ShaderGraphUnlitGUI.UpdateMaterial(material, MaterialUpdateType.CreatedNewMaterial);
@@ -106,11 +135,18 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             base.GetFields(ref context);
         }
 
+        internal override bool supportsStencilOverride => true;
+
         public override void GetActiveBlocks(ref TargetActiveBlockContext context)
         {
-            context.AddBlock(UniversalBlockFields.VertexDescription.MotionVector, target.additionalMotionVectorMode == AdditionalMotionVectorMode.Custom);
+            if (writesColor)
+                context.AddBlock(UniversalBlockFields.VertexDescription.MotionVector, target.additionalMotionVectorMode == AdditionalMotionVectorMode.Custom);
 
-            context.AddBlock(BlockFields.SurfaceDescription.Alpha, (target.surfaceType == SurfaceType.Transparent || target.alphaClip) || target.allowMaterialOverride);
+            bool showAlpha = !writesColor
+                ? target.alphaClip || target.allowMaterialOverride
+                : (target.surfaceType == SurfaceType.Transparent || target.alphaClip) || target.allowMaterialOverride;
+
+            context.AddBlock(BlockFields.SurfaceDescription.Alpha, showAlpha);
             context.AddBlock(BlockFields.SurfaceDescription.AlphaClipThreshold, target.alphaClip || target.allowMaterialOverride);
         }
 
@@ -128,12 +164,38 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 collector.AddFloatProperty(Property.DstBlendAlpha, 0.0f);    // always set by material inspector, ok to have incorrect values here
                 collector.AddToggleProperty(Property.ZWrite, (target.surfaceType == SurfaceType.Opaque));
                 collector.AddFloatProperty(Property.ZWriteControl, (float)target.zWriteControl);
-                collector.AddFloatProperty(Property.ZTest, (float)target.zTestMode);    // ztest mode is designed to directly pass as ztest
+                collector.AddFloatProperty(Property.ZTest, (float)target.zTestMode);
                 collector.AddFloatProperty(Property.CullMode, (float)target.renderFace);    // render face enum is designed to directly pass as a cull mode
+                if (target.overrideStencilState)
+                {
+                    collector.AddFloatProperty(Property.StencilRef, target.stencilReference);
+                    collector.AddFloatProperty(Property.StencilReadMask, target.stencilReadMask);
+                    collector.AddFloatProperty(Property.StencilWriteMask, target.stencilWriteMask);
+                    collector.AddFloatProperty(Property.StencilCompFunc, (float)target.stencilCompareFunction);
+                    collector.AddFloatProperty(Property.StencilPassOp, (float)target.stencilPassOperation);
+                    collector.AddFloatProperty(Property.StencilFailOp, (float)target.stencilFailOperation);
+                    collector.AddFloatProperty(Property.StencilZFailOp, (float)target.stencilZFailOperation);
+                    collector.AddFloatProperty(Property.StencilCompFuncBack, (float)target.stencilCompareFunctionBack);
+                    collector.AddFloatProperty(Property.StencilPassOpBack, (float)target.stencilPassOperationBack);
+                    collector.AddFloatProperty(Property.StencilFailOpBack, (float)target.stencilFailOperationBack);
+                    collector.AddFloatProperty(Property.StencilZFailOpBack, (float)target.stencilZFailOperationBack);
+                    UniversalLitSubTarget.AddStencilDefaultProperties(collector);
+                }
 
                 bool enableAlphaToMask = (target.alphaClip && (target.surfaceType == SurfaceType.Opaque));
                 collector.AddFloatProperty(Property.AlphaToMask, enableAlphaToMask ? 1.0f : 0.0f);
             }
+
+            collector.AddFloatProperty(Property.WritesColor, writesColor ? 1.0f : 0.0f);
+
+            // Marker for the material UI: this shader bakes stencil writes into the ShadowCaster pass.
+            // BaseShaderGUI uses this to show a warning when the URP renderer's Shadowmap Stencil is off.
+            if (target.overrideStencilState && target.depthStencilPassMask.Has(DepthStencilPassMask.ShadowPass))
+                collector.AddFloatProperty(Property.StencilUsesShadowPass, 1.0f);
+
+            // Material-UI marker (Property.StencilUsesPrepass); condition mirrors needsDepthOnlyPass.
+            if ((target.overrideStencilState || target.allowMaterialOverride) && target.depthStencilPassMask.Has(DepthStencilPassMask.Prepass))
+                collector.AddFloatProperty(Property.StencilUsesPrepass, 1.0f);
 
             // We always need these properties regardless of whether the material is allowed to override other shader properties.
             // Queue control & offset enable correct automatic render queue behavior.  Control == 0 is automatic, 1 is user-specified.
@@ -141,48 +203,96 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             collector.AddFloatProperty(Property.QueueOffset, 0.0f);
             collector.AddFloatProperty(Property.QueueControl, -1.0f);
 
+            // Emitted unconditionally so UpdateScreenSpaceReflectionContributeTransparentPassState
+            // can read the sub-target default at material-update time to configure the runtime
+            // pass state.
+            collector.AddToggleProperty(Property.ScreenSpaceReflectionsContributeTransparent, screenSpaceReflectionsContributeTransparent);
+
             if (IsSpacewarpSupported())
+            {
                 collector.AddFloatProperty(Property.XrMotionVectorsPass, 1.0f);
+            }
         }
 
         public override void GetPropertiesGUI(ref TargetPropertyGUIContext context, Action onChange, Action<String> registerUndo)
         {
             var universalTarget = (target as UniversalTarget);
             universalTarget.AddDefaultMaterialOverrideGUI(ref context, onChange, registerUndo);
-            universalTarget.AddDefaultSurfacePropertiesGUI(ref context, onChange, registerUndo, showReceiveShadows: false);
 
-            // Unlit option to add additional realtime lighting variants. Useful for custom lighting.
-            context.AddProperty("Keep Lighting Variants", new Toggle() { value = keepLightingVariants }, (evt) =>
+            context.AddProperty("Write Color", "When disabled, the shader does not write color, but may still write to depth / stencil buffers.", 0, new Toggle() { value = writesColor }, (evt) =>
             {
-                if (Equals(keepLightingVariants, evt.newValue))
+                if (Equals(writesColor, evt.newValue))
                     return;
 
-                registerUndo("Change Keep Lighting Variants");
-                keepLightingVariants = evt.newValue;
+                registerUndo("Change Write Color");
+                writesColor = evt.newValue;
+                if (!writesColor)
+                    universalTarget.surfaceType = SurfaceType.Opaque;
                 onChange();
             });
 
-            // Unlit option to disable default decal blending behaviour.
-            context.AddProperty("Default Decal Blending", new Toggle() { value = defaultDecalBlending }, (evt) =>
+            universalTarget.AddDefaultSurfacePropertiesGUI(ref context, onChange, registerUndo, showReceiveShadows: false, writesColor: writesColor);
+
+            if (writesColor)
             {
-                if (Equals(defaultDecalBlending, evt.newValue))
-                    return;
+                // Unlit option to add additional realtime lighting variants. Useful for custom lighting.
+                context.AddProperty("Keep Lighting Variants", new Toggle() { value = keepLightingVariants }, (evt) =>
+                {
+                    if (Equals(keepLightingVariants, evt.newValue))
+                        return;
 
-                registerUndo("Change Default Decal Blending");
-                defaultDecalBlending = evt.newValue;
-                onChange();
-            });
+                    registerUndo("Change Keep Lighting Variants");
+                    keepLightingVariants = evt.newValue;
+                    onChange();
+                });
 
-            // Unlit option to disable default SSAO behaviour.
-            context.AddProperty("Default SSAO", new Toggle() { value = defaultSSAO }, (evt) =>
-            {
-                if (Equals(defaultSSAO, evt.newValue))
-                    return;
+                // Unlit option to disable default decal blending behaviour.
+                context.AddProperty("Default Decal Blending", new Toggle() { value = defaultDecalBlending }, (evt) =>
+                {
+                    if (Equals(defaultDecalBlending, evt.newValue))
+                        return;
 
-                registerUndo("Change Default SSAO");
-                defaultSSAO = evt.newValue;
-                onChange();
-            });
+                    registerUndo("Change Default Decal Blending");
+                    defaultDecalBlending = evt.newValue;
+                    onChange();
+                });
+
+                // Unlit option to disable default SSAO behaviour.
+                context.AddProperty("Default SSAO", new Toggle() { value = defaultSSAO }, (evt) =>
+                {
+                    if (Equals(defaultSSAO, evt.newValue))
+                        return;
+
+                    registerUndo("Change Default SSAO");
+                    defaultSSAO = evt.newValue;
+                    onChange();
+                });
+
+                if (target.surfaceType == SurfaceType.Transparent)
+                {
+                    context.AddProperty("Screen Space Reflections Contribute Transparent", new Toggle() { value = screenSpaceReflectionsContributeTransparent }, (evt) =>
+                    {
+                        if (Equals(screenSpaceReflectionsContributeTransparent, evt.newValue))
+                            return;
+
+                        registerUndo("Change Screen Space Reflections Contribute Transparent");
+                        screenSpaceReflectionsContributeTransparent = evt.newValue;
+                        onChange();
+                    });
+
+#if VOLUMETRIC_FOG
+                    context.AddProperty("Receive Fog", "When enabled, the transparent surface receives fog from the Fog volume override.", 0, new Toggle() { value = receiveFog }, (evt) =>
+                    {
+                        if (Equals(receiveFog, evt.newValue))
+                            return;
+
+                        registerUndo("Change Receive Fog");
+                        receiveFog = evt.newValue;
+                        onChange();
+                    });
+#endif
+                }
+            }
         }
 
         public bool TryUpgradeFromMasterNode(IMasterNode1 masterNode, out Dictionary<BlockFieldDescriptor, int> blockMap)
@@ -229,6 +339,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         {
             public static SubShaderDescriptor Unlit(UniversalTarget target, string renderType, string renderQueue, string disableBatchingTag)
             {
+                var unlitSubTarget = target.activeSubTarget as UniversalUnlitSubTarget;
+                bool writesColor = unlitSubTarget?.writesColor ?? true;
+
                 var result = new SubShaderDescriptor()
                 {
                     pipelineTag = UniversalTarget.kPipelineTag,
@@ -240,9 +353,12 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     passes = new PassCollection()
                 };
 
-                result.passes.Add(UnlitPasses.Forward(target, UnlitKeywords.Forward));
+                if (writesColor)
+                    result.passes.Add(UnlitPasses.Forward(target, UnlitKeywords.Forward));
+                else
+                    result.passes.Add(UnlitPasses.ForwardNoColor(target));
 
-                if (target.mayWriteDepth)
+                if (target.needsDepthOnlyPass)
                     result.passes.Add(PassVariant(CorePasses.DepthOnly(target), CorePragmas.Instanced));
 
                 if (target.alwaysRenderMotionVectors)
@@ -257,13 +373,16 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 if (target.castShadows || target.allowMaterialOverride)
                     result.passes.Add(PassVariant(CorePasses.ShadowCaster(target), CorePragmas.Instanced));
 
-                // Fill GBuffer with color and normal for custom GBuffer use cases.
-                result.passes.Add(UnlitPasses.GBuffer(target));
+                if (writesColor)
+                {
+                    // Fill GBuffer with color and normal for custom GBuffer use cases.
+                    result.passes.Add(UnlitPasses.GBuffer(target));
+                }
 
                 // Currently neither of these passes (selection/picking) can be last for the game view for
                 // UI shaders to render correctly. Verify [1352225] before changing this order.
-                result.passes.Add(PassVariant(CorePasses.SceneSelection(target), CorePragmas.Default));
-                result.passes.Add(PassVariant(CorePasses.ScenePicking(target), CorePragmas.Default));
+                result.passes.Add(PassVariant(CorePasses.SceneSelection(target), CorePragmas.Instanced));
+                result.passes.Add(PassVariant(CorePasses.ScenePicking(target), CorePragmas.Instanced));
 
                 return result;
             }
@@ -280,6 +399,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     pass.includes.Add(UnlitIncludes.LightingIncludes);
                     pass.keywords.Add(UnlitKeywords.LightingVariants);
                     pass.defines.Add(UnlitDefines.LightingDefine, 1);
+                    pass.lightMode = "UniversalForward";
                 }
             }
 
@@ -299,12 +419,55 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 }
             }
 
+            public static PassDescriptor ForwardNoColor(UniversalTarget target)
+            {
+                var result = new PassDescriptor
+                {
+                    // Definition
+                    displayName = "Unlit",
+                    referenceName = "SHADERPASS_UNLIT",
+                    lightMode = "UniversalForwardOnly",
+                    useInPreview = true,
+
+                    // Template
+                    passTemplatePath = UniversalTarget.kUberTemplatePath,
+                    sharedTemplateDirectories = UniversalTarget.kSharedTemplateDirectories,
+
+                    // Port Mask
+                    validVertexBlocks = CoreBlockMasks.Vertex,
+                    validPixelBlocks = CoreBlockMasks.FragmentAlphaOnly,
+
+                    // Fields
+                    structs = CoreStructCollections.Default,
+                    requiredFields = UnlitRequiredFields.Unlit,
+                    fieldDependencies = CoreFieldDependencies.Default,
+
+                    // Conditional State
+                    renderStates = CoreRenderStates.ForwardNoColor(target),
+                    pragmas = CorePragmas.Instanced,
+                    defines = new DefineCollection(),
+                    keywords = new KeywordCollection(),
+                    includes = new IncludeCollection { CoreIncludes.DepthOnly },
+
+                    // Custom Interpolator Support
+                    customInterpolators = CoreCustomInterpDescriptors.Common
+                };
+
+                CorePasses.AddAlphaClipControlToPass(ref result, target);
+                CorePasses.AddLODCrossFadeControlToPass(ref result, target);
+                bool colorOn = target.depthStencilPassMask.Has(DepthStencilPassMask.ColorPass);
+                CorePasses.AddDepthStateControlToPass(ref result, target, useDefaults: !colorOn);
+                CorePasses.AddStencilStateControlToPass(ref result, target, useDefaults: !colorOn);
+
+                return result;
+            }
+
             public static PassDescriptor Forward(UniversalTarget target, KeywordCollection keywords)
             {
                 var result = new PassDescriptor
                 {
                     // Definition
-                    displayName = "Universal Forward",
+                    displayName = "Unlit",
                     referenceName = "SHADERPASS_UNLIT",
                     useInPreview = true,
 
@@ -332,9 +495,18 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     customInterpolators = CoreCustomInterpDescriptors.Common
                 };
 
+                if (((target.activeSubTarget as UniversalUnlitSubTarget)?.receiveFog ?? false) && (target.surfaceType == SurfaceType.Transparent || target.allowMaterialOverride))
+                {
+                    result.defines.Add(CoreKeywordDescriptors.ReceiveFog, 1);
+                    result.keywords.Add(CoreKeywordDescriptors.FogMode);
+                }
+
                 CorePasses.AddTargetSurfaceControlsToPass(ref result, target);
                 CorePasses.AddAlphaToMaskControlToPass(ref result, target);
                 CorePasses.AddLODCrossFadeControlToPass(ref result, target);
+                bool colorOn = target.depthStencilPassMask.Has(DepthStencilPassMask.ColorPass);
+                CorePasses.AddDepthStateControlToPass(ref result, target, useDefaults: !colorOn);
+                CorePasses.AddStencilStateControlToPass(ref result, target, useDefaults: !colorOn);
 
                 if (target.activeSubTarget is UniversalUnlitSubTarget unlitSubTarget)
                 {
@@ -380,8 +552,10 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     customInterpolators = CoreCustomInterpDescriptors.Common
                 };
 
-                CorePasses.AddTargetSurfaceControlsToPass(ref result, target);
+                CorePasses.AddAlphaClipControlToPass(ref result, target);
                 CorePasses.AddLODCrossFadeControlToPass(ref result, target);
+                CorePasses.AddStencilStateControlToPass(ref result, target,
+                    useDefaults: !target.depthStencilPassMask.Has(DepthStencilPassMask.Prepass));
 
                 return result;
             }
@@ -422,8 +596,14 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     customInterpolators = CoreCustomInterpDescriptors.Common
                 };
 
-                CorePasses.AddTargetSurfaceControlsToPass(ref result, target);
+                CorePasses.AddAlphaClipControlToPass(ref result, target);
                 CorePasses.AddLODCrossFadeControlToPass(ref result, target);
+                CorePasses.AddDepthStateControlToPass(ref result, target, useDefaults: !target.depthStencilPassMask.Has(DepthStencilPassMask.ColorPass));
+                if (target.activeSubTarget is UniversalUnlitSubTarget unlitSubTarget)
+                {
+                    UnlitPasses.AddDefaultDecalBlendingControlToPass(ref result, unlitSubTarget);
+                    UnlitPasses.AddDefaultSSAOControlToPass(ref result, unlitSubTarget);
+                }
 
                 return result;
             }
@@ -531,6 +711,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             {
                 { CoreKeywordDescriptors.MainLightShadows },
                 { CoreKeywordDescriptors.AdditionalLights },
+                { CoreKeywordDescriptors.LightFalloffQuadratic },
                 { CoreKeywordDescriptors.AdditionalLightShadows },
                 { CoreKeywordDescriptors.ReflectionProbeBlending },
                 { CoreKeywordDescriptors.ReflectionProbeBoxProjection },
@@ -541,6 +722,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreKeywordDescriptors.ShadowsShadowmask },
                 { CoreKeywordDescriptors.LightLayers },
                 { CoreKeywordDescriptors.LightCookies },
+                { CoreKeywordDescriptors.VolumetricFog },
                 { CoreKeywordDescriptors.ClusterLightLoop },
             };
         }
@@ -581,6 +763,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 // Post-graph
                 { CoreIncludes.CorePostgraph },
                 { kUnlitGBufferPass, IncludeLocation.Postgraph },
+                { CoreIncludes.GBufferOutputFormat },
             };
 
             public static IncludeCollection LightingIncludes = new IncludeCollection

@@ -9,6 +9,7 @@
 #define INTERPOLATE_ATTRIBUTE(attr, barCoords) v.attr = v0.attr * (1.0 - barCoords.x - barCoords.y) + v1.attr * barCoords.x + v2.attr * barCoords.y
 
 StructuredBuffer<UnifiedRT::InstanceData>     g_AccelStructInstanceList;
+StructuredBuffer<UnifiedRT::TerrainData>      g_TerrainList;
 
 StructuredBuffer<uint>             g_globalIndexBuffer;
 StructuredBuffer<uint>             g_globalVertexBuffer;
@@ -94,21 +95,18 @@ HitGeomAttributes FetchHitGeomAttributes(int geometryIndex, int primitiveIndex, 
     return result;
 }
 
-
 HitGeomAttributes FetchHitGeomAttributes(Hit hit, uint attributesToFetch = kGeomAttribAll)
 {
     int geometryIndex = g_AccelStructInstanceList[hit.instanceID].geometryIndex;
     return FetchHitGeomAttributes(geometryIndex, hit.primitiveIndex, hit.uvBarycentrics, attributesToFetch);
 }
 
-HitGeomAttributes FetchHitGeomAttributesInWorldSpace(UnifiedRT::InstanceData instanceInfo, UnifiedRT::Hit hit)
+HitGeomAttributes TransformToWorldSpace(UnifiedRT::InstanceData instanceInfo, UnifiedRT::HitGeomAttributes hitGeomAttributes)
 {
-    UnifiedRT::HitGeomAttributes res = UnifiedRT::FetchHitGeomAttributes(hit);
-
-    HitGeomAttributes wsRes = res;
-    wsRes.position = mul(instanceInfo.localToWorld, float4(res.position, 1)).xyz;
-    wsRes.normal = normalize(mul((float3x3)instanceInfo.localToWorldNormals, res.normal));
-    wsRes.faceNormal = normalize(mul((float3x3)instanceInfo.localToWorldNormals, res.faceNormal));
+    HitGeomAttributes wsRes = hitGeomAttributes;
+    wsRes.position = mul(float4(hitGeomAttributes.position, 1), instanceInfo.localToWorld);
+    wsRes.normal = normalize(mul((float3x3) instanceInfo.localToWorldNormals, hitGeomAttributes.normal));
+    wsRes.faceNormal = normalize(mul((float3x3) instanceInfo.localToWorldNormals, hitGeomAttributes.faceNormal));
 
     return wsRes;
 }
@@ -116,6 +114,11 @@ HitGeomAttributes FetchHitGeomAttributesInWorldSpace(UnifiedRT::InstanceData ins
 InstanceData GetInstance(uint instanceID)
 {
     return g_AccelStructInstanceList[instanceID];
+}
+
+TerrainData GetTerrain(int terrainIndex)
+{
+    return g_TerrainList[terrainIndex];
 }
 
 } // namespace UnifiedRT

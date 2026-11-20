@@ -14,7 +14,7 @@ namespace UnityEngine.Rendering.RenderGraphModule
         // Minor Warning: This calls the zeroing constructor this means that the embedded ResourceHandle struct will also be zero-ed
         // which then means ResourceHandle.type will be set to zero == Texture. As this is an "invalid" bufferhandle I guess setting it
         // to type texture just makes it even more properly invalid and not a big issue. But something to keep in mind for tooling/logging.
-        private static BufferHandle s_NullHandle = new BufferHandle();
+        private static readonly BufferHandle s_NullHandle = new BufferHandle();
 
         /// <summary>
         /// Returns a null graphics buffer handle
@@ -91,14 +91,16 @@ namespace UnityEngine.Rendering.RenderGraphModule
         /// Hash function
         /// </summary>
         /// <returns>The texture descriptor hash.</returns>
-        public override int GetHashCode()
+        public override int GetHashCode() => ComputeDescHash().value;
+
+        internal HashFNV1A32 ComputeDescHash()
         {
             var hashCode = HashFNV1A32.Create();
             hashCode.Append(count);
             hashCode.Append(stride);
             hashCode.Append((int) target);
             hashCode.Append((int) usageFlags);
-            return hashCode.value;
+            return hashCode;
         }
     }
 
@@ -114,13 +116,13 @@ namespace UnityEngine.Rendering.RenderGraphModule
                 return desc.name;
         }
 
-        public override int GetDescHashCode() { return desc.GetHashCode(); }
+        public override HashFNV1A32 GetDescHash() { return desc.ComputeDescHash(); }
 
         public override void CreateGraphicsResource()
         {
             var name = GetName();
             graphicsResource = new GraphicsBuffer(desc.target, desc.usageFlags, desc.count, desc.stride);
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             graphicsResource.name = name == "" ? $"RenderGraphBuffer_{desc.count}_{desc.stride}_{desc.target}" : name;
 #endif
         }
@@ -136,16 +138,6 @@ namespace UnityEngine.Rendering.RenderGraphModule
             if (graphicsResource != null)
                 graphicsResource.Release();
             base.ReleaseGraphicsResource();
-        }
-
-        public override void LogCreation(RenderGraphLogger logger)
-        {
-            logger.LogLine($"Created GraphicsBuffer: {desc.name}");
-        }
-
-        public override void LogRelease(RenderGraphLogger logger)
-        {
-            logger.LogLine($"Released GraphicsBuffer: {desc.name}");
         }
     }
 
@@ -171,9 +163,9 @@ namespace UnityEngine.Rendering.RenderGraphModule
             return "GraphicsBuffer";
         }
 
-        override protected int GetSortIndex(GraphicsBuffer res)
+        override protected ulong GetSortIndex(GraphicsBuffer res)
         {
-            return res.GetHashCode();
+            return (ulong)res.GetHashCode();
         }
     }
 }

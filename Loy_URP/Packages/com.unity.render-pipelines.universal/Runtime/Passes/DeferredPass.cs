@@ -22,42 +22,6 @@ namespace UnityEngine.Rendering.Universal.Internal
             m_DeferredLights = deferredLights;
         }
 
-#if URP_COMPATIBILITY_MODE
-        // ScriptableRenderPass
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-        public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescripor)
-        {
-            var lightingAttachment = m_DeferredLights.GbufferAttachments[m_DeferredLights.GBufferLightingIndex];
-            var depthAttachment = m_DeferredLights.DepthAttachmentHandle;
-
-            if (m_DeferredLights.UseFramebufferFetch)
-            {
-                // Disable obsolete warning for internal usage
-                #pragma warning disable CS0618
-                ConfigureInputAttachments(m_DeferredLights.DeferredInputAttachments, m_DeferredLights.DeferredInputIsTransient);
-                #pragma warning restore CS0618
-            }
-
-            // Disable obsolete warning for internal usage
-            #pragma warning disable CS0618
-            // TODO: Cannot currently bind depth texture as read-only!
-            ConfigureTarget(lightingAttachment, depthAttachment);
-            #pragma warning restore CS0618
-        }
-
-        // ScriptableRenderPass
-        [Obsolete(DeprecationMessage.CompatibilityScriptingAPIObsoleteFrom2023_3)]
-        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
-        {
-            ContextContainer frameData = renderingData.frameData;
-            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
-            UniversalLightData lightData = frameData.Get<UniversalLightData>();
-            UniversalShadowData shadowData = frameData.Get<UniversalShadowData>();
-
-            m_DeferredLights.ExecuteDeferredPass(CommandBufferHelpers.GetRasterCommandBuffer(renderingData.commandBuffer), cameraData, lightData, shadowData);
-        }
-#endif
-
         private class PassData
         {
             internal UniversalCameraData cameraData;
@@ -68,48 +32,54 @@ namespace UnityEngine.Rendering.Universal.Internal
             internal DeferredLights deferredLights;
         }
 
-        internal void Render(RenderGraph renderGraph, ContextContainer frameData, TextureHandle color, TextureHandle depth, TextureHandle[] gbuffer)
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
-            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
-            UniversalLightData lightData = frameData.Get<UniversalLightData>();
-            UniversalShadowData shadowData = frameData.Get<UniversalShadowData>();
+            var cameraData = frameData.Get<UniversalCameraData>();
+            var resourceData = frameData.Get<UniversalResourceData>();
+            var lightData = frameData.Get<UniversalLightData>();
+            var shadowData = frameData.Get<UniversalShadowData>();
+
+            var color = resourceData.activeColorTexture;
+            var depth = resourceData.activeDepthTexture;
+            var gbuffer = resourceData.gBuffer;
 
             using (var builder = renderGraph.AddRasterRenderPass<PassData>(passName, out var passData, profilingSampler))
             {
                 passData.cameraData = cameraData;
                 passData.lightData = lightData;
                 passData.shadowData = shadowData;
+                passData.gbuffer = gbuffer;
 
+                if (resourceData.exposureMultiplier.IsValid())
+                {
+                    builder.UseTexture(resourceData.exposureMultiplier, AccessFlags.Read);
+                }
                 builder.SetRenderAttachment(color, 0, AccessFlags.Write);
-                builder.SetRenderAttachmentDepth(depth, AccessFlags.Write);
+                builder.SetRenderAttachmentDepth(depth, AccessFlags.ReadWrite);
                 passData.deferredLights = m_DeferredLights;
 
-                if (!m_DeferredLights.UseFramebufferFetch)
+                for (int i = 0, idx = 0; i < gbuffer.Length; ++i)
                 {
-                    for (int i = 0; i < gbuffer.Length; ++i)
-                    {
-                        if (i != m_DeferredLights.GBufferLightingIndex)
-                            builder.UseTexture(gbuffer[i], AccessFlags.Read);
-                    }
-                }
-                else
-                {
-                    var idx = 0;
-                    for (int i = 0; i < gbuffer.Length; ++i)
-                    {
-                        if (i != m_DeferredLights.GBufferLightingIndex)
-                        {
-                            builder.SetInputAttachment(gbuffer[i], idx, AccessFlags.Read);
-                            idx++;
-                        }
-                    }
+                    if (i == m_DeferredLights.GBufferLightingIndex)
+                        continue;
+
+                    builder.SetInputAttachment(gbuffer[i], idx++);
                 }
 
                 builder.AllowGlobalStateModification(true);
 
-                builder.SetRenderFunc((PassData data, RasterGraphContext context) =>
+#if ENABLE_VR && ENABLE_XR_MODULE
+                if (cameraData.xr.enabled)
                 {
-                    data.deferredLights.ExecuteDeferredPass(context.cmd, data.cameraData, data.lightData, data.shadowData);
+                    bool passSupportsFoveation = cameraData.xrUniversal.canFoveateIntermediatePasses || resourceData.isActiveTargetBackBuffer;
+                    builder.EnableFoveatedRasterization(
+                        cameraData.xr.supportsFoveatedRendering && passSupportsFoveation);
+                }
+#endif
+
+                builder.SetRenderFunc(static (PassData data, RasterGraphContext context) =>
+                {
+                    data.deferredLights.ExecuteDeferredPass(context.cmd, data.cameraData, data.lightData, data.shadowData, data.gbuffer, context);
                 });
             }
         }

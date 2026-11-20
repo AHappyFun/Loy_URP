@@ -216,13 +216,11 @@
 
 // Include language header
 #if defined (SHADER_API_GAMECORE)
-#include "Packages/com.unity.render-pipelines.gamecore/ShaderLibrary/API/GameCore.hlsl"
-#elif defined(SHADER_API_XBOXONE)
-#include "Packages/com.unity.render-pipelines.xboxone/ShaderLibrary/API/XBoxOne.hlsl"
+#include "UnityPlatforms/GameCore/ShaderLibrary/API/GameCore.hlsl"
 #elif defined(SHADER_API_PS4)
-#include "Packages/com.unity.render-pipelines.ps4/ShaderLibrary/API/PSSL.hlsl"
+#include "UnityPlatforms/PS4/ShaderLibrary/API/PSSL.hlsl"
 #elif defined(SHADER_API_PS5)
-#include "Packages/com.unity.render-pipelines.ps5/ShaderLibrary/API/PSSL.hlsl"
+#include "UnityPlatforms/PS5/ShaderLibrary/API/PSSL.hlsl"
 #elif defined(SHADER_API_D3D11)
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/API/D3D11.hlsl"
 #elif defined(SHADER_API_METAL)
@@ -672,12 +670,12 @@ float SanitizePositiveFinite(float x)
 
 real DegToRad(real deg)
 {
-    return deg * (PI / 180.0);
+    return deg * (real)(PI / 180.0);
 }
 
 real RadToDeg(real rad)
 {
-    return rad * (180.0 / PI);
+    return rad * (real)(180.0 / PI);
 }
 
 // Square functions for cleaner code
@@ -707,7 +705,7 @@ real FastACos(real inX)
 {
     real res = FastACosPos(inX);
 
-    return (inX >= 0) ? res : PI - res; // Undo range reduction
+    return (inX >= 0) ? res : (real)(PI - res); // Undo range reduction
 }
 
 // Same cost as Acos + 1 FR
@@ -1234,6 +1232,17 @@ float LinearEyeDepth(float3 positionWS, float4x4 viewMatrix)
     return abs(viewSpaceZ);
 }
 
+// Orthographic Z buffer to linear view space (eye) depth.
+// Orthographic projection is linear in view space Z, so the raw depth maps directly onto [near, far].
+float LinearEyeDepthOrtho(float depth, float near, float far)
+{
+#if UNITY_REVERSED_Z
+    return far - (far - near) * depth;
+#else
+    return near + (far - near) * depth;
+#endif
+}
+
 // 'z' is the view space Z position (linear depth).
 // saturate(z) the output of the function to clamp them to the [0, 1] range.
 // d = log2(c * (z - n) + 1) / log2(c * (f - n) + 1)
@@ -1510,13 +1519,13 @@ void ApplyDepthOffsetPositionInput(float3 V, float depthOffsetVS, float3 viewFor
 
 // For the built-in target this is already a defined symbol
 #ifndef BUILTIN_TARGET_API
-real4 PackHeightmap(real height)
+float4 PackHeightmap(float height)
 {
     uint a = (uint)(65535.0 * height);
-    return real4((a >> 0) & 0xFF, (a >> 8) & 0xFF, 0, 0) / 255.0;
+    return float4((a >> 0) & 0xFF, (a >> 8) & 0xFF, 0, 0) / 255.0;
 }
 
-real UnpackHeightmap(real4 height)
+float UnpackHeightmap(float4 height)
 {
     return (height.r + height.g * 256.0) / 257.0; // (255.0 * height.r + 255.0 * 256.0 * height.g) / 65535.0
 }
@@ -1526,12 +1535,12 @@ real UnpackHeightmap(real4 height)
 
 // For the built-in target this is already a defined symbol
 #ifndef BUILTIN_TARGET_API
-real4 PackHeightmap(real height)
+float4 PackHeightmap(float height)
 {
-    return real4(height, 0, 0, 0);
+    return float4(height, 0, 0, 0);
 }
 
-real UnpackHeightmap(real4 height)
+float UnpackHeightmap(float4 height)
 {
     return height.r;
 }

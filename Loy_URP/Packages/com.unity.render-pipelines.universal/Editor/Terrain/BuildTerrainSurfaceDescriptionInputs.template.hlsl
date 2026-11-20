@@ -55,6 +55,7 @@ SurfaceDescriptionInputs BuildSurfaceDescriptionInputs(Varyings input)
 
     $SurfaceDescriptionInputs.NDCPosition:                              output.NDCPosition = output.PixelPosition.xy / _ScreenParams.xy;
     $SurfaceDescriptionInputs.NDCPosition:                              output.NDCPosition.y = 1.0f - output.NDCPosition.y;
+    $SurfaceDescriptionInputs.ClipPosition:                             output.ClipPosition = input.positionCS.xy;
 
     $SurfaceDescriptionInputs.uv0:                                      output.uv0 = input.texCoord0;
     $SurfaceDescriptionInputs.uv1:                                      output.uv1 = input.texCoord1;
@@ -62,12 +63,6 @@ SurfaceDescriptionInputs BuildSurfaceDescriptionInputs(Varyings input)
     $SurfaceDescriptionInputs.uv3:                                      output.uv3 = input.texCoord3;
     $SurfaceDescriptionInputs.VertexColor:                              output.VertexColor = input.color;
     $SurfaceDescriptionInputs.TimeParameters:                           output.TimeParameters = _TimeParameters.xyz; // This is mainly for LW as HD overwrite this value
-#ifdef UNIVERSAL_TERRAIN_SPLAT01
-    $SurfaceDescriptionInputs.uvSplat01:                                output.uvSplat01 = input.uvSplat01;
-#endif
-#ifdef UNIVERSAL_TERRAIN_SPLAT23
-    $SurfaceDescriptionInputs.uvSplat23:                                output.uvSplat23 = input.uvSplat23;
-#endif
 #if defined(SHADER_STAGE_FRAGMENT) && defined(VARYINGS_NEED_CULLFACE)
 #define BUILD_SURFACE_DESCRIPTION_INPUTS_OUTPUT_FACESIGN output.FaceSign = IS_FRONT_VFACE(input.cullFace, true, false);
 #else

@@ -8,7 +8,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 {
     sealed class UniversalSpriteUnlitSubTarget : UniversalSubTarget, ILegacyTarget
     {
-        static readonly GUID kSourceCodeGuid = new GUID("ed7c0aacec26e9646b45c96fb318e5a3"); // UniversalSpriteUnlitSubTarget.cs
+        static readonly UnityEngine.GUID kSourceCodeGuid = new UnityEngine.GUID("ed7c0aacec26e9646b45c96fb318e5a3"); // UniversalSpriteUnlitSubTarget.cs
 
         public UniversalSpriteUnlitSubTarget()
         {
@@ -110,7 +110,6 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             {
                 var result = new PassDescriptor()
                 {
-
                     // Definition
                     displayName = "Sprite Unlit",
                     referenceName = "SHADERPASS_SPRITEUNLIT",
@@ -148,7 +147,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
                 return result;
             }
-
+        
             public static PassDescriptor Forward(UniversalTarget target)
             {
                 var result = new PassDescriptor

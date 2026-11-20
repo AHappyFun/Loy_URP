@@ -10,6 +10,12 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 
+# Standalone Unity editor logs and crash dumps
+/Editor.log
+/Editor-prev.log
+/crash.dmp
+/crash_*.dmp
+
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data

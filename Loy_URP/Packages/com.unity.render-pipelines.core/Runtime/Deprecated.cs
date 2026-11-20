@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Unity.Scripting.LifecycleManagement;
 using UnityEngine.Assertions;
-using static UnityEngine.Rendering.DebugUI;
 
 namespace UnityEngine.Rendering
 {
@@ -32,9 +32,11 @@ namespace UnityEngine.Rendering
 
     public abstract partial class VolumeDebugSettings<T>
     {
+        // Obsolete unused API to be removed, does not support Fast Enter Playmode.
+        [NoAutoStaticsCleanup]
         static List<Type> s_ComponentTypes;
         /// <summary>List of Volume component types.</summary>
-        [Obsolete("Please use volumeComponentsPathAndType instead, and get the second element of the tuple #from(2022.2)")]
+        [Obsolete("Please use volumeComponentsPathAndType instead, and get the second element of the tuple. Note: Not compatible with Fast Enter Playmode. #from(2022.2)")]
         public static List<Type> componentTypes
         {
             get
@@ -69,14 +71,15 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// The list of the additional camera datas
         /// </summary>
-        [Obsolete("Cameras are auto registered/unregistered, use property cameras #from(2022.2)")]
+        [Obsolete("Cameras are auto registered/unregistered, use property cameras. Note: Not compatible with Fast Enter Playmode. #from(2022.2)")]
+        [NoAutoStaticsCleanup]
         protected static List<T> additionalCameraDatas { get; private set; } = new List<T>();
 
         /// <summary>
         /// Register the camera for the Volume Debug.
         /// </summary>
         /// <param name="additionalCamera">The AdditionalCameraData of the camera to be registered.</param>
-        [Obsolete("Cameras are auto registered/unregistered #from(2022.2)")]
+        [Obsolete("Cameras are auto registered/unregistered. Note: Not compatible with Fast Enter Playmode.  #from(2022.2)")]
         public static void RegisterCamera(T additionalCamera)
         {
             if (!additionalCameraDatas.Contains(additionalCamera))
@@ -87,7 +90,7 @@ namespace UnityEngine.Rendering
         /// Unregister the camera for the Volume Debug.
         /// </summary>
         /// <param name="additionalCamera">The AdditionalCameraData of the camera to be registered.</param>
-        [Obsolete("Cameras are auto registered/unregistered #from(2022.2)")]
+        [Obsolete("Cameras are auto registered/unregistered. Note: Not compatible with Fast Enter Playmode.  #from(2022.2)")]
         public static void UnRegisterCamera(T additionalCamera)
         {
             if (additionalCameraDatas.Contains(additionalCamera))
@@ -98,11 +101,77 @@ namespace UnityEngine.Rendering
     public sealed partial class DebugManager
     {
         /// <summary>
+        /// Force an editor request.
+        /// </summary>
+        [Obsolete("Polling pattern is deprecated. Subscribe to onRecreateDebugUI event instead. #from(6000.6)", false)]
+        public bool refreshEditorRequested;
+
+        /// <summary>
+        /// Refresh the debug window.
+        /// </summary>
+        [Obsolete("Use RecreateDebugUI() instead. RefreshEditor only marks widgets dirty, it doesn't recreate panel structure. #from(6000.6) (UnityUpgradable) -> RecreateDebugUI(*)", true)]
+        public void RefreshEditor()
+        {
+            refreshEditorRequested = true;
+        }
+
+        /// <summary>
+        /// Request the runtime debug UI be redrawn on the next update.
+        /// </summary>
+        [Obsolete("Use RecreateDebugUI() instead. #from(6000.6) (UnityUpgradable) -> RecreateDebugUI(*)", true)]
+        public void ReDrawOnScreenDebug()
+        {
+            RecreateDebugUI();
+        }
+
+        /// <summary>
+        /// Request DebugWindow to open the specified panel.
+        /// </summary>
+        /// <param name="index">Index of the debug window panel to activate.</param>
+        [Obsolete("Use RequestEditorWindowPanelName instead. #from(6000.5)")]
+        public void RequestEditorWindowPanelIndex(int index)
+        {
+            if (m_Panels[index] != null)
+                RequestPanelSelection(m_Panels[index].displayName);
+        }
+
+        /// <summary>
+        /// Request DebugWindow to open the specified panel.
+        /// </summary>
+        /// <param name="panelName">Name of window panel to activate.</param>
+        [Obsolete("Use RequestPanelSelection instead. #from(6000.6) (UnityUpgradable) -> RequestPanelSelection(*)", true)]
+        public void RequestEditorWindowPanel(string panelName)
+        {
+            RequestPanelSelection(panelName);
+        }
+
+        /// <summary>
+        /// Returns the panel display name
+        /// </summary>
+        /// <param name="panelIndex">The panelIndex for the panel to get the name</param>
+        /// <returns>The display name of the panel, or empty string otherwise</returns>
+        [Obsolete("Method is obsolete. Use PanelDisplayName instead. #from(6000.4) (UnityUpgradable) -> PanelDisplayName", true)]
+        public string PanelDiplayName(int panelIndex)
+        {
+            return PanelDisplayName(panelIndex);
+        }
+
+        /// <summary>
         /// Toggle the debug window.
         /// </summary>
         /// <param name="open">State of the debug window.</param>
         [Obsolete("Use DebugManager.instance.displayEditorUI property instead. #from(2023.1)")]
-        public void ToggleEditorUI(bool open) => editorUIState.open = open;
+        public void ToggleEditorUI(bool open) => m_EditorUIState.open = open;
+
+        /// <summary>
+        /// Get hashcode state of the Debug Window.
+        /// </summary>
+        /// <returns>The calculated hashcode for the current state of the Debug Window.</returns>
+        [Obsolete("This method is unused. #from(6000.5)")]
+        public int GetState()
+        {
+            return 0;
+        }
     }
 
     /// <summary>
@@ -171,8 +240,8 @@ namespace UnityEngine.Rendering
             /// <param name="names">names to fill the enum</param>
             public void Fill(string[] names)
             {
-                using (ListPool<GUIContent>.Get(out var tmpNames))
-                using (ListPool<int>.Get(out var tmpValues))
+                using (UnityEngine.Pool.ListPool<GUIContent>.Get(out var tmpNames))
+                using (UnityEngine.Pool.ListPool<int>.Get(out var tmpValues))
                 {
                     for (int i = 0; i < (names.Length); ++i)
                     {
@@ -195,10 +264,54 @@ namespace UnityEngine.Rendering
 
                 if (!validValue.Equals(getter()))
                 {
+#if UNITY_EDITOR
+                    uint previousValue = GetValue();
+                    onWidgetValueChangedAnalytic?.Invoke(queryPath, previousValue, validValue);
+#endif
                     setter(validValue);
                     onValueChanged?.Invoke(this, validValue);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Defines the basic structure for a Volume, providing the necessary properties for determining
+    /// whether the volume should be applied globally to the scene or to specific colliders.
+    /// </summary>
+    /// <remarks>
+    /// This interface serves as a contract for systems that implement volume logic, enabling
+    /// reusable code for volume-based behaviors such as rendering effects, post-processing, or scene-specific logic.
+    /// The <see cref="IVolume"/> interface is commonly implemented by components that define volumes in a scene,
+    /// allowing for flexibility in determining how the volume interacts with the scene. A volume can either be global
+    /// (affecting the entire scene) or local (restricted to specific colliders).
+    /// This interface is also helpful for drawing gizmos in the scene view, as it allows for visual representation
+    /// of volumes in the editor based on their settings.
+    /// </remarks>
+    [Obsolete("IVolume is no longer used. #from(6000.4)", false)]
+    public interface IVolume
+    {
+        /// <summary>
+        /// Gets or sets a value indicating whether the volume applies to the entire scene.
+        /// If true, the volume is global and affects all objects within the scene.
+        /// If false, the volume is local and only affects the objects within the specified colliders.
+        /// </summary>
+        /// <remarks>
+        /// When set to true, the volume's effects will be applied universally across the scene,
+        /// without considering individual colliders. When false, the volume will interact only with
+        /// the objects inside the colliders defined in <see cref="colliders"/>.
+        /// </remarks>
+        bool isGlobal { get; set; }
+
+#if ENABLE_PHYSICS_MODULE
+        /// <summary>
+        /// A list of colliders that define the area of influence of the volume when <see cref="isGlobal"/> is set to false.
+        /// </summary>
+        /// <remarks>
+        /// This property holds the colliders that restrict the volume's effects to specific areas of the scene.
+        /// It is only relevant when <see cref="isGlobal"/> is false, and defines the boundaries of where the volume is applied.
+        /// </remarks>
+        List<Collider> colliders { get; }
+#endif
     }
 }

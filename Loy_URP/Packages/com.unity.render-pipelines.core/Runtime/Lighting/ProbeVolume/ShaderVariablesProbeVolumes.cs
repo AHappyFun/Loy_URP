@@ -6,18 +6,18 @@ namespace UnityEngine.Rendering
     [GenerateHLSL]
     class APVDefinitions
     {
-        public static int probeIndexChunkSize = ProbeBrickIndex.kIndexChunkSize;
+        public const int probeIndexChunkSize = ProbeBrickIndex.k_IndexChunkSize;
         public const float probeValidityThreshold = 0.05f;
 
-        public static int probeMaxRegionCount = 4;
-        public static Color32[] layerMaskColors = new Color32[] {
+        public const int probeMaxRegionCount = 4;
+        public static readonly Color32[] layerMaskColors = {
             new Color32(230, 159, 0, 255),
             new Color32(0, 158, 115, 255),
             new Color32(0, 114, 178, 255),
             new Color32(204, 121, 167, 255),
         };
 
-        public static Color debugEmptyColor = new Color(0.388f, 0.812f, 0.804f, 1.0f);
+        public static readonly Color debugEmptyColor = new Color(0.388f, 0.812f, 0.804f, 1.0f);
     }
 
     /// <summary>
@@ -28,7 +28,7 @@ namespace UnityEngine.Rendering
         /// <summary>
         /// Global register
         /// </summary>
-        GlobalRegister = 6
+        GlobalRegister = 6,
     }
 
     /// <summary>

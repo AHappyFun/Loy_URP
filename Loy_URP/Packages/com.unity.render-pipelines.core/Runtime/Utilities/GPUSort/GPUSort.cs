@@ -1,4 +1,5 @@
 using System;
+using Unity.Profiling.LowLevel;
 using UnityEngine.Assertions;
 
 // Ref: https://poniesandlight.co.uk/reflect/bitonic_merge_sort/
@@ -21,6 +22,36 @@ namespace UnityEngine.Rendering
             BigFlip,
             BigDisperse
         }
+
+        /// <summary>
+        /// Dispatches the initial bitonic merge sort within each workgroup (up to 2048 elements
+        /// in each group). Called once per sort. Subsequent passes use the Big/Local Flip and
+        /// Disperse stages.
+        /// </summary>
+        static readonly ProfilingSampler k_LocalBMS = ProfilingSampler.Create("LocalBMS", MarkerFlags.Default);
+
+        /// <summary>
+        /// Dispatches the disperse step confined to a single workgroup once the sub-sequence
+        /// length falls within the 2048-element workgroup boundary. Terminates the inner
+        /// per-level loop early, avoiding the costlier cross-workgroup BigDisperse dispatch.
+        /// </summary>
+        static readonly ProfilingSampler k_LocalDisperse = ProfilingSampler.Create("LocalDisperse", MarkerFlags.Default);
+
+        /// <summary>
+        /// Dispatches the cross-workgroup flip step that mirrors and compares elements across
+        /// the full sort sequence. Called once per doubling of the merge height. Each invocation
+        /// count grows as O(log n).
+        /// </summary>
+        static readonly ProfilingSampler k_BigFlip = ProfilingSampler.Create("BigFlip", MarkerFlags.Default);
+
+        /// <summary>
+        /// Dispatches the cross-workgroup disperse step that propagates comparisons across
+        /// workgroup boundaries. Called for each inner-loop level where the sub-sequence
+        /// length exceeds 2048. Each invocation count grows as O(log² n).
+        /// </summary>
+        static readonly ProfilingSampler k_BigDisperse = ProfilingSampler.Create("BigDisperse", MarkerFlags.Default);
+
+        static readonly ProfilingSampler[] k_StageMarkers = { k_LocalBMS, k_LocalDisperse, k_BigFlip, k_BigDisperse };
 
         private SystemResources resources;
 
@@ -47,7 +78,7 @@ namespace UnityEngine.Rendering
             Assert.IsNotNull(resources.computeAsset);
 
             // When the is no geometry, instead of computing the distance field, we clear it with a big value.
-            using (new ProfilingScope(cmd, ProfilingSampler.Get(stage)))
+            using (new ProfilingScope(cmd, k_StageMarkers[(int)stage], resources.computeAsset))
             {
 #if false
                 m_SortCS.enabledKeywords = new[]  { keywords[(int)stage] };

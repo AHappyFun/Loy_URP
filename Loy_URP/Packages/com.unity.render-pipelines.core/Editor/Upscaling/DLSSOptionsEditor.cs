@@ -1,30 +1,30 @@
-#if UNITY_EDITOR
-#if ENABLE_UPSCALER_FRAMEWORK && ENABLE_NVIDIA && ENABLE_NVIDIA_MODULE
+#if ENABLE_NVIDIA && ENABLE_NVIDIA_MODULE
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.NVIDIA;
 
 [CustomEditor(typeof(DLSSOptions))]
-public class DLSSOptionsEditor : Editor
+public class DLSSOptionsEditor : UpscalerOptionsEditor
 {
+    protected override bool showsResolutionMode => true;
+
     // Declare variables to hold each property
     private SerializedProperty m_QualityMode;
-    private SerializedProperty m_FixedResolution;
     private SerializedProperty m_PresetQuality;
     private SerializedProperty m_PresetBalanced;
     private SerializedProperty m_PresetPerformance;
     private SerializedProperty m_PresetUltraPerformance;
     private SerializedProperty m_PresetDLAA;
-    private void OnEnable()
+    protected override void OnEnable()
     {
+        base.OnEnable();
         // Find each property by its exact field name in DLSSOptions.cs
-        m_QualityMode = serializedObject.FindProperty("DLSSQualityMode");
-        m_FixedResolution = serializedObject.FindProperty("FixedResolutionMode");
-        m_PresetQuality = serializedObject.FindProperty("DLSSRenderPresetQuality");
-        m_PresetBalanced = serializedObject.FindProperty("DLSSRenderPresetBalanced");
-        m_PresetPerformance = serializedObject.FindProperty("DLSSRenderPresetPerformance");
-        m_PresetUltraPerformance = serializedObject.FindProperty("DLSSRenderPresetUltraPerformance");
-        m_PresetDLAA = serializedObject.FindProperty("DLSSRenderPresetDLAA");
+        m_QualityMode = serializedObject.FindProperty("m_DLSSQualityMode");
+        m_PresetQuality = serializedObject.FindProperty("m_DLSSRenderPresetQuality");
+        m_PresetBalanced = serializedObject.FindProperty("m_DLSSRenderPresetBalanced");
+        m_PresetPerformance = serializedObject.FindProperty("m_DLSSRenderPresetPerformance");
+        m_PresetUltraPerformance = serializedObject.FindProperty("m_DLSSRenderPresetUltraPerformance");
+        m_PresetDLAA = serializedObject.FindProperty("m_DLSSRenderPresetDLAA");
     }
 
     #region STYLES
@@ -142,12 +142,9 @@ public class DLSSOptionsEditor : Editor
         if (iNew != presetIndex)
             presetProp.uintValue = GUIIndexToPresetValue(presetBitmask, (uint)iNew);
     }
-    public override void OnInspectorGUI()
+    protected override void DrawOptions()
     {
-        serializedObject.Update();
-
         EditorGUILayout.PropertyField(m_QualityMode);
-        EditorGUILayout.PropertyField(m_FixedResolution);
 
         EditorGUILayout.LabelField(renderPresetsLabel, EditorStyles.boldLabel);
         ++EditorGUI.indentLevel;
@@ -159,9 +156,6 @@ public class DLSSOptionsEditor : Editor
         DrawPresetDropdown(ref m_PresetDLAA, DLSSQuality.DLAA);
 
         --EditorGUI.indentLevel;
-
-        serializedObject.ApplyModifiedProperties();
     }
 }
-#endif
 #endif

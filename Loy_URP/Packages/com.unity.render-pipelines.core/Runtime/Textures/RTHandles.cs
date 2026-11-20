@@ -12,6 +12,15 @@ namespace UnityEngine.Rendering
     {
         static RTHandleSystem s_DefaultInstance = new RTHandleSystem();
 
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            s_DefaultInstance?.Dispose();
+            s_DefaultInstance = new RTHandleSystem();
+        }
+#endif
+
         /// <summary>
         /// Maximum allocated width of the default RTHandle System
         /// </summary>

@@ -20,6 +20,14 @@ namespace UnityEngine.Rendering
         /// </summary>
         public static RTHandle s_RTHandleWrapper;
 
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterAssembliesLoaded)]
+        static void ResetStaticsOnLoad()
+        {
+            s_RTHandleWrapper = null;
+        }
+#endif
+
         /// <summary>
         /// Set static RTHandle wrapper given a RTid. The static RTHandle wrapper is treated as external handle in RTHandleSystem
         /// Get the static wrapper through `RTHandleStaticHelpers.s_RTHandleWrapper`.
@@ -43,7 +51,7 @@ namespace UnityEngine.Rendering
             // User managed wrapper is null, just return here.
             if (rtWrapper == null)
                 return;
-#if DEVELOPMENT_BUILD || UNITY_EDITOR
+#if UNITY_ENABLE_CHECKS
             // Check user managed RTHandle wrapper is actually a wrapper around RTid
             if (rtWrapper.m_RT != null)
                 throw new ArgumentException($"Input wrapper must be a wrapper around RenderTargetIdentifier. Passed in wrapper contains valid RenderTexture {rtWrapper.m_RT.name} and cannot be used as wrapper.");
@@ -203,9 +211,24 @@ namespace UnityEngine.Rendering
         }
 
         /// <summary>
+        /// Get the identifier of the RTHandle.
+        /// </summary>
+        /// <returns>The RTHandle identifier.</returns>
+        public ulong GetUniqueID()
+        {
+            if (m_RT != null)
+                return EntityId.ToULong(m_RT.GetEntityId());
+            else if (m_ExternalTexture != null)
+                return EntityId.ToULong(m_ExternalTexture.GetEntityId());
+            else
+                return (ulong)m_NameID.GetHashCode(); // No instance ID so we return the hash code.
+        }
+
+        /// <summary>
         /// Get the Instance ID of the RTHandle.
         /// </summary>
         /// <returns>The RTHandle Instance ID.</returns>
+        [Obsolete("GetInstanceID() is obsolete, use GetUniqueID() instead.", true)]
         public int GetInstanceID()
         {
             if (m_RT != null)
@@ -275,7 +298,6 @@ namespace UnityEngine.Rendering
             }
         }
 
-#if UNITY_2020_2_OR_NEWER
         /// <summary>
         /// Switch the render target to fast memory on platform that have it.
         /// </summary>
@@ -317,7 +339,5 @@ namespace UnityEngine.Rendering
         {
             cmd.SwitchOutOfFastMemory(m_RT, copyContents);
         }
-
-#endif
     }
 }

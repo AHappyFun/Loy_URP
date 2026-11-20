@@ -1,15 +1,77 @@
-using System.Collections.Generic;
 using UnityEngine.Experimental.Rendering;
-using Unity.Collections;
-using System;
 using Unity.Mathematics;
 
 namespace UnityEngine.Rendering.Universal
 {
     internal static class RendererLighting
     {
-        private static readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler("Draw Normals");
-        private static readonly ShaderTagId k_NormalsRenderingPassName = new ShaderTagId("NormalsRendering");
+        // The passes a custom Light2D material is expected to declare, matching the names the
+        // ShaderGraph Light2D SubTarget emits. DrawLight2DPass draws pass 0 for the light and pass 1
+        // for its volumetric contribution, so a material for this field carries both.
+        internal const string k_LightPassName = "Light2D";
+        internal const string k_LightVolumetricPassName = "Light2DVolumetric";
+
+        static readonly string[] k_LightPassNames = { k_LightPassName, k_LightVolumetricPassName };
+
+        // Which of the expected light passes `material` does not declare, as a display string, or an
+        // empty string when it declares them all. The counterpart of
+        // ShadowRendering.GetMissingShadowPasses for the light material.
+        internal static string GetMissingLightPasses(Material material)
+        {
+            if (material == null)
+                return string.Empty;
+
+            // A material with no shader can declare nothing, so every pass is missing.
+            if (material.shader == null)
+                return string.Join(", ", k_LightPassNames);
+
+            var builder = new System.Text.StringBuilder();
+            for (int i = 0; i < k_LightPassNames.Length; i++)
+            {
+                if (material.FindPass(k_LightPassNames[i]) >= 0)
+                    continue;
+
+                if (builder.Length > 0)
+                    builder.Append(", ");
+                builder.Append(k_LightPassNames[i]);
+            }
+
+            return builder.ToString();
+        }
+
+        // Whether `material` can be assigned to Light2D.material without a pass the renderer draws
+        // being absent. The same predicate the inspector error uses, as a bool for callers that only
+        // need a yes/no -- notably the material picker's filter.
+        internal static bool IsCompatibleLightMaterial(Material material)
+        {
+            return material != null && GetMissingLightPasses(material).Length == 0;
+        }
+
+        // Shader-level counterpart, for callers sweeping the whole project where many materials share
+        // one shader. Compatibility depends only on the pass names the shader declares, so the verdict
+        // is a property of the Shader, not the Material.
+        //
+        // Allocates a throwaway Material because pass names are only reachable through Material.
+        // Callers testing many shaders should memoize per Shader -- see Light2DMaterialSearchProvider.
+        internal static bool IsCompatibleLightShader(Shader shader)
+        {
+            if (shader == null)
+                return false;
+
+            var probe = new Material(shader);
+            try
+            {
+                return GetMissingLightPasses(probe).Length == 0;
+            }
+            finally
+            {
+                // DestroyImmediate rather than CoreUtils.Destroy, for the reason given on
+                // ShadowRendering.IsCompatibleShadowShader: callers sweep every shader in the project
+                // in one synchronous pass, and deferring would hold one live Material per shader.
+                Object.DestroyImmediate(probe);
+            }
+        }
+
         public static readonly Color k_NormalClearColor = new Color(0.5f, 0.5f, 0.5f, 1.0f);
         private static readonly string k_UsePointLightCookiesKeyword = "USE_POINT_LIGHT_COOKIES";
         private static readonly string k_LightQualityFastKeyword = "LIGHT_QUALITY_FAST";
@@ -60,6 +122,8 @@ namespace UnityEngine.Rendering.Universal
 
         private static readonly int k_SrcBlendID = Shader.PropertyToID("_SrcBlend");
         private static readonly int k_DstBlendID = Shader.PropertyToID("_DstBlend");
+        private static readonly int k_VolSrcBlendID = Shader.PropertyToID("_VolSrcBlend");
+        private static readonly int k_VolDstBlendID = Shader.PropertyToID("_VolDstBlend");
         private static readonly int k_CookieTexID = Shader.PropertyToID("_CookieTex");
         private static readonly int k_PointLightCookieTexID = Shader.PropertyToID("_PointLightCookieTex");
 
@@ -74,9 +138,21 @@ namespace UnityEngine.Rendering.Universal
         private static readonly int k_L2DVolumeOpacity = Shader.PropertyToID("L2DVolumeOpacity");
         private static readonly int k_L2DShadowIntensity = Shader.PropertyToID("L2DShadowIntensity");
         private static readonly int k_L2DLightType = Shader.PropertyToID("L2DLightType");
+        private static readonly int k_L2DLightRenderingLayer = Shader.PropertyToID("L2DLightRenderingLayer");
 
         // Light Batcher.
         internal static LightBatch lightBatch = new LightBatch();
+
+#if UNITY_EDITOR
+        [RuntimeInitializeOnLoadMethod]
+        static void ResetStaticsOnLoad()
+        {
+            s_HasSetupRenderTextureFormatToUse = false;
+            s_RenderTextureFormatToUse = GraphicsFormat.R8G8B8A8_UNorm;
+            lightBatch.Release();
+            lightBatch = new LightBatch();
+        }
+#endif
 
         internal static GraphicsFormat GetRenderTextureFormat()
         {
@@ -94,64 +170,6 @@ namespace UnityEngine.Rendering.Universal
 
             return s_RenderTextureFormatToUse;
         }
-
-#if URP_COMPATIBILITY_MODE
-        public static void CreateNormalMapRenderTexture(this IRenderPass2D pass, RenderingData renderingData, CommandBuffer cmd, float renderScale)
-        {
-            var descriptor = new RenderTextureDescriptor(
-                (int)(renderingData.cameraData.cameraTargetDescriptor.width * renderScale),
-                (int)(renderingData.cameraData.cameraTargetDescriptor.height * renderScale));
-
-            descriptor.graphicsFormat = GetRenderTextureFormat();
-            descriptor.useMipMap = false;
-            descriptor.autoGenerateMips = false;
-            descriptor.depthStencilFormat = GraphicsFormat.None;
-            descriptor.msaaSamples = renderingData.cameraData.cameraTargetDescriptor.msaaSamples;
-            descriptor.dimension = TextureDimension.Tex2D;
-
-            RenderingUtils.ReAllocateHandleIfNeeded(ref pass.rendererData.normalsRenderTarget, descriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_NormalMap");
-            cmd.SetGlobalTexture(pass.rendererData.normalsRenderTarget.name, pass.rendererData.normalsRenderTarget.nameID);
-        }
-
-        public static RenderTextureDescriptor GetBlendStyleRenderTextureDesc(this IRenderPass2D pass, RenderingData renderingData)
-        {
-            var renderTextureScale = Mathf.Clamp(pass.rendererData.lightRenderTextureScale, 0.01f, 1.0f);
-            var width = (int)(renderingData.cameraData.cameraTargetDescriptor.width * renderTextureScale);
-            var height = (int)(renderingData.cameraData.cameraTargetDescriptor.height * renderTextureScale);
-
-            var descriptor = new RenderTextureDescriptor(width, height);
-            descriptor.graphicsFormat = GetRenderTextureFormat();
-            descriptor.useMipMap = false;
-            descriptor.autoGenerateMips = false;
-            descriptor.depthStencilFormat = GraphicsFormat.None;
-            descriptor.msaaSamples = 1;
-            descriptor.dimension = TextureDimension.Tex2D;
-
-            return descriptor;
-        }
-
-        public static void CreateCameraSortingLayerRenderTexture(this IRenderPass2D pass, RenderingData renderingData, CommandBuffer cmd, Downsampling downsamplingMethod)
-        {
-            var renderTextureScale = 1.0f;
-            if (downsamplingMethod == Downsampling._2xBilinear)
-                renderTextureScale = 0.5f;
-            else if (downsamplingMethod == Downsampling._4xBox || downsamplingMethod == Downsampling._4xBilinear)
-                renderTextureScale = 0.25f;
-
-            var width = (int)(renderingData.cameraData.cameraTargetDescriptor.width * renderTextureScale);
-            var height = (int)(renderingData.cameraData.cameraTargetDescriptor.height * renderTextureScale);
-
-            var descriptor = new RenderTextureDescriptor(width, height);
-            descriptor.graphicsFormat = renderingData.cameraData.cameraTargetDescriptor.graphicsFormat;
-            descriptor.useMipMap = false;
-            descriptor.autoGenerateMips = false;
-            descriptor.depthStencilFormat = GraphicsFormat.None;
-            descriptor.msaaSamples = 1;
-
-            RenderingUtils.ReAllocateHandleIfNeeded(ref pass.rendererData.cameraSortingLayerRenderTarget, descriptor, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_CameraSortingLayerTexture");
-            cmd.SetGlobalTexture(pass.rendererData.cameraSortingLayerRenderTarget.name, pass.rendererData.cameraSortingLayerRenderTarget.nameID);
-        }
-#endif
 
         internal static void EnableBlendStyle(IRasterCommandBuffer cmd, int blendStyleIndex, bool enabled)
         {
@@ -195,241 +213,15 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
-#if URP_COMPATIBILITY_MODE
-        private static bool CanRenderLight(IRenderPass2D pass, Light2D light, int blendStyleIndex, int layerToRender, bool isVolume, bool hasShadows, ref Mesh lightMesh, ref Material lightMaterial)
-        {
-            if (light != null && light.lightType != Light2D.LightType.Global && light.blendStyleIndex == blendStyleIndex && light.IsLitLayer(layerToRender))
-            {
-                lightMesh = light.lightMesh;
-                if (lightMesh == null)
-                    return false;
-                lightMaterial = pass.rendererData.GetLightMaterial(light, isVolume, hasShadows);
-                if (lightMaterial == null)
-                    return false;
-                return true;
-            }
-            return false;
-        }
-#endif
-
         internal static bool CanCastShadows(Light2D light, int layerToRender)
         {
             return light.shadowsEnabled && light.shadowIntensity > 0 && light.IsLitLayer(layerToRender);
         }
 
-#if URP_COMPATIBILITY_MODE
-        private static bool CanCastVolumetricShadows(Light2D light, int endLayerValue)
+        internal static bool CanCastVolumetricShadows(Light2D light, int endLayerValue)
         {
-            var topMostLayerValue = light.GetTopMostLitLayer();
-            return light.volumetricShadowsEnabled && light.shadowVolumeIntensity > 0 && topMostLayerValue == endLayerValue;
+            return light.volumeIntensity > 0 && light.volumetricEnabled && light.renderVolumetricShadows && light.GetTopMostLitLayer() == endLayerValue;
         }
-
-        internal static void RenderLight(IRenderPass2D pass, CommandBuffer cmd, Light2D light, bool isVolume, int blendStyleIndex, int layerToRender, bool hasShadows, bool batchingSupported, ref int shadowLightCount)
-        {
-            Mesh lightMesh = null;
-            Material lightMaterial = null;
-            if (!CanRenderLight(pass, light, blendStyleIndex, layerToRender, isVolume, hasShadows, ref lightMesh, ref lightMaterial))
-                return;
-
-            // For Batching.
-            bool canBatch = lightBatch.CanBatch(light, lightMaterial, light.batchSlotIndex, out int lightHash);
-            bool hasCookies = SetCookieShaderGlobals(cmd, light);
-
-            // Flush on Break.
-            bool breakBatch = hasShadows || hasCookies || !canBatch;
-            if (breakBatch && batchingSupported)
-                lightBatch.Flush(CommandBufferHelpers.GetRasterCommandBuffer(cmd));
-
-            // Set the shadow texture to read from
-            if (hasShadows)
-                ShadowRendering.SetGlobalShadowTexture(cmd, light, shadowLightCount++);
-
-            var slotIndex = lightBatch.SlotIndex(light.batchSlotIndex);
-            SetPerLightShaderGlobals(CommandBufferHelpers.GetRasterCommandBuffer(cmd), light, slotIndex, isVolume, hasShadows, batchingSupported);
-
-            if (light.lightType == Light2D.LightType.Point)
-                SetPerPointLightShaderGlobals(CommandBufferHelpers.GetRasterCommandBuffer(cmd), light, slotIndex, batchingSupported);
-
-            // Check if StructuredBuffer is supported, if not fallback.
-            if (batchingSupported)
-            {
-                lightBatch.AddBatch(light, lightMaterial, light.GetMatrix(), lightMesh, 0, lightHash, light.batchSlotIndex);
-            }
-            else
-            {
-                cmd.DrawMesh(lightMesh, light.GetMatrix(), lightMaterial);
-            }
-        }
-
-        private static void RenderLightSet(IRenderPass2D pass, RenderingData renderingData, int blendStyleIndex, CommandBuffer cmd, ref LayerBatch layer, RenderTargetIdentifier renderTexture, List<Light2D> lights)
-        {
-            var maxShadowLightCount = ShadowRendering.maxTextureCount;
-            var requiresRTInit = true;
-
-            // This case should never happen, but if it does it may cause an infinite loop later.
-            if (maxShadowLightCount < 1)
-            {
-                Debug.LogError("maxShadowTextureCount cannot be less than 1");
-                return;
-            }
-
-            NativeArray<bool> doesLightAtIndexHaveShadows = new NativeArray<bool>(lights.Count, Allocator.Temp);
-
-            // Break up light rendering into batches for the purpose of shadow casting
-            var lightIndex = 0;
-            while (lightIndex < lights.Count)
-            {
-                var remainingLights = (uint)lights.Count - lightIndex;
-                var batchedLights = 0;
-
-                // Add lights to our batch until the number of shadow textures reach the maxShadowTextureCount
-                int shadowLightCount = 0;
-                while (batchedLights < remainingLights && shadowLightCount < maxShadowLightCount)
-                {
-                    int curLightIndex = lightIndex + batchedLights;
-                    var light = lights[curLightIndex];
-                    if (CanCastShadows(light, layer.startLayerID))
-                    {
-                        doesLightAtIndexHaveShadows[curLightIndex] = false;
-                        if (ShadowRendering.PrerenderShadows(pass, renderingData, cmd, ref layer, light, shadowLightCount, light.shadowIntensity))
-                        {
-                            doesLightAtIndexHaveShadows[curLightIndex] = true;
-                            shadowLightCount++;
-                        }
-                    }
-                    batchedLights++;
-                }
-
-
-                // Set the current RT to the light RT
-                if (shadowLightCount > 0 || requiresRTInit)
-                {
-                    cmd.SetRenderTarget(renderTexture, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
-                    requiresRTInit = false;
-                }
-
-                // Render all the lights.
-                shadowLightCount = 0;
-                for (var lightIndexOffset = 0; lightIndexOffset < batchedLights; lightIndexOffset++)
-                {
-                    var arrayIndex = (int)(lightIndex + lightIndexOffset);
-                    RenderLight(pass, cmd, lights[arrayIndex], false, blendStyleIndex, layer.startLayerID, doesLightAtIndexHaveShadows[arrayIndex], LightBatch.isBatchingSupported, ref shadowLightCount);
-                }
-                lightBatch.Flush(CommandBufferHelpers.GetRasterCommandBuffer(cmd));
-
-                // Release all of the temporary shadow textures
-                for (var releaseIndex = shadowLightCount - 1; releaseIndex >= 0; releaseIndex--)
-                    ShadowRendering.ReleaseShadowRenderTexture(cmd, releaseIndex);
-
-                lightIndex += batchedLights;
-            }
-
-            doesLightAtIndexHaveShadows.Dispose();
-        }
-
-        public static void RenderLightVolumes(this IRenderPass2D pass, RenderingData renderingData, CommandBuffer cmd, ref LayerBatch layer,
-            RenderTargetIdentifier renderTexture, RenderTargetIdentifier depthTexture, RenderBufferStoreAction intermediateStoreAction,
-            RenderBufferStoreAction finalStoreAction, bool requiresRTInit, List<Light2D> lights)
-        {
-            var maxShadowLightCount = ShadowRendering.maxTextureCount;  // Now encodes shadows into RG,BA as well as seperate textures
-
-            NativeArray<bool> doesLightAtIndexHaveShadows = new NativeArray<bool>(lights.Count, Allocator.Temp);
-
-            // This case should never happen, but if it does it may cause an infinite loop later.
-            if (maxShadowLightCount < 1)
-            {
-                Debug.LogError("maxShadowLightCount cannot be less than 1");
-                return;
-            }
-
-            // Determine last light with volumetric shadows to be rendered if we want to use a different store action after using rendering its volumetric shadows
-            int useFinalStoreActionAfter = lights.Count;
-            if (intermediateStoreAction != finalStoreAction)
-            {
-                for (int i = lights.Count - 1; i >= 0; i--)
-                {
-                    if (lights[i].renderVolumetricShadows)
-                    {
-                        useFinalStoreActionAfter = i;
-                        break;
-                    }
-                }
-            }
-
-            // Break up light rendering into batches for the purpose of shadow casting
-            var lightIndex = 0;
-            while (lightIndex < lights.Count)
-            {
-                var remainingLights = (uint)lights.Count - lightIndex;
-                var batchedLights = 0;
-
-                // Add lights to our batch until the number of shadow textures reach the maxShadowTextureCount
-                var shadowLightCount = 0;
-                while (batchedLights < remainingLights && shadowLightCount < maxShadowLightCount)
-                {
-                    int curLightIndex = lightIndex + batchedLights;
-                    var light = lights[curLightIndex];
-
-                    if (CanCastVolumetricShadows(light, layer.endLayerValue))
-                    {
-                        doesLightAtIndexHaveShadows[curLightIndex] = false;
-                        if (ShadowRendering.PrerenderShadows(pass, renderingData, cmd, ref layer, light, shadowLightCount, light.shadowVolumeIntensity))
-                        {
-                            doesLightAtIndexHaveShadows[curLightIndex] = true;
-                            shadowLightCount++;
-                        }
-                    }
-                    batchedLights++;
-                }
-
-                // Set the current RT to the light RT
-                if (shadowLightCount > 0 || requiresRTInit)
-                {
-                    var storeAction = lightIndex + batchedLights >= useFinalStoreActionAfter ? finalStoreAction : intermediateStoreAction;
-                    cmd.SetRenderTarget(renderTexture, RenderBufferLoadAction.Load, storeAction, depthTexture, RenderBufferLoadAction.Load, storeAction);
-                    requiresRTInit = false;
-                }
-
-                // Render all the lights.
-                shadowLightCount = 0;
-                for (var lightIndexOffset = 0; lightIndexOffset < batchedLights; lightIndexOffset++)
-                {
-                    var arrayIndex = (int)(lightIndex + lightIndexOffset);
-                    var light = lights[arrayIndex];
-
-                    if (light.volumeIntensity <= 0.0f || !light.volumetricEnabled)
-                        continue;
-
-                    if (layer.endLayerValue == light.GetTopMostLitLayer()) // this implies the layer is correct
-                        RenderLight(pass, cmd, light, true, light.blendStyleIndex, layer.startLayerID, doesLightAtIndexHaveShadows[arrayIndex], LightBatch.isBatchingSupported, ref shadowLightCount);
-                }
-                lightBatch.Flush(CommandBufferHelpers.GetRasterCommandBuffer(cmd));
-
-                // Release all of the temporary shadow textures
-                for (var releaseIndex = shadowLightCount - 1; releaseIndex >= 0; releaseIndex--)
-                    ShadowRendering.ReleaseShadowRenderTexture(cmd, releaseIndex);
-
-                lightIndex += batchedLights;
-            }
-
-            doesLightAtIndexHaveShadows.Dispose();
-        }
-
-        // TODO: Remove once Rendergraph becomes default pipeline
-        internal static void SetLightShaderGlobals(Renderer2DData rendererData, RasterCommandBuffer cmd)
-        {
-            for (var i = 0; i < rendererData.lightBlendStyles.Length; i++)
-            {
-                var blendStyle = rendererData.lightBlendStyles[i];
-                if (i >= k_BlendFactorsPropIDs.Length)
-                    break;
-
-                cmd.SetGlobalVector(k_BlendFactorsPropIDs[i], blendStyle.blendFactors);
-                cmd.SetGlobalVector(k_MaskFilterPropIDs[i], blendStyle.maskTextureChannelFilter.mask);
-                cmd.SetGlobalVector(k_InvertedFilterPropIDs[i], blendStyle.maskTextureChannelFilter.inverted);
-            }
-        }
-#endif
 
         internal static void SetLightShaderGlobals(IRasterCommandBuffer cmd, Light2DBlendStyle[] lightBlendStyles, int[] blendStyleIndices)
         {
@@ -499,6 +291,7 @@ namespace UnityEngine.Rendering.Universal
                 cmd.SetGlobalColor(k_L2DColor, color);
                 cmd.SetGlobalFloat(k_L2DVolumeOpacity, volumeIntensity);
                 cmd.SetGlobalInt(k_L2DLightType, (int)light.lightType);
+                cmd.SetGlobalInt(k_L2DLightRenderingLayer, (int)light.renderingLayerMask.value);
                 cmd.SetGlobalFloat(k_L2DShadowIntensity, hasShadows ? (isVolumetric ? (1 - light.shadowVolumeIntensity) : (1 - light.shadowIntensity)) : 1);
             }
 
@@ -535,134 +328,11 @@ namespace UnityEngine.Rendering.Universal
             }
         }
 
-#if URP_COMPATIBILITY_MODE
-        // TODO: Remove once Rendergraph becomes default pipeline
-        internal static bool SetCookieShaderGlobals(CommandBuffer cmd, Light2D light)
-        {
-            if (light.useCookieSprite)
-                cmd.SetGlobalTexture(light.lightType == Light2D.LightType.Sprite ? k_CookieTexID : k_PointLightCookieTexID, light.lightCookieSprite.texture);
-
-            return light.useCookieSprite;
-        }
-#endif
-
         internal static void SetCookieShaderProperties(Light2D light, MaterialPropertyBlock properties)
         {
             if (light.useCookieSprite && light.m_CookieSpriteTextureHandle.IsValid())
                 properties.SetTexture(light.lightType == Light2D.LightType.Sprite ? k_CookieTexID : k_PointLightCookieTexID, light.m_CookieSpriteTextureHandle);
         }
-
-#if URP_COMPATIBILITY_MODE
-        public static void ClearDirtyLighting(this IRenderPass2D pass, CommandBuffer cmd, uint blendStylesUsed)
-        {
-            for (var i = 0; i < pass.rendererData.lightBlendStyles.Length; ++i)
-            {
-                if ((blendStylesUsed & (uint)(1 << i)) == 0)
-                    continue;
-
-                if (!pass.rendererData.lightBlendStyles[i].isDirty)
-                    continue;
-
-                CoreUtils.SetRenderTarget(cmd, pass.rendererData.lightBlendStyles[i].renderTargetHandle, ClearFlag.Color, Color.black);
-                pass.rendererData.lightBlendStyles[i].isDirty = false;
-            }
-        }
-
-        internal static void RenderNormals(this IRenderPass2D pass, ScriptableRenderContext context, RenderingData renderingData, DrawingSettings drawSettings, FilteringSettings filterSettings, RTHandle depthTarget, bool bFirstClear)
-        {
-            var cmd = renderingData.commandBuffer;
-
-            using (new ProfilingScope(cmd, m_ProfilingSampler))
-            {
-                // figure out the scale
-                var normalRTScale = 0.0f;
-
-                if (depthTarget != null)
-                    normalRTScale = 1.0f;
-                else
-                    normalRTScale = Mathf.Clamp(pass.rendererData.lightRenderTextureScale, 0.01f, 1.0f);
-
-                pass.CreateNormalMapRenderTexture(renderingData, cmd, normalRTScale);
-
-                var msaaEnabled = renderingData.cameraData.cameraTargetDescriptor.msaaSamples > 1;
-                var storeAction = msaaEnabled ? RenderBufferStoreAction.Resolve : RenderBufferStoreAction.Store;
-                var clearFlag = pass.rendererData.useDepthStencilBuffer && bFirstClear ? ClearFlag.All : ClearFlag.Color;
-
-                if (depthTarget != null)
-                {
-                    CoreUtils.SetRenderTarget(cmd,
-                        pass.rendererData.normalsRenderTarget, RenderBufferLoadAction.DontCare, storeAction,
-                        depthTarget, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
-                        clearFlag, k_NormalClearColor);
-                }
-                else
-                    CoreUtils.SetRenderTarget(cmd, pass.rendererData.normalsRenderTarget, RenderBufferLoadAction.DontCare, storeAction, clearFlag, k_NormalClearColor);
-
-                context.ExecuteCommandBuffer(cmd);
-                cmd.Clear();
-
-                drawSettings.SetShaderPassName(0, k_NormalsRenderingPassName);
-
-                var param = new RendererListParams(renderingData.cullResults, drawSettings, filterSettings);
-                var rl = context.CreateRendererList(ref param);
-                cmd.DrawRendererList(rl);
-            }
-        }
-
-        public static void RenderLights(this IRenderPass2D pass, RenderingData renderingData, CommandBuffer cmd, ref LayerBatch layerBatch, ref RenderTextureDescriptor rtDesc)
-        {
-            // Before rendering the lights cache some values that are expensive to get/calculate
-            var culledLights = pass.rendererData.lightCullResult.visibleLights;
-            for (var i = 0; i < culledLights.Count; i++)
-            {
-                culledLights[i].CacheValues();
-            }
-
-            ShadowCasterGroup2DManager.CacheValues();
-
-            var blendStyles = pass.rendererData.lightBlendStyles;
-
-            for (var i = 0; i < blendStyles.Length; ++i)
-            {
-                if ((layerBatch.lightStats.blendStylesUsed & (uint)(1 << i)) == 0)
-                    continue;
-
-                var sampleName = blendStyles[i].name;
-                cmd.BeginSample(sampleName);
-
-                if (!Light2DManager.GetGlobalColor(layerBatch.startLayerID, i, out var clearColor))
-                    clearColor = Color.black;
-
-                var anyLights = (layerBatch.lightStats.blendStylesWithLights & (uint)(1 << i)) != 0;
-
-                var desc = rtDesc;
-                if (!anyLights) // No lights -- create tiny texture
-                    desc.width = desc.height = 4;
-                var identifier = layerBatch.GetRTId(cmd, desc, i);
-
-                cmd.SetRenderTarget(identifier,
-                    RenderBufferLoadAction.DontCare,
-                    RenderBufferStoreAction.Store,
-                    RenderBufferLoadAction.DontCare,
-                    RenderBufferStoreAction.DontCare);
-                cmd.ClearRenderTarget(false, true, clearColor);
-
-                if (anyLights)
-                {
-                    RenderLightSet(
-                        pass, renderingData,
-                        i,
-                        cmd,
-                        ref layerBatch,
-                        identifier,
-                        pass.rendererData.lightCullResult.visibleLights
-                    );
-                }
-
-                cmd.EndSample(sampleName);
-            }
-        }
-#endif
 
         private static void SetBlendModes(Material material, BlendMode src, BlendMode dst)
         {
@@ -735,8 +405,76 @@ namespace UnityEngine.Rendering.Universal
             return material;
         }
 
+        // Applies blend modes for a provider (ShaderGraph) material clone that bypasses the per-config
+        // material cache. Sets BOTH the non-volumetric properties (_SrcBlend/_DstBlend, pass 0) and
+        // the volumetric properties (_VolSrcBlend/_VolDstBlend, pass 1). Both depend only on
+        // light.overlapOperation and light.lightType, which are baked into the customLightMaterials
+        // cache key, so calling this once per cache-fill is sufficient — no per-frame mutation.
+        // Using separate properties per-pass avoids intra-material conflict where pass 0 and pass 1
+        // would otherwise share `_SrcBlend/_DstBlend` and the later-set value would win.
+        private static void ApplyBlendModesForLight(Material material, Light2D light)
+        {
+            // Pass 0 (Light2D): non-volumetric blend
+            if (light.overlapOperation == Light2D.OverlapOperation.Additive)
+                SetBlendModes(material, BlendMode.One, BlendMode.One);
+            else
+                SetBlendModes(material, BlendMode.SrcAlpha, BlendMode.OneMinusSrcAlpha);
+
+            // Pass 1 (Light2DVolumetric): volumetric blend via dedicated properties
+            if (light.lightType == Light2D.LightType.Point)
+            {
+                material.SetFloat(k_VolSrcBlendID, (float)BlendMode.One);
+                material.SetFloat(k_VolDstBlendID, (float)BlendMode.One);
+            }
+            else
+            {
+                material.SetFloat(k_VolSrcBlendID, (float)BlendMode.SrcAlpha);
+                material.SetFloat(k_VolDstBlendID, (float)BlendMode.One);
+            }
+        }
+
+        // Packs (source-material EntityId, overlapOperation, lightType) into a value-tuple key for
+        // the customLightMaterials cache. Two Light2Ds sharing the same source material but
+        // differing in overlapOperation or lightType hash to different keys and therefore get
+        // independent Material clones — which is what lets each clone hold its own blend state
+        // without the cross-light stomp described on the customLightMaterials field.
+        //
+        // Uses EntityId.ToULong instead of the obsolete GetInstanceID. OverlapOperation is a
+        // 2-value enum (1 bit) and LightType is a small enum (< 16 values, 4 bits); packing them
+        // into the low bits of a single int is enough to distinguish every valid combination.
+        private static (ulong id, int state) CustomLightMaterialKey(Material src, Light2D light)
+        {
+            int state = ((int)light.overlapOperation << 4) | ((int)light.lightType & 0xF);
+            return (EntityId.ToULong(src.GetEntityId()), state);
+        }
+
         internal static Material GetLightMaterial(this Renderer2DData rendererData, Light2D light, bool isVolume, bool useShadows)
         {
+            // Light2D.material override: a non-null custom material bypasses URP's variant-bit cache.
+            // Keywords are driven by cmd-recorded SetVolumetricKeyword / SetAdditiveBlendingKeyword /
+            // SetPointLightCookiesKeyword / SetNormalMapKeyword. Blend state is baked into a
+            // per-(source, overlapOperation, lightType) clone so multiple Light2Ds sharing the same
+            // source material don't stomp each other's _SrcBlend/_DstBlend at frame recording. Clones
+            // live on Renderer2DData and are destroyed alongside `lightMaterials` in Dispose /
+            // ClearLightMaterialCache.
+            //
+            // Trade-off: property changes on the source material at runtime (e.g. user-tweaked
+            // color) don't propagate to the clones. Users needing dynamic property updates should
+            // re-assign `light.material` (invalidates the cache) or drive the property via a shader
+            // global. This mirrors the existing built-in `lightMaterials` cache contract.
+            var custom = light.material;
+            if (custom != null)
+            {
+                var key = CustomLightMaterialKey(custom, light);
+                if (!rendererData.customLightMaterials.TryGetValue(key, out var instance) || instance == null)
+                {
+                    instance = new Material(custom);
+                    ApplyBlendModesForLight(instance, light);
+                    rendererData.customLightMaterials[key] = instance;
+                }
+                return instance;
+            }
+
             var materialIndex = GetLightMaterialIndex(light, isVolume, useShadows);
 
             if (!rendererData.lightMaterials.TryGetValue(materialIndex, out var material))
@@ -746,6 +484,75 @@ namespace UnityEngine.Rendering.Universal
             }
 
             return material;
+        }
+
+        // Records USE_VOLUMETRIC keyword state into the command buffer so it executes in draw-call order.
+        // Must be called via cmd (not material.EnableKeyword) because material keyword mutations are
+        // immediate — they don't respect command buffer ordering, which breaks custom-material paths
+        // where the same material instance is used for both the non-volumetric and volumetric passes.
+        internal static void SetVolumetricKeyword(RasterCommandBuffer cmd, Material material, bool isVolumetric)
+        {
+            SetLocalKeywordIfDeclared(cmd, material, k_UseVolumetric, isVolumetric);
+        }
+
+        // Records USE_ADDITIVE_BLENDING keyword state into the command buffer for the same reason
+        // as SetVolumetricKeyword. Built-in Light2D materials get this keyword set once at cache
+        // creation via CreateLightMaterial's material.EnableKeyword call, but custom (ShaderGraph)
+        // materials assigned via Light2D.material bypass that cache — without a cmd-level setter,
+        // the keyword stays off, the shader's #if USE_ADDITIVE_BLENDING branch never fires, and an
+        // additive light's fragment writes falloff into lightColor.a which the runtime One,One
+        // blend ignores. The result is a solid-color light with no visible falloff on the main pass
+        // (volumetric works because that path is gated on USE_VOLUMETRIC, which IS being set).
+        internal static void SetAdditiveBlendingKeyword(RasterCommandBuffer cmd, Material material, bool isAdditive)
+        {
+            SetLocalKeywordIfDeclared(cmd, material, k_UseAdditiveBlendingKeyword, isAdditive);
+        }
+
+        // Records USE_POINT_LIGHT_COOKIES keyword state into the command buffer so custom
+        // (ShaderGraph) Light2D materials pick up the cookie branch in the Point path.
+        // Built-in cached materials bake this keyword in at cache-creation time (see
+        // CreateLightMaterial), but custom materials bypass that cache — without a
+        // cmd-level setter, a Point light with a cookie sprite renders as if no cookie
+        // were assigned even though _PointLightCookieTex is bound on the property block.
+        internal static void SetPointLightCookiesKeyword(RasterCommandBuffer cmd, Material material, bool useCookie)
+        {
+            SetLocalKeywordIfDeclared(cmd, material, k_UsePointLightCookiesKeyword, useCookie);
+        }
+
+        // Records USE_NORMAL_MAP keyword state into the command buffer so custom
+        // (ShaderGraph) Light2D materials pick up the normal-map branch in Light2DPass.hlsl.
+        // Built-in cached materials bake this keyword in at cache-creation time (see
+        // CreateLightMaterial's `material.EnableKeyword(k_UseNormalMap)` call), but custom
+        // materials bypass that cache — without a cmd-level setter, USE_NORMAL_MAP stays
+        // off on the ShaderGraph variant, the `#if USE_NORMAL_MAP && !USE_VOLUMETRIC`
+        // block never fires, and _NormalMap/sampler_NormalMap aren't even declared
+        // (NORMALS_LIGHTING_VARIABLES in LightingUtility.hlsl expands to empty without
+        // the keyword). The per-light normal texture set on the property block in
+        // DrawLight2DPass.Execute is therefore invisible to the shader — a
+        // Light2D with normalMapQuality != Disabled renders as if normal mapping were off.
+        //
+        // Same cmd-vs-material rationale as SetVolumetricKeyword: a single custom material
+        // instance is reused across lights that may differ in normalMapQuality, so the
+        // keyword must be recorded per-draw in command order rather than mutated on the
+        // material immediately.
+        internal static void SetNormalMapKeyword(RasterCommandBuffer cmd, Material material, bool useNormalMap)
+        {
+            SetLocalKeywordIfDeclared(cmd, material, k_UseNormalMap, useNormalMap);
+        }
+
+        // A custom light or shadow shader may leave out any of the keywords it is driven with. The
+        // LocalKeyword constructor logs "Local keyword X doesn't exist in the shader." for each
+        // missing one on every draw, so keywords the shader does not declare are skipped.
+        // Shared by the Light2D setters above and ShadowRendering's custom caster keywords.
+        internal static void SetLocalKeywordIfDeclared(IBaseCommandBuffer cmd, Material material, string keywordName, bool enabled)
+        {
+            var shader = material.shader;
+            if (shader == null)
+                return;
+
+            var keyword = shader.keywordSpace.FindKeyword(keywordName);
+            if (keyword.isValid)
+                cmd.SetKeyword(material, keyword, enabled);
         }
 
         internal static short GetCameraSortingLayerBoundsIndex(this Renderer2DData rendererData)

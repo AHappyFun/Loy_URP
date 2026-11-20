@@ -426,7 +426,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             internal int lastRenderedFrame = -1;
         }
 
+    #if UNITY_6000_7_OR_NEWER
+        private readonly Dictionary<EntityId, CameraHistory> cameraHistories = new();
+    #else
         private readonly Dictionary<int, CameraHistory> cameraHistories = new();
+    #endif
     #endif
 
         private readonly Material cloudsMaterial;
@@ -1151,7 +1155,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 TextureHandle accumulateHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, name: _VolumetricCloudsAccumulationTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
 
                 Camera camera = cameraData.camera;
+            #if UNITY_6000_7_OR_NEWER
+                EntityId cameraId = camera.GetEntityId();
+            #else
                 int cameraId = camera.GetInstanceID();
+            #endif
                 if (!cameraHistories.TryGetValue(cameraId, out CameraHistory cameraHistory))
                 {
                     cameraHistory = new CameraHistory();
@@ -1294,6 +1302,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             cloudsMaterial = material;
         }
 
+    #if !UNITY_6000_7_OR_NEWER
         #region Non Render Graph Pass
     #if UNITY_6000_0_OR_NEWER
         [Obsolete]
@@ -1398,6 +1407,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             CommandBufferPool.Release(cmd);
         }
         #endregion
+    #endif
 
     #if UNITY_6000_0_OR_NEWER
         #region Render Graph Pass
@@ -1590,6 +1600,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             cloudsMaterial = material;
         }
 
+    #if !UNITY_6000_7_OR_NEWER
         #region Non Render Graph Pass
         private Light GetMainLight(LightData lightData)
         {
@@ -1778,6 +1789,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             CommandBufferPool.Release(cmd);
         }
         #endregion
+    #endif
 
     #if UNITY_6000_0_OR_NEWER
         #region Render Graph Pass
