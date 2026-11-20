@@ -108,7 +108,7 @@ Material:
     - _Fresnel: 0.157
     - _MaskMapToggle: 1
     - _MaterialID: 1
-    - _Metallic: 1
+    - _Metallic: 0.6
     - _MetallicRemapMax: 1
     - _Occlusion: 1
     - _Shadows: 0

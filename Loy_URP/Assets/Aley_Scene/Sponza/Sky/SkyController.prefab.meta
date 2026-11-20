@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: d2e3035a2ded2a846930f748b622ab3e
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 426254
+  packageName: Atrio | 3D Stylized Sample Project
+  packageVersion: 1.0
+  assetPath: Assets/Atrio/Environment/Sky/SkyController.prefab
+  uploadId: 1053254

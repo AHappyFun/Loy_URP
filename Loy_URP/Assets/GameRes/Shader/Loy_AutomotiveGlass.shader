@@ -36,6 +36,30 @@ Shader "Loy/AutomotiveGlass"
             "IgnoreProjector" = "True"
         }
 
+        HLSLINCLUDE
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+        CBUFFER_START(UnityPerMaterial)
+            float4 _BaseMap_ST;
+            half4 _BaseColor;
+            half _Opacity;
+            half _EdgeOpacity;
+            half _Smoothness;
+            half _IOR;
+            half _FresnelPower;
+            half _ReflectionStrength;
+            half4 _ReflectionTint;
+            half _ReflectionFloor;
+            half _ReflectionMapWeight;
+            half _ReflectionExposure;
+            half _ReflectionRotation;
+            half _SpecularStrength;
+            half _BumpScale;
+        CBUFFER_END
+
+        TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+        ENDHLSL
+
         Pass
         {
             Name "AutomotiveGlassForward"
@@ -53,6 +77,7 @@ Shader "Loy/AutomotiveGlass"
             #pragma vertex GlassVert
             #pragma fragment GlassFrag
             #pragma shader_feature_local _NORMAL_MAP
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
@@ -60,28 +85,9 @@ Shader "Loy/AutomotiveGlass"
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "LoyRenderDebug.hlsl"
 
-            CBUFFER_START(UnityPerMaterial)
-                float4 _BaseMap_ST;
-                half4 _BaseColor;
-                half _Opacity;
-                half _EdgeOpacity;
-                half _Smoothness;
-                half _IOR;
-                half _FresnelPower;
-                half _ReflectionStrength;
-                half4 _ReflectionTint;
-                half _ReflectionFloor;
-                half _ReflectionMapWeight;
-                half _ReflectionExposure;
-                half _ReflectionRotation;
-                half _SpecularStrength;
-                half _BumpScale;
-            CBUFFER_END
-
-            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
             TEXTURE2D(_ReflectionMap); SAMPLER(sampler_ReflectionMap);
 
@@ -175,6 +181,19 @@ Shader "Loy/AutomotiveGlass"
                 half surfaceAlpha = saturate(lerp(_Opacity, _EdgeOpacity, edgeFactor) * tintSample.a);
                 half reflectionWeight = saturate(max(fresnel, _ReflectionFloor) * _ReflectionStrength);
 
+                #if defined(LOY_RENDER_DEBUG)
+                    UNITY_BRANCH if (_LoyRenderDebugMode != LOY_DEBUG_NONE)
+                    {
+                        half3 debugColor = LoyGetSurfaceDebugColor(tintSample.rgb, 0.0h.xxx,
+                            reflection * reflectionWeight, normalWS, _Smoothness, 0.0h, 1.0h);
+                        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SHADOW)
+                            debugColor = mainLight.shadowAttenuation.xxx;
+                        UNITY_BRANCH if (_LoyRenderDebugMode == LOY_DEBUG_SSAO)
+                            debugColor = 1.0h.xxx; // Transparent glass does not receive deferred SSAO.
+                        return half4(debugColor, 1.0h);
+                    }
+                #endif
+
                 half3 transmittedTint = tintSample.rgb * (0.22h + 0.10h * NoL);
                 half3 reflectedLight = reflection + directSpecular;
 
@@ -185,6 +204,31 @@ Shader "Loy/AutomotiveGlass"
 
                 half alpha = saturate(surfaceAlpha + reflectionWeight * (1.0h - surfaceAlpha));
                 return half4(color, alpha);
+            }
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode" = "Meta" }
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.0
+            #pragma vertex UniversalVertexMeta
+            #pragma fragment AutomotiveGlassMetaFrag
+            #pragma shader_feature EDITOR_VISUALIZATION
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UniversalMetaPass.hlsl"
+
+            half4 AutomotiveGlassMetaFrag(Varyings input) : SV_Target
+            {
+                half4 tint = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
+                MetaInput metaInput = (MetaInput)0;
+                // Approximate a weak diffuse bounce from the tinted glass.
+                metaInput.Albedo = tint.rgb * saturate(_Opacity * tint.a) * 0.22h;
+                return UniversalFragmentMeta(input, metaInput);
             }
             ENDHLSL
         }

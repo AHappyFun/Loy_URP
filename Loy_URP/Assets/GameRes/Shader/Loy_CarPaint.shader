@@ -32,6 +32,29 @@ Shader "Loy/CarPaint"
             "UniversalMaterialType" = "Lit"
         }
 
+        HLSLINCLUDE
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+        CBUFFER_START(UnityPerMaterial)
+            float4 _BaseMap_ST;
+            half4 _BaseColor;
+            half _Metallic;
+            half _Smoothness;
+            half _Occlusion;
+            half _ClearCoatMask;
+            half _ClearCoatSmoothness;
+            half _GeometricSpecularAA;
+            half _BumpScale;
+        CBUFFER_END
+
+        TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+
+        half GetCarPaintSmoothness()
+        {
+            return saturate(lerp(_Smoothness, _ClearCoatSmoothness, _ClearCoatMask));
+        }
+        ENDHLSL
+
         Pass
         {
             Name "CarPaintGBuffer"
@@ -48,7 +71,9 @@ Shader "Loy/CarPaint"
             #pragma fragment CarPaintGBufferFrag
 
             #pragma shader_feature_local _NORMAL_MAP
+            #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
             #pragma multi_compile _ LIGHTMAP_ON
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_IRRADIANCE
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ _RENDER_PASS_ENABLED
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
@@ -61,24 +86,11 @@ Shader "Loy/CarPaint"
             #pragma instancing_options renderinglayer
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Input.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl"
+            #include "LoyRenderDebug.hlsl"
 
-            CBUFFER_START(UnityPerMaterial)
-                float4 _BaseMap_ST;
-                half4 _BaseColor;
-                half _Metallic;
-                half _Smoothness;
-                half _Occlusion;
-                half _ClearCoatMask;
-                half _ClearCoatSmoothness;
-                half _GeometricSpecularAA;
-                half _BumpScale;
-            CBUFFER_END
-
-            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
 
             struct Attributes
@@ -145,7 +157,7 @@ Shader "Loy/CarPaint"
 
                 // URP deferred has one specular lobe. Fold the clear coat into a stable,
                 // high-smoothness dielectric surface instead of perturbing reflection per pixel.
-                half paintSmoothness = saturate(lerp(_Smoothness, _ClearCoatSmoothness, _ClearCoatMask));
+                half paintSmoothness = GetCarPaintSmoothness();
                 half paintMetallic = saturate(_Metallic);
 
                 // Imported vehicle panels contain many disconnected boundary edges. At high
@@ -169,7 +181,10 @@ Shader "Loy/CarPaint"
                 inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
                 inputData.shadowMask = half4(0, 0, 0, 0);
 
-                #if !defined(LIGHTMAP_ON) && (defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
+                #if defined(_SCREEN_SPACE_IRRADIANCE)
+                    inputData.bakedGI = SampleScreenSpaceGI(inputData.positionCS.xy, GetInvPreExposureMultiplier());
+                    inputData.shadowMask = 1.0h;
+                #elif !defined(LIGHTMAP_ON) && (defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
                     inputData.bakedGI = SAMPLE_GI(input.vertexSH,
                         GetAbsolutePositionWS(input.positionWS), normalWS, inputData.viewDirectionWS,
                         input.positionCS.xy, input.probeOcclusion, inputData.shadowMask);
@@ -187,7 +202,7 @@ Shader "Loy/CarPaint"
                     inputData.bakedGI = SampleSHPixel(input.vertexSH, normalWS);
                 #endif
 
-                #ifdef LIGHTMAP_ON
+                #if defined(LIGHTMAP_ON) && !defined(_SCREEN_SPACE_IRRADIANCE)
                     inputData.shadowMask = SAMPLE_TEXTURE2D(unity_ShadowMask, samplerunity_ShadowMask, input.lightmapUV);
                 #endif
 
@@ -201,7 +216,12 @@ Shader "Loy/CarPaint"
                     inputData.bakedGI, _Occlusion, inputData.positionWS, inputData.normalWS,
                     inputData.viewDirectionWS, inputData.normalizedScreenSpaceUV);
 
-                return PackGBuffersBRDFData(brdfData, inputData, paintSmoothness, gi, _Occlusion);
+                GBufferFragOutput output = PackGBuffersBRDFData(brdfData, inputData, paintSmoothness, gi, _Occlusion);
+                #if defined(LOY_RENDER_DEBUG)
+                    output.color.rgb = LoyGetSurfaceDebugColor(baseSample.rgb, 0.0h.xxx, gi,
+                        inputData.normalWS, paintSmoothness, paintMetallic, _Occlusion);
+                #endif
+                return output;
             }
             ENDHLSL
         }
@@ -209,6 +229,34 @@ Shader "Loy/CarPaint"
         UsePass "Universal Render Pipeline/Lit/ShadowCaster"
         UsePass "Universal Render Pipeline/Lit/DepthOnly"
         UsePass "Universal Render Pipeline/Lit/DepthNormals"
+
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode" = "Meta" }
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.0
+            #pragma vertex UniversalVertexMeta
+            #pragma fragment CarPaintMetaFrag
+            #pragma shader_feature EDITOR_VISUALIZATION
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UniversalMetaPass.hlsl"
+
+            half4 CarPaintMetaFrag(Varyings input) : SV_Target
+            {
+                half3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb * _BaseColor.rgb;
+                half alpha = 1.0h;
+                BRDFData brdfData;
+                InitializeBRDFData(baseColor, saturate(_Metallic), half3(0, 0, 0), GetCarPaintSmoothness(), alpha, brdfData);
+
+                MetaInput metaInput = (MetaInput)0;
+                metaInput.Albedo = brdfData.diffuse + brdfData.specular * brdfData.roughness * 0.5h;
+                return UniversalFragmentMeta(input, metaInput);
+            }
+            ENDHLSL
+        }
     }
 
     FallBack "Hidden/Universal Render Pipeline/FallbackError"

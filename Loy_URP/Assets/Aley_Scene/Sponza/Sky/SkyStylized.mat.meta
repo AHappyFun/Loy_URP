@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1e2ec9eb00d3cd1449c5fcba1b8f4d03
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 426254
+  packageName: Atrio | 3D Stylized Sample Project
+  packageVersion: 1.0
+  assetPath: Assets/Atrio/Environment/Sky/SkyStylized.mat
+  uploadId: 1053254

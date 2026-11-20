@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0820d19b03e87ee45b745aa0df31190e, type: 3}
   m_Name: Custom Post Processing
   m_EditorClassIdentifier: Assembly-CSharp::CustomPostProcessingRenderFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     injectionPoint: 550
     affectSceneView: 1
@@ -46,6 +46,65 @@ MonoBehaviour:
   outlineShader: {fileID: 4800000, guid: 4497439f9ee74a0d8d542b49d94210d6, type: 3}
   streakShader: {fileID: 4800000, guid: ff6d36f8ae54f3c459c5fa287c182a40, type: 3}
   glitchShader: {fileID: 4800000, guid: de9b0af49909ab344b3b4c41096f81e1, type: 3}
+--- !u!114 &-8791284380841931483
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 315f8e4fa094ef54f9e2def83a29885b, type: 3}
+  m_Name: AutoExposureRenderFeature
+  m_EditorClassIdentifier: Assembly-CSharp::AutoExposureRenderFeature
+  m_Active: 0
+  settings:
+    profile: {fileID: 11400000, guid: dd7ee952ea804faea2f43d07bdf708fb, type: 2}
+    passEvent: 550
+    targetLuminance: 0.18
+    adaptationSpeed: 0.3
+    minExposureEV: -2
+    maxExposureEV: 2
+    exposureOffsetEV: 0
+    lumaRes: 16
+    lumaSamples: 8
+--- !u!114 &-7660747046090824642
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f62c9c65cf3354c93be831c8bc075510, type: 3}
+  m_Name: ScreenSpaceAmbientOcclusion
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.ScreenSpaceAmbientOcclusion
+  m_Active: 1
+  m_Settings:
+    AOMethod: 0
+    Downsample: 0
+    AfterOpaque: 0
+    Source: 1
+    NormalSamples: 1
+    Intensity: 3
+    DirectLightingStrength: 0.25
+    Radius: 0.035
+    Samples: 1
+    BlurQuality: 0
+    Falloff: 100
+    SampleCount: -1
+    Mode: 0
+    GTAOMinimumRadiusInPixels: 40
+    UseComputeShader: 0
+    GTAOTemporalFilterEnabled: 0
+    GTAOGhostingMitigation: 0.5
+    GTAOHistoryLength: 0.9
+    GTAODirectionCount: 2
+    GTAOStepCount: 4
+    GTAOSpatialFilter: 0
+    GTAODepthSampling: 0
 --- !u!114 &-5298835949692327270
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -96,17 +155,17 @@ MonoBehaviour:
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
   - {fileID: 6702227998080770732}
-  - {fileID: 812345678901234567}
   - {fileID: 4228818792906336876}
   - {fileID: 4041069810517058087}
   - {fileID: 4751200078909277272}
   - {fileID: 6978462706574381597}
   - {fileID: 7660457836123274701}
-  - {fileID: 6041220770971095916}
   - {fileID: -8886208210172211487}
   - {fileID: -5298835949692327270}
   - {fileID: 4005599399343945071}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b66ff5695e6ebf9637l
+  - {fileID: -8791284380841931483}
+  - {fileID: -7660747046090824642}
+  m_RendererFeatureMap: ac2248b5da18035d6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6ae18e86c8b6d8ad849aea8437c7c076b66ff5695e6ebf9637250d7a106f15ff853e24a263268faf95l
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   m_AssetVersion: 3
@@ -138,28 +197,6 @@ MonoBehaviour:
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
   m_TileOnlyMode: 0
---- !u!114 &812345678901234567
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0298ea3295ac4653ab2af08d3297ebb4, type: 3}
-  m_Name: SSGIRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::SSGIRenderFeature
-  m_Active: 0
-  settings:
-    ssgiMaterial: {fileID: 2100000, guid: 16b6f32f3e0ef4741b803e3e85a7ed9e, type: 2}
-    passEvent: 240
-    NumDir: 8
-    MaxRayDistance: 50
-    NumSteps: 200
-    isHalfSize: 1
-    DepthBias: 0.05
-    Thickness: 0.25
 --- !u!114 &4005599399343945071
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -239,22 +276,6 @@ MonoBehaviour:
     renderPassEvent: 220
     hizBuildCS: {fileID: 7200000, guid: 9d492db186c04ae79711290a79e51232, type: 3}
     mipCount: 8
---- !u!114 &6041220770971095916
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f7bcee238f304e4bae15aaf510b7aea3, type: 3}
-  m_Name: SSGICombineRenderFeature
-  m_EditorClassIdentifier: Assembly-CSharp::SSGICombineRenderFeature
-  m_Active: 0
-  renderPassEvent: 350
-  Shader: {fileID: 4800000, guid: 91932eec7f76406da20706bacc5fe9dc, type: 3}
-  GIRange: 1
 --- !u!114 &6702227998080770732
 MonoBehaviour:
   m_ObjectHideFlags: 1

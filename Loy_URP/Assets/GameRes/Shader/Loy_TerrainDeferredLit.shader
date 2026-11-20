@@ -347,6 +347,10 @@ Shader "Loy/TerrainDeferredLit"
 
     void InitializeBakedGIData(Varyings IN, inout InputData inputData)
     {
+    #if defined(_SCREEN_SPACE_IRRADIANCE)
+        inputData.bakedGI = SampleScreenSpaceGI(inputData.positionCS.xy, GetInvPreExposureMultiplier());
+        inputData.shadowMask = 1.0h;
+    #else
         // 纯 IBL：环境光 = 实时 SH + _GlossyEnvironmentColor 兜底（与草 shader 一致）。
         // 不再采样 lightmap：地形 lightmapIndex 被引擎钉在 0，且无有效 lightmap 时引擎会绑默认白贴图，
         // SampleLightmap 返回白色 → ambientIntensity=0 时地形阴影仍发亮（已实测定位到这一项）。
@@ -372,6 +376,7 @@ Shader "Loy/TerrainDeferredLit"
             inputData.bakedGI = shGI;
             inputData.shadowMask = SAMPLE_SHADOWMASK(IN.uvMainAndLM.zw);
         #endif
+    #endif
     }
 
     // -------------------------------------------------------------------------
@@ -683,6 +688,7 @@ Shader "Loy/TerrainDeferredLit"
             #pragma vertex SplatmapVert
             #pragma fragment SplatmapFragmentForward
 
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_IRRADIANCE
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile _ LIGHTMAP_ON
@@ -714,6 +720,7 @@ Shader "Loy/TerrainDeferredLit"
             #pragma vertex SplatmapVert
             #pragma fragment SplatmapFragmentGBuffer
 
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_IRRADIANCE
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ LIGHTMAP_ON
             #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
@@ -803,6 +810,75 @@ Shader "Loy/TerrainDeferredLit"
             #pragma fragment SceneSelectionFragment
             #pragma multi_compile_instancing
             #pragma instancing_options assumeuniformscaling nomatrices nolightprobe nolightmap
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode" = "Meta" }
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.0
+            #pragma vertex TerrainMetaVert
+            #pragma fragment TerrainMetaFrag
+            #pragma shader_feature EDITOR_VISUALIZATION
+            #pragma multi_compile_instancing
+            #pragma instancing_options assumeuniformscaling nomatrices nolightprobe nolightmap
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/MetaInput.hlsl"
+
+            struct TerrainMetaVaryings
+            {
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+            #ifdef EDITOR_VISUALIZATION
+                float2 vizUV : TEXCOORD1;
+                float4 lightCoord : TEXCOORD2;
+            #endif
+            };
+
+            TerrainMetaVaryings TerrainMetaVert(Attributes input)
+            {
+                UNITY_SETUP_INSTANCE_ID(input);
+                TerrainInstancing(input.positionOS, input.normalOS, input.texcoord);
+
+                TerrainMetaVaryings output = (TerrainMetaVaryings)0;
+                output.uv = input.texcoord;
+                // Terrain uses the normalized terrain UV for both lightmap channels.
+                output.positionCS = UnityMetaVertexPosition(input.positionOS.xyz, output.uv, output.uv);
+            #ifdef EDITOR_VISUALIZATION
+                UnityEditorVizData(input.positionOS.xyz, output.uv, output.uv, output.uv, output.vizUV, output.lightCoord);
+            #endif
+                return output;
+            }
+
+            half4 TerrainMetaFrag(TerrainMetaVaryings input) : SV_Target
+            {
+            #ifdef _ALPHATEST_ON
+                ClipHoles(input.uv);
+            #endif
+                Varyings terrain = (Varyings)0;
+                terrain.uvMainAndLM.xy = input.uv;
+                terrain.uvSplat01 = float4(TRANSFORM_TEX(input.uv, _Splat0), TRANSFORM_TEX(input.uv, _Splat1));
+                terrain.uvSplat23 = float4(TRANSFORM_TEX(input.uv, _Splat2), TRANSFORM_TEX(input.uv, _Splat3));
+
+                half3 albedo, normalTS;
+                half metallic, smoothness, occlusion;
+                TerrainSurface(terrain, albedo, normalTS, metallic, smoothness, occlusion);
+                half alpha = 1.0h;
+                BRDFData brdfData;
+                InitializeBRDFData(albedo, metallic, half3(0, 0, 0), smoothness, alpha, brdfData);
+
+                MetaInput metaInput = (MetaInput)0;
+                metaInput.Albedo = brdfData.diffuse + brdfData.specular * brdfData.roughness * 0.5h;
+            #ifdef EDITOR_VISUALIZATION
+                metaInput.VizUV = input.vizUV;
+                metaInput.LightCoord = input.lightCoord;
+            #endif
+                return UnityMetaFragment(metaInput);
+            }
             ENDHLSL
         }
 

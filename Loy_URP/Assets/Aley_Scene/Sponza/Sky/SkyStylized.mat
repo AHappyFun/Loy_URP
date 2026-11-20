@@ -1,0 +1,223 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: SkyStylized
+  m_Shader: {fileID: 4800000, guid: e44ec74716b8b8d4e8f4be65132c41c7, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses:
+  - MOTIONVECTORS
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BumpMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _CloudDistortionTexture:
+        m_Texture: {fileID: 2800000, guid: 7eaa45c9939ce7049b5e402ec1b873d4, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _CloudTexture:
+        m_Texture: {fileID: 2800000, guid: 7eaa45c9939ce7049b5e402ec1b873d4, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailAlbedoMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMask:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _OcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ParallaxMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SpecGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_Lightmaps:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_LightmapsInd:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_ShadowMasks:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _AddPrecomputedVelocity: 0
+    - _AlphaClip: 0
+    - _AlphaToMask: 0
+    - _AutoChangeSun: 1
+    - _AutoSun: 1
+    - _AutoSun_1: 1
+    - _Blend: 0
+    - _BlendModePreserveSpecular: 1
+    - _BumpScale: 1
+    - _CastShadows: 1
+    - _ClearCoatMask: 0
+    - _ClearCoatSmoothness: 0
+    - _CloudCoverage: 0.26
+    - _CloudDistortionOffset: 0.03
+    - _CloudDistortionScaleMultiplier: 2.5
+    - _CloudDistortionSpeed: -0.05
+    - _CloudGlobalBirghtness: 2.78
+    - _CloudGlobalBrightness: 1.5
+    - _CloudRimLighting: 5
+    - _CloudScale: 2
+    - _CloudSharpness: 0.864
+    - _CloudSpeed: 0.013
+    - _CloudTopSoften: 0
+    - _Cull: 0
+    - _Cutoff: 0.5
+    - _DetailAlbedoMapScale: 1
+    - _DetailNormalMapScale: 1
+    - _DstBlend: 0
+    - _DstBlendAlpha: 0
+    - _DynamicSun: 1
+    - _EnvironmentReflections: 1
+    - _GlossMapScale: 0
+    - _Glossiness: 0
+    - _GlossyReflections: 0
+    - _HorizonOffset: -0.07
+    - _HorizonSharpness: 0.322
+    - _Latitude: -67
+    - _Metallic: 0
+    - _MoonGlowIntensity: 0.25
+    - _MoonGlowSize: 0.2
+    - _MoonSize: 0.03
+    - _MoonSoftness: 0.005
+    - _OcclusionStrength: 1
+    - _Parallax: 0.005
+    - _QueueControl: 0
+    - _QueueOffset: 0
+    - _ReceiveFog: 1
+    - _ReceiveShadows: 1
+    - _ScreenSpaceReflections: 1
+    - _ScreenSpaceReflectionsContributeTransparent: 1
+    - _Smoothness: 0.5
+    - _SmoothnessTextureChannel: 0
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _SrcBlendAlpha: 1
+    - _SunGlowIntensity: 1
+    - _SunGlowSize: 0.209
+    - _SunMoonGlowIntensity: 1
+    - _SunMoonGlowSpread: 0.209
+    - _SunMoonSize: 0.044
+    - _SunMoonSoftness: 0.006
+    - _SunSize: 0.044
+    - _SunSoftness: 0.006
+    - _Surface: 0
+    - _TimeOfDay: 12
+    - _WorkflowMode: 1
+    - _WritesColor: 1
+    - _XRMotionVectorsPass: 1
+    - _ZTest: 4
+    - _ZWrite: 1
+    - _ZWriteControl: 0
+    m_Colors:
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _CloudColor: {r: 1, g: 0.9816929, b: 0.97319317, a: 1}
+    - _CloudDirection: {r: 0.9396926, g: 0.34202012, b: 0, a: 0}
+    - _CloudDistortionScale: {r: 0.3, g: 0.3, b: 0, a: 0}
+    - _CloudScale: {r: 0.5, g: 0.5, b: 0, a: 0}
+    - _CloudScale_1: {r: 3, g: 1.5, b: 0, a: 0}
+    - _CloudShadowColor: {r: 0.76375777, g: 0.75152147, b: 0.7458403, a: 1}
+    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _DawnCloudColor: {r: 1, g: 0.7803922, b: 0.6784314, a: 1}
+    - _DawnCloudShadowColor: {r: 0.759434, g: 0.6126497, b: 0.5444999, a: 1}
+    - _DawnGroundColor: {r: 0.2316732, g: 0.18115878, b: 0.2783019, a: 1}
+    - _DawnHorizonColor: {r: 0.8113208, g: 0.4789172, b: 0.3980064, a: 1}
+    - _DawnSunColor: {r: 1, g: 0.8784314, b: 0.6, a: 1}
+    - _DawnSunGlowColor: {r: 1, g: 0.5964619, b: 0.27843142, a: 1}
+    - _DawnZenithColor: {r: 0.50158626, g: 0.35444108, b: 0.5566038, a: 1}
+    - _DayCloudColor: {r: 1, g: 1, b: 1, a: 1}
+    - _DayCloudShadowColor: {r: 0.764151, g: 0.764151, b: 0.764151, a: 1}
+    - _DayGroundColor: {r: 0.27058825, g: 0.3372549, b: 0.3529412, a: 1}
+    - _DayHorizonColor: {r: 0.4784314, g: 0.5803922, b: 0.65882355, a: 1}
+    - _DaySunColor: {r: 1, g: 0.98039216, b: 0.9019608, a: 1}
+    - _DaySunGlowColor: {r: 1, g: 0.9215686, b: 0.7490196, a: 1}
+    - _DayZenithColor: {r: 0.32941172, g: 0.51287746, b: 0.8745098, a: 1}
+    - _DuskCloudColor: {r: 1, g: 0.5787864, b: 0.4433962, a: 1}
+    - _DuskCloudShadowColor: {r: 0.3254717, g: 0.23717444, b: 0.20879316, a: 1}
+    - _DuskGroundColor: {r: 0.17449456, g: 0.1327652, b: 0.24056602, a: 1}
+    - _DuskHorizonColor: {r: 0.8679245, g: 0.4561413, b: 0.26201496, a: 1}
+    - _DuskSunColor: {r: 1, g: 0.5803921, b: 0.27843136, a: 1}
+    - _DuskSunGlowColor: {r: 0.9607843, g: 0.373586, b: 0.25882348, a: 1}
+    - _DuskZenithColor: {r: 0.4820693, g: 0.36044857, b: 0.509434, a: 1}
+    - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GroundColor: {r: 0.26734418, g: 0.32424235, b: 0.34671906, a: 1}
+    - _HorizonColor: {r: 0.50618196, g: 0.571933, b: 0.63708115, a: 1}
+    - _MoonColor: {r: 1, g: 0.9914736, b: 0.9339623, a: 1}
+    - _MoonGlowColor: {r: 1, g: 1, b: 1, a: 1}
+    - _NightCloudColor: {r: 0.16945532, g: 0.21358433, b: 0.3207547, a: 1}
+    - _NightCloudShadowColor: {r: 0.054512277, g: 0.07388825, b: 0.11792451, a: 1}
+    - _NightGroundColor: {r: 0.07075471, g: 0.07075471, b: 0.09433961, a: 1}
+    - _NightHorizonColor: {r: 0.11764707, g: 0.14117648, b: 0.22352943, a: 1}
+    - _NightSunColor: {r: 0, g: 0, b: 0, a: 1}
+    - _NightSunGlowColor: {r: 0, g: 0, b: 0, a: 1}
+    - _NightZenithColor: {r: 0.20392159, g: 0.18039216, b: 0.47450984, a: 1}
+    - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
+    - _SunMoonColor: {r: 1, g: 0.96339273, b: 0.8516163, a: 1}
+    - _ZenithColor: {r: 0.34376463, g: 0.4996698, b: 0.84800833, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
+--- !u!114 &808173663850742929
+MonoBehaviour:
+  m_ObjectHideFlags: 11
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
+  version: 11

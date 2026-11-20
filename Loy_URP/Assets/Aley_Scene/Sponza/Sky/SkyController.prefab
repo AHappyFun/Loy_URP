@@ -1,0 +1,271 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &9205958882324396294
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8863309423493982460}
+  - component: {fileID: 1657713468870065778}
+  m_Layer: 0
+  m_Name: SkyController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8863309423493982460
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9205958882324396294}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1657713468870065778
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9205958882324396294}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7455b2d1d9a9e2d41ba9e435126c839e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StylizedSky.SkyController
+  _skyMaterial: {fileID: 2100000, guid: 1e2ec9eb00d3cd1449c5fcba1b8f4d03, type: 2}
+  _timeOfDay: 0
+  _zenithColor:
+    serializedVersion: 2
+    key0: {r: 0.050189212, g: 0.036845848, b: 0.21698111, a: 1}
+    key1: {r: 0.50158626, g: 0.35444108, b: 0.5566038, a: 1}
+    key2: {r: 0.32941172, g: 0.51287746, b: 0.8745098, a: 0}
+    key3: {r: 0.4820693, g: 0.36044857, b: 0.509434, a: 0}
+    key4: {r: 0.050980393, g: 0.03529412, b: 0.21568628, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 16384
+    ctime2: 32768
+    ctime3: 49151
+    ctime4: 65535
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 5
+    m_NumAlphaKeys: 2
+  _horizonColor:
+    serializedVersion: 2
+    key0: {r: 0.045834813, g: 0.05661366, b: 0.09433961, a: 1}
+    key1: {r: 0.8113208, g: 0.4789172, b: 0.3980064, a: 1}
+    key2: {r: 0.4784314, g: 0.5803922, b: 0.65882355, a: 0}
+    key3: {r: 0.8679245, g: 0.4561413, b: 0.26201496, a: 0}
+    key4: {r: 0.047058824, g: 0.05490196, b: 0.09411765, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 16384
+    ctime2: 32768
+    ctime3: 49151
+    ctime4: 65535
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 5
+    m_NumAlphaKeys: 2
+  _groundColor:
+    serializedVersion: 2
+    key0: {r: 0.06679422, g: 0.06679422, b: 0.08962262, a: 1}
+    key1: {r: 0.2316732, g: 0.18115878, b: 0.2783019, a: 1}
+    key2: {r: 0.27058825, g: 0.3372549, b: 0.3529412, a: 0}
+    key3: {r: 0.17449456, g: 0.1327652, b: 0.24056602, a: 0}
+    key4: {r: 0.07075471, g: 0.07075471, b: 0.09433961, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 16384
+    ctime2: 32768
+    ctime3: 49151
+    ctime4: 65535
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 5
+    m_NumAlphaKeys: 2
+  _nightBlend: 1
+  _sunColor:
+    serializedVersion: 2
+    key0: {r: 0, g: 0, b: 0, a: 1}
+    key1: {r: 1, g: 0.8784314, b: 0.6, a: 1}
+    key2: {r: 1, g: 0.98039216, b: 0.9019608, a: 0}
+    key3: {r: 1, g: 0.5803921, b: 0.27843136, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 16384
+    ctime1: 24576
+    ctime2: 32768
+    ctime3: 40959
+    ctime4: 49151
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 5
+    m_NumAlphaKeys: 2
+  _sunSize: 0.044
+  _sunSoftness: 0.006
+  _sunGlowSpread: 0.209
+  _sunGlowIntensity: 1
+  _moonColor:
+    serializedVersion: 2
+    key0: {r: 0.4433962, g: 0.4433962, b: 0.4433962, a: 1}
+    key1: {r: 0.5838314, g: 0.5786685, b: 0.5438438, a: 1}
+    key2: {r: 0, g: 0, b: 0, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0.5838314, g: 0.5786685, b: 0.5438438, a: 0}
+    key5: {r: 0.44705883, g: 0.44705883, b: 0.44705883, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 8192
+    ctime2: 16384
+    ctime3: 49151
+    ctime4: 57343
+    ctime5: 65535
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 6
+    m_NumAlphaKeys: 2
+  _moonSize: 0.03
+  _moonSoftness: 0.005
+  _moonGlowSpread: 0.16
+  _moonGlowIntensity: 0.52
+  _cloudColor:
+    serializedVersion: 2
+    key0: {r: 0, g: 0.049225938, b: 0.1745283, a: 1}
+    key1: {r: 0.07058716, g: 0.10083689, b: 0.21009739, a: 1}
+    key2: {r: 1, g: 0.7803922, b: 0.6784314, a: 0}
+    key3: {r: 1, g: 1, b: 1, a: 0}
+    key4: {r: 1, g: 0.5787864, b: 0.4433962, a: 0}
+    key5: {r: 0.16945532, g: 0.21358433, b: 0.3207547, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 1157
+    ctime2: 16384
+    ctime3: 32768
+    ctime4: 49151
+    ctime5: 65535
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 6
+    m_NumAlphaKeys: 2
+  _cloudShadowColor:
+    serializedVersion: 2
+    key0: {r: 0.011681201, g: 0.015401109, b: 0.023584902, a: 1}
+    key1: {r: 0.759434, g: 0.6126497, b: 0.5444999, a: 1}
+    key2: {r: 0.764151, g: 0.764151, b: 0.764151, a: 0}
+    key3: {r: 0.3254717, g: 0.23717444, b: 0.20879316, a: 0}
+    key4: {r: 0.0266999, g: 0.03604487, b: 0.05660379, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 16384
+    ctime2: 32768
+    ctime3: 49151
+    ctime4: 65535
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 5
+    m_NumAlphaKeys: 2
+  _dayCloudCoverage: 0.26
+  _nightCloudCoverage: 0.26
+  _dayCloudSharpness: 0.864
+  _nightCloudSharpness: 0.864

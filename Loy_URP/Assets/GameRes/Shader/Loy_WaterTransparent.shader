@@ -51,6 +51,39 @@ Shader "Loy/WaterTransparent"
             "IgnoreProjector" = "True"
         }
 
+        HLSLINCLUDE
+        #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+        // 所有材质属性必须放在 UnityPerMaterial 中，SRP Batcher 才能生效。
+        // 注意：CBUFFER 内不能使用 ifdef 改变布局，否则 SRP Batcher 无法工作。
+        CBUFFER_START(UnityPerMaterial)
+            float4 _BaseMap_ST;
+            half4 _BaseColor;
+            half4 _ShallowColor;
+            half4 _DeepColor;
+            half4 _FoamColor;
+            half _Smoothness;
+            half _BumpScale;
+            half _RefractionStrength;
+            half _ReflectionStrength;
+            half _FresnelPower;
+            half _FresnelMin;
+            half _DepthDistance;
+            half _Absorption;
+            half _WaveScale;
+            half _WaveAmplitude;
+            half _WaveSpeed;
+            half _WaveHeightScale;
+            half _ShoreFadeDistance;
+            half _FoamDistance;
+            half _FoamNoiseScale;
+            half _FoamNoiseStrength;
+            half _SpecularStrength;
+        CBUFFER_END
+
+        TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+        ENDHLSL
+
         Pass
         {
             Name "Forward"
@@ -70,40 +103,11 @@ Shader "Loy/WaterTransparent"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fragment _ LOY_RENDER_DEBUG
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
             #include "LoyRenderDebug.hlsl"
 
-            // 所有材质属性必须放在 UnityPerMaterial 中，SRP Batcher 才能生效。
-            // 注意：CBUFFER 内不能使用 ifdef 改变布局，否则 SRP Batcher 无法工作。
-            CBUFFER_START(UnityPerMaterial)
-                float4 _BaseMap_ST;
-                half4 _BaseColor;
-                half4 _ShallowColor;
-                half4 _DeepColor;
-                half4 _FoamColor;
-                half _Smoothness;
-                half _BumpScale;
-                half _RefractionStrength;
-                half _ReflectionStrength;
-                half _FresnelPower;
-                half _FresnelMin;
-                half _DepthDistance;
-                half _Absorption;
-                half _WaveScale;
-                half _WaveAmplitude;
-                half _WaveSpeed;
-                half _WaveHeightScale;
-                half _ShoreFadeDistance;
-                half _FoamDistance;
-                half _FoamNoiseScale;
-                half _FoamNoiseStrength;
-                half _SpecularStrength;
-            CBUFFER_END
-
-            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
             TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
             TEXTURE2D(_WaterReflectionTex); SAMPLER(sampler_WaterReflectionTex);
 
@@ -290,6 +294,31 @@ Shader "Loy/WaterTransparent"
                 half alpha = _BaseColor.a;
 
                 return half4(color, alpha);
+            }
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode" = "Meta" }
+            Cull Off
+
+            HLSLPROGRAM
+            #pragma target 3.0
+            #pragma vertex UniversalVertexMeta
+            #pragma fragment WaterMetaFrag
+            #pragma shader_feature EDITOR_VISUALIZATION
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UniversalMetaPass.hlsl"
+
+            half4 WaterMetaFrag(Varyings input) : SV_Target
+            {
+                half3 tint = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).rgb * _BaseColor.rgb;
+                MetaInput metaInput = (MetaInput)0;
+                // Keep the diffuse approximation weak on the transparent water surface.
+                metaInput.Albedo = tint * _ShallowColor.rgb * (saturate(_BaseColor.a) * 0.02h);
+                return UniversalFragmentMeta(input, metaInput);
             }
             ENDHLSL
         }
