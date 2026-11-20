@@ -1,61 +1,69 @@
 {
   "packages": {
     "com.IvanMurzak.McpPlugin": {
-      "version": "8.3.0",
+      "version": "8.25.0",
       "dlls": [
         "McpPlugin.dll"
       ]
     },
     "com.IvanMurzak.McpPlugin.Common": {
-      "version": "8.3.0",
+      "version": "8.25.0",
       "dlls": [
         "McpPlugin.Common.dll"
       ]
     },
     "com.IvanMurzak.ReflectorNet": {
-      "version": "5.4.0",
+      "version": "5.5.3",
       "dlls": [
         "ReflectorNet.dll"
       ]
     },
+    "com.IvanMurzak.Rql": {
+      "version": "0.5.0",
+      "dlls": [
+        "Rql.Contracts.dll",
+        "Rql.Execution.dll",
+        "Rql.Parser.dll"
+      ]
+    },
     "Microsoft.AspNetCore.Connections.Abstractions": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.Connections.Abstractions.dll"
       ]
     },
     "Microsoft.AspNetCore.Http.Connections.Client": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.Http.Connections.Client.dll"
       ]
     },
     "Microsoft.AspNetCore.Http.Connections.Common": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.Http.Connections.Common.dll"
       ]
     },
     "Microsoft.AspNetCore.SignalR.Client": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.SignalR.Client.dll"
       ]
     },
     "Microsoft.AspNetCore.SignalR.Client.Core": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.SignalR.Client.Core.dll"
       ]
     },
     "Microsoft.AspNetCore.SignalR.Common": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.SignalR.Common.dll"
       ]
     },
     "Microsoft.AspNetCore.SignalR.Protocols.Json": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.AspNetCore.SignalR.Protocols.Json.dll"
       ]
@@ -67,7 +75,7 @@
       ]
     },
     "Microsoft.Bcl.Memory": {
-      "version": "10.0.3",
+      "version": "10.0.14",
       "dlls": [
         "Microsoft.Bcl.Memory.dll"
       ]
@@ -125,7 +133,7 @@
       ]
     },
     "Microsoft.Extensions.Features": {
-      "version": "8.0.15",
+      "version": "8.0.33",
       "dlls": [
         "Microsoft.Extensions.Features.dll"
       ]
@@ -167,7 +175,7 @@
       ]
     },
     "R3": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "dlls": [
         "R3.dll"
       ]
@@ -239,7 +247,7 @@
       ]
     },
     "System.Text.Json": {
-      "version": "8.0.5",
+      "version": "8.0.6",
       "dlls": [
         "System.Text.Json.dll"
       ]
