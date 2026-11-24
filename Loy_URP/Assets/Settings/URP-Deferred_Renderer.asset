@@ -195,7 +195,7 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_ShadowmapStencil: 0
   m_AccurateGbufferNormals: 0
-  m_IntermediateTextureMode: 1
+  m_IntermediateTextureMode: 0
   m_TileOnlyMode: 0
 --- !u!114 &4005599399343945071
 MonoBehaviour:

@@ -455,13 +455,13 @@ MonoBehaviour:
     m_Value: 1
   m_Quality:
     m_OverrideState: 1
-    m_Value: 1
+    m_Value: 2
   m_Intensity:
     m_OverrideState: 1
     m_Value: 1
   m_Radius:
     m_OverrideState: 1
-    m_Value: 0.3
+    m_Value: 1.24
   m_DirectLightingStrength:
     m_OverrideState: 1
     m_Value: 0.1
@@ -469,10 +469,10 @@ MonoBehaviour:
     m_OverrideState: 0
     m_Value: 100
   m_SampleCount:
-    m_OverrideState: 0
-    m_Value: 1
+    m_OverrideState: 1
+    m_Value: 2
   m_Downsample:
-    m_OverrideState: 0
+    m_OverrideState: 1
     m_Value: 0
   m_AfterOpaque:
     m_OverrideState: 1

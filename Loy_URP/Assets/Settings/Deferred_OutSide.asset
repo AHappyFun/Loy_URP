@@ -2,7 +2,7 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!114 &-8937840765294149112
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -25,7 +25,7 @@ MonoBehaviour:
     lumaSamples: 8
 --- !u!114 &-8886208210172211487
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -39,7 +39,7 @@ MonoBehaviour:
   settings:
     injectionPoint: 550
     affectSceneView: 1
-    effectOrder: 000000000100000002000000
+    effectOrder: 000000000100000002000000i
     outline:
       enabled: 1
       outlineColor: {r: 0, g: 0, b: 0, a: 1}
@@ -71,7 +71,7 @@ MonoBehaviour:
   glitchShader: {fileID: 4800000, guid: de9b0af49909ab344b3b4c41096f81e1, type: 3}
 --- !u!114 &-5298835949692327270
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -95,7 +95,7 @@ MonoBehaviour:
   depthTexture: 0
 --- !u!114 &-4323354191741335186
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -111,7 +111,7 @@ MonoBehaviour:
     layerMask: -1
 --- !u!114 &-3445382669649501569
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -141,7 +141,7 @@ MonoBehaviour:
     fogColor: {r: 0.41509432, g: 0.41509432, b: 0.41509432, a: 1}
 --- !u!114 &-3207955984075339624
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -205,8 +205,7 @@ MonoBehaviour:
   - {fileID: -3445382669649501569}
   - {fileID: -8937840765294149112}
   - {fileID: -3207955984075339624}
-  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5e8a3f6d8877ea7f406ec90fcb445c00c47f224164b78a2fd00802a3bd2d69f68398c8196a070d7bd3
-  m_UseNativeRenderPass: 0
+  m_RendererFeatureMap: ac2248b5da18035d874bbb491708460b6caaad7249c8af3a27a26c0895c31438580432804ca7ef411d52adafdb7ad860cd3dfcaad0694f6a6c93718f48bad653e18e86c8b6d8ad849aea8437c7c076b6b58d7c6583ba8c5e8a3f6d8877ea7f406ec90fcb445c00c47f224164b78a2fd00802a3bd2d69f68398c8196a070d7bd3l
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   m_AssetVersion: 3
@@ -222,6 +221,8 @@ MonoBehaviour:
   m_DefaultStencilState:
     overrideStencilState: 0
     stencilReference: 0
+    stencilReadMask: 15
+    stencilWriteMask: 15
     stencilCompareFunction: 8
     passOperation: 2
     failOperation: 0
@@ -232,11 +233,13 @@ MonoBehaviour:
   m_CopyDepthMode: 1
   m_DepthAttachmentFormat: 0
   m_DepthTextureFormat: 0
+  m_ShadowmapStencil: 0
   m_AccurateGbufferNormals: 0
-  m_IntermediateTextureMode: 1
+  m_IntermediateTextureMode: 0
+  m_TileOnlyMode: 0
 --- !u!114 &812345678901234567
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -258,7 +261,7 @@ MonoBehaviour:
     Thickness: 0.25
 --- !u!114 &4041069810517058087
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -293,7 +296,7 @@ MonoBehaviour:
   - {fileID: 2800000, guid: 5a0de702ef6225a418b371066a53d00b, type: 3}
 --- !u!114 &4228818792906336876
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -307,7 +310,7 @@ MonoBehaviour:
   m_Shader: {fileID: 4800000, guid: 0f854b35a0cf61a429bd5dcfea30eddd, type: 3}
 --- !u!114 &4647691139580510090
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -325,7 +328,7 @@ MonoBehaviour:
     reflectionDistance: 50
 --- !u!114 &4751200078909277272
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -342,7 +345,7 @@ MonoBehaviour:
     mipCount: 8
 --- !u!114 &6041220770971095916
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -358,7 +361,7 @@ MonoBehaviour:
   GIRange: 1
 --- !u!114 &6702227998080770732
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -382,7 +385,7 @@ MonoBehaviour:
     applyToGI: 1
 --- !u!114 &6813025409810861493
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -399,7 +402,7 @@ MonoBehaviour:
     renderPassEvent: 220
 --- !u!114 &6978462706574381597
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
@@ -417,7 +420,7 @@ MonoBehaviour:
     stepSize: 0.1
 --- !u!114 &7660457836123274701
 MonoBehaviour:
-  m_ObjectHideFlags: 0
+  m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
